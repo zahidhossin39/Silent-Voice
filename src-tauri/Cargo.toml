@@ -1,0 +1,53 @@
+[package]
+name = "silent-voice"
+version = "0.1.0"
+description = "Free, local-first voice-to-text dictation"
+authors = ["Silent Voice"]
+edition = "2021"
+
+[lib]
+name = "silent_voice_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-shell = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-global-shortcut = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Audio capture
+cpal = "0.15"
+hound = "3.5"
+
+# System integration
+arboard = "3.4"
+enigo = "0.2"
+sysinfo = "0.32"
+
+# Networking / model download
+reqwest = { version = "0.12", features = ["stream", "json", "multipart", "rustls-tls"], default-features = false }
+futures-util = "0.3"
+tokio = { version = "1", features = ["full"] }
+
+# Storage — history is a plain JSON file in %APPDATA%/SilentVoice (no database).
+dirs = "5"
+base64 = "0.22"
+
+[target.'cfg(windows)'.dependencies]
+# DXGI-based GPU detection
+windows = { version = "0.58", features = [
+  "Win32_Graphics_Dxgi",
+  "Win32_Graphics_Dwm",
+  "Win32_Foundation",
+  "Win32_UI_WindowsAndMessaging",
+  "Win32_System_Threading",
+] }
+
+[features]
+# This feature is used for production builds or when a dev server is not specified.
+custom-protocol = ["tauri/custom-protocol"]

@@ -1,0 +1,11 @@
+<svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <!-- Silent Voice app icon — black / white / orange brand palette.
+       A minimal five-bar voice waveform: orange bars, white center peak. -->
+  <rect x="0" y="0" width="1024" height="1024" rx="224" fill="#0d0f14"/>
+  <!-- waveform bars, vertically centered -->
+  <rect x="232"  y="432" width="80" height="160" rx="40" fill="#f97316"/>
+  <rect x="360"  y="352" width="80" height="320" rx="40" fill="#f97316"/>
+  <rect x="488"  y="252" width="80" height="520" rx="40" fill="#ffffff"/>
+  <rect x="616"  y="352" width="80" height="320" rx="40" fill="#f97316"/>
+  <rect x="744"  y="432" width="80" height="160" rx="40" fill="#f97316"/>
+</svg>

@@ -1,0 +1,85 @@
+@import "tailwindcss";
+
+/* Silent Voice theme tokens */
+@theme {
+  --color-sv-bg: #0b0e14;
+  --color-sv-surface: #131722;
+  --color-sv-surface-2: #1b2030;
+  --color-sv-border: #262c3d;
+  --color-sv-text: #e6e9f0;
+  --color-sv-muted: #8b93a7;
+  --color-sv-accent: #f97316;
+  --color-sv-accent-hover: #ea580c;
+  --color-sv-good: #22c55e;
+  --color-sv-warn: #eab308;
+  --color-sv-bad: #ef4444;
+}
+
+/* Light theme — overrides the @theme :root tokens when <html> has .theme-light.
+   `html.theme-light` (specificity 0,1,1) beats Tailwind's :root (0,1,0). */
+html.theme-light {
+  --color-sv-bg: #f5f6f8;
+  --color-sv-surface: #ffffff;
+  --color-sv-surface-2: #eceef2;
+  --color-sv-border: #dde1e8;
+  --color-sv-text: #1a1e28;
+  --color-sv-muted: #5c6473;
+  --color-sv-accent: #ea580c;
+  --color-sv-accent-hover: #c2410c;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background-color: var(--color-sv-bg);
+  color: var(--color-sv-text);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Thin scrollbars */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-sv-border);
+  border-radius: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Recording pulse animation for the overlay */
+@keyframes sv-pulse {
+  0%,
+  100% {
+    transform: scaleY(0.4);
+    opacity: 0.6;
+  }
+  50% {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}
+.sv-bar {
+  animation: sv-pulse 1s ease-in-out infinite;
+}
+
+/* Overlay expand animation (idle pill → recording pill) */
+@keyframes svExpand {
+  from {
+    transform: scale(0.85);
+    opacity: 0.4;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}

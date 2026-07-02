@@ -1,0 +1,154 @@
+// ============================================================
+// Silent Voice — Shared TypeScript types
+// ============================================================
+
+export type CompatibilityLevel = "good" | "warn" | "bad";
+
+// ---------- Hardware ----------
+export interface HardwareInfo {
+  cpu_brand: string;
+  physical_cores: number;
+  logical_cores: number;
+  total_ram_gb: number;
+  available_ram_gb: number;
+  has_avx2: boolean;
+  has_avx512: boolean;
+  gpu_vendor: string | null;
+  gpu_name: string | null;
+  gpu_vram_gb: number | null;
+  free_disk_gb: number;
+  os: string;
+}
+
+// ---------- STT (Whisper) models ----------
+export type SttPreset = "speed" | "balanced" | "accuracy" | "multilingual";
+
+export interface SttModel {
+  id: string; // e.g. "small.en"
+  file: string; // e.g. "ggml-small.en.bin"
+  family: string; // "Whisper"
+  provider: string; // "OpenAI"
+  label: string; // "Small (English)"
+  size_mb: number;
+  ram_mb: number;
+  speed_label: string; // "~3x realtime"
+  wer: string; // "~3.4%"
+  multilingual: boolean;
+  preset: SttPreset;
+  best_for: string;
+  url?: string; // Optional full download URL (overrides WHISPER_BASE_URL + file)
+}
+
+// ---------- LLM models (for AI processing) ----------
+export type ModelTier = "tiny" | "small" | "medium" | "large";  // medium = 7-8B models
+
+export interface LlmModel {
+  id: string; // GGUF storage id (filename stem), e.g. "phi-3.5-mini-instruct-q4"
+  name: string;
+  provider: string; // "Google", "Alibaba", "Microsoft", "Meta", ...
+  url: string; // direct GGUF download URL
+  params: string; // "3.8B"
+  size_mb: number; // download size
+  ram_gb: number;
+  tier: ModelTier;
+  speed_label: string;
+  languages: string;
+  license: string;
+  best_for: string;
+}
+
+// ---------- Download state ----------
+export type DownloadStatus =
+  | "not_downloaded"
+  | "downloading"
+  | "downloaded"
+  | "error";
+
+export interface DownloadProgress {
+  model_id: string;
+  downloaded_bytes: number;
+  total_bytes: number;
+  status: DownloadStatus;
+  error?: string;
+}
+
+// ---------- AI processing modes ----------
+export type ModelSource = "local" | "api" | "none";
+
+export interface Mode {
+  id: string;
+  name: string;
+  icon: string;
+  system_prompt: string;
+  model_source: ModelSource; // "none" => raw transcription, no LLM
+  model_id: string;
+  provider_id?: string; // for model_source "api": which ApiProvider to use
+  hotkey?: string;
+  builtin: boolean;
+}
+
+// ---------- API providers ----------
+export type ApiUse = "stt" | "llm";
+
+export interface ApiProvider {
+  id: string;
+  name: string; // "OpenAI", "OpenRouter", "Anthropic", ...
+  api_key: string;
+  base_url: string;
+  model: string; // chat/completions model, used for "llm" (AI processing)
+  stt_model: string; // audio/transcriptions model, used for "stt" (cloud Whisper)
+  uses: ApiUse[];
+}
+
+// ---------- Text replacements (spoken trigger → inserted text) ----------
+// e.g. { trigger: "my email", replacement: "zahidhosson28@gmail.com" }.
+// Applied to the transcript after AI processing, just before pasting.
+export interface TextReplacement {
+  id: string;
+  trigger: string;
+  replacement: string;
+}
+
+// ---------- Per-app profiles ----------
+// When the focused app's exe name contains `app_match`, use `mode_id` instead
+// of the globally active mode. e.g. { app_match: "code", mode_id: "raw" }.
+export interface AppProfileRule {
+  id: string;
+  app_match: string;
+  mode_id: string;
+}
+
+// ---------- History ----------
+export interface HistoryEntry {
+  id: number;
+  timestamp: number; // unix ms
+  raw_text: string;
+  processed_text: string;
+  mode_id: string;
+  model_id: string;
+  duration_ms: number;
+}
+
+// ---------- App settings ----------
+export type RecordingState =
+  | "idle"
+  | "listening"
+  | "recording"
+  | "processing";
+
+export interface Settings {
+  hotkey: string;
+  active_stt_model: string;
+  active_mode_id: string;
+  stt_preset: SttPreset;
+  language: string; // "auto" or ISO code
+  use_gpu: boolean;
+  audio_device: string | null;
+  auto_start: boolean;
+  theme: "dark" | "light";
+  overlay_opacity: number; // 0-100; pill see-through amount
+  custom_vocabulary: string; // comma/newline-separated words fed to whisper.cpp as a priming prompt
+  stt_cloud_provider_id: string | null; // null = use local active_stt_model; else an ApiProvider.id with uses including "stt"
+  toggle_mode: boolean; // double-tap the hotkey to lock recording on; single press stops
+  onboarded: boolean; // true once the first-launch setup wizard has been completed/skipped
+}

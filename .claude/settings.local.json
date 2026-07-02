@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm --version)",
+      "Bash(rustc --version)",
+      "Bash(cargo --version)",
+      "Bash(winget --version)",
+      "Bash(rustup --version)",
+      "Bash(cl)",
+      "Bash(where link *)",
+      "Read(//c/Program Files/**)",
+      "Read(//c/Program Files \\(x86\\)/**)",
+      "Bash(npm install *)",
+      "Bash(npx tsc *)",
+      "Bash(echo \"=== TSC EXIT: $? ===\")",
+      "Bash(npx vite *)",
+      "Bash(npm run *)",
+      "PowerShell(winget install --id Microsoft.VisualStudio.2022.BuildTools --override \"--quiet --wait --norestart --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended\" --accept-source-agreements --accept-package-agreements --disable-interactivity)",
+      "PowerShell(winget install --id Rustlang.Rustup --accept-source-agreements --accept-package-agreements --disable-interactivity 2>&1)",
+      "Bash(curl -sL \"https://api.github.com/repos/ggerganov/whisper.cpp/releases/latest\")",
+      "Bash(awk '{print $5, $9}')",
+      "Bash(taskkill //F //IM silent-voice.exe)",
+      "Bash(tasklist)",
+      "Bash(./silent-voice.exe)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:1420/)",
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(ollama --version)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:11434/api/tags)",
+      "Bash(node -e ' *)",
+      "Bash(taskkill //F //IM llama-server.exe)"
+    ]
+  }
+}
