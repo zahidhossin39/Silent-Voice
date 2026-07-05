@@ -111,11 +111,55 @@ fn replace_case_insensitive(haystack: &str, needle: &str, replacement: &str) -> 
         let idx = search_from + rel;
         result.push_str(&haystack[last..idx]);
         result.push_str(replacement);
-        last = idx + needle.len();
+        let mut after = idx + needle.len();
+        // Whisper attaches sentence punctuation to a spoken trigger ("my
+        // email" → "My email."). Swallow any punctuation directly following the
+        // trigger so the replacement pastes exactly its value — nothing after.
+        while let Some(c) = haystack[after..].chars().next() {
+            if matches!(c, '.' | ',' | '!' | '?' | ';' | ':') {
+                after += c.len_utf8();
+            } else {
+                break;
+            }
+        }
+        last = after;
         search_from = last;
     }
     result.push_str(&haystack[last..]);
     result
+}
+
+#[cfg(test)]
+mod replacement_tests {
+    use super::apply_replacements;
+
+    fn pairs() -> Vec<(String, String)> {
+        vec![("my email".into(), "a@b.com".into())]
+    }
+
+    #[test]
+    fn strips_trailing_period_whisper_adds() {
+        // Whisper capitalizes + adds a period to the standalone utterance.
+        assert_eq!(apply_replacements("My email.", &pairs()), "a@b.com");
+    }
+
+    #[test]
+    fn strips_trailing_comma() {
+        assert_eq!(apply_replacements("my email,", &pairs()), "a@b.com");
+    }
+
+    #[test]
+    fn leaves_following_words_intact() {
+        assert_eq!(
+            apply_replacements("send my email to John", &pairs()),
+            "send a@b.com to John"
+        );
+    }
+
+    #[test]
+    fn no_punctuation_unchanged() {
+        assert_eq!(apply_replacements("my email", &pairs()), "a@b.com");
+    }
 }
 
 #[derive(Serialize, Clone)]
@@ -333,6 +377,7 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
         stt_api_key,
         stt_cloud_model,
         use_gpu,
+        input_sensitivity,
         replacements,
         app_profiles,
         mode_id,
@@ -353,6 +398,7 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
             cfg.stt_api_key.clone(),
             cfg.stt_cloud_model.clone(),
             cfg.use_gpu,
+            cfg.input_sensitivity,
             cfg.replacements.clone(),
             cfg.app_profiles.clone(),
             cfg.mode_id.clone(),
@@ -390,6 +436,16 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
     if let Err(e) = registry::ensure_dirs() {
         report_error(&app, "storage", &e.to_string());
     }
+
+    // Input-sensitivity gate: trim leading/trailing audio quieter than the
+    // user's threshold (wind, hum). A clip with no speech at all is skipped
+    // entirely — no transcription time wasted on noise.
+    let Some(samples) = crate::audio::gate::trim_silence(&samples, input_sensitivity) else {
+        crate::logging::log_info("gate", "clip below sensitivity threshold — skipped");
+        emit_state(&app, "idle");
+        return;
+    };
+
     let wav_path = registry::audio_dir().join("last.wav");
     if let Err(e) = capture::write_wav(&wav_path, &samples) {
         report_error(&app, "audio", &e);

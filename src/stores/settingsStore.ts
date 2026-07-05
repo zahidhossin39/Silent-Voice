@@ -23,6 +23,7 @@ const DEFAULT_SETTINGS: Settings = {
   custom_vocabulary: "",
   stt_cloud_provider_id: null,
   toggle_mode: true,
+  input_sensitivity: 50,
   onboarded: false,
 };
 

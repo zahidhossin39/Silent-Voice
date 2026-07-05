@@ -36,7 +36,10 @@
       "icons/128x128@2x.png",
       "icons/icon.ico"
     ],
-    "resources": ["sidecars/*.dll", "sidecars/llama/*"],
+    "resources": {
+      "sidecars/*.dll": "./",
+      "sidecars/llama/": "llama/"
+    },
     "externalBin": ["sidecars/whisper-cpp"]
   },
   "plugins": {}

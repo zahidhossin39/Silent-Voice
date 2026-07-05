@@ -1,3 +1,4 @@
+pub mod autostart;
 pub mod foreground;
 pub mod hardware;
 pub mod hotkey;

@@ -72,6 +72,37 @@ body {
   animation: sv-pulse 1s ease-in-out infinite;
 }
 
+/* Slower, calmer pulse for the pill's "processing" state. */
+.sv-bar-slow {
+  animation: sv-pulse 1.6s ease-in-out infinite;
+}
+
+/* Input-sensitivity slider (Discord-style: accent track + round white thumb). */
+.sv-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 9999px;
+  background: linear-gradient(
+    to right,
+    var(--color-sv-accent) 0%,
+    var(--color-sv-accent) var(--sv-slider-fill, 50%),
+    var(--color-sv-surface-2) var(--sv-slider-fill, 50%)
+  );
+  outline: none;
+  cursor: pointer;
+}
+.sv-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
 /* Overlay expand animation (idle pill → recording pill) */
 @keyframes svExpand {
   from {

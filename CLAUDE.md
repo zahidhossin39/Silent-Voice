@@ -251,19 +251,34 @@ The pipeline reads these from `AppState.config` (set by `set_active_mode` comman
 
 ---
 
-## 9. Overlay Animate Resize (How the Smooth Transition Works)
+## 9. Overlay Transitions (How the Smooth Animation Works)
 
-The pill window resizes between states via a Rust async tween — **not CSS** (because the window is opaque, CSS can't animate the window boundary):
+**The pill window is a FIXED size (68 × 22) for ALL dictation states.** Never
+re-introduce a window-resize tween between idle/recording/processing: WebView2
+window resizing on Windows is unavoidably janky/flickery (tauri#4236, #6322,
+discussion #2970) — a multi-step tween was tried and looked like glitching.
 
-- `animate_resize(app, target_w, target_h)` in `overlay.rs`
-- 10 steps × 10ms = ~100ms total, ease-out cubic: `e = 1.0 - (1.0 - t)³`
-- Generation counter (`overlay_resize_gen: AtomicU64`) cancels superseded tweens
-- Each step calls `apply_size()` which resizes + repositions centered on the current drag position
+- All idle/recording/processing transitions are **CSS animations inside the
+  window** (RecordingOverlay.tsx): the same 7 bars are always rendered and
+  morph via `transition-all` — idle = 2.5px muted dots, recording = orange
+  `sv-bar` pulsing, processing = medium muted `sv-bar-slow` pulsing. The pill
+  fill is near-black `#0e1116` with a subtle `border-white/10` outline
+  (user-approved reference look; sized down from 96×26 at user request).
+- **Input sensitivity (Discord-style slider, Settings → Dictation):**
+  `settings.input_sensitivity` (0–100, default 50) → `set_behavior` →
+  `RuntimeConfig.input_sensitivity` → `audio/gate.rs::trim_silence()` runs in
+  the pipeline BEFORE write_wav: RMS gate over 30ms frames, trims sub-threshold
+  lead/tail (wind, hum) with ~240ms padding; a clip with no frame above
+  threshold is skipped entirely (logged, no error banner). Honest limitation:
+  an RMS gate cannot remove wind that is as LOUD as speech — it only cuts
+  quieter-than-speech noise. Unit tests in the module.
+- `animate_resize()` in overlay.rs now snaps in ONE step and is used only for
+  the right-click menu (190 × 152), which reads as a popup opening.
+- `overlay_resize_gen` is still bumped for backward compatibility.
 
-**Sizes:**
-- Idle: 54 × 20 px — single short line
-- Recording/Processing: 96 × 26 px — red dot + waveform bars
-- Right-click menu: 190 × 152 px
+(Storage-locations UI was removed from Settings at the user's request; the
+`get_data_location`/`set_data_location`/`pick_folder` commands and registry
+plumbing remain — harmless dead code, same convention as overlay_opacity.)
 
 ---
 
@@ -474,3 +489,21 @@ All toggles live in Settings and are pushed to Rust via `set_behavior` /
   `%APPDATA%\SilentVoice\logs\silent-voice.log` (epoch-seconds timestamps, 2MB
   rotation to `.old`). Pipeline errors go through `report_error()` in hotkey.rs
   which both logs and emits `pipeline://error`.
+- **Window lifecycle (do not regress):** the main window has
+  `decorations: false` + custom `Titlebar.tsx`. Closing it HIDES it
+  (`on_window_event` CloseRequested → prevent_close + hide in lib.rs) so the
+  tray "Open Dashboard" can always bring it back; quit only via tray.
+  `tauri-plugin-single-instance` (registered FIRST) focuses the existing
+  dashboard when the exe is launched again — never two processes/pills.
+  `toggleMaximize` needs `core:window:allow-toggle-maximize` in
+  capabilities/default.json (maximize/unmaximize alone are NOT enough).
+- **Autostart:** `system/autostart.rs` writes an HKCU Run key
+  (`set_autostart`/`get_autostart`); Settings hydrates the toggle from the
+  registry on mount (registry is truth, not localStorage).
+- **Guide page:** `dashboard/Guide.tsx` ("How to use" nav item) — user-facing
+  docs with visual pill mockups. Keep it in sync when behavior changes.
+- **Installer:** `npx tauri build` → NSIS setup exe; a copy is kept in
+  `Install/` at the project root for easy access. `bundle.resources` uses the
+  object-map form so whisper DLLs land NEXT TO the exe and llama files in
+  `llama/` — the array form put them under `sidecars/` where the runtime
+  paths never looked (local STT + LLM silently broken in installed builds).

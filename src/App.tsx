@@ -6,6 +6,7 @@ import Modes from "./components/dashboard/Modes";
 import ApiKeys from "./components/dashboard/ApiKeys";
 import Settings from "./components/dashboard/Settings";
 import History from "./components/dashboard/History";
+import Guide from "./components/dashboard/Guide";
 import OverlayApp from "./components/overlay/OverlayApp";
 import Onboarding from "./components/onboarding/Onboarding";
 import { useModelStore } from "./stores/modelStore";
@@ -20,6 +21,7 @@ import {
   KeyIcon,
   GearIcon,
   HistoryIcon,
+  GuideIcon,
 } from "./components/shared/NavIcons";
 import { Titlebar } from "./components/shared/Titlebar";
 
@@ -30,6 +32,7 @@ const NAV = [
   { to: "/api", label: "API Keys", Icon: KeyIcon },
   { to: "/settings", label: "Settings", Icon: GearIcon },
   { to: "/history", label: "History", Icon: HistoryIcon },
+  { to: "/guide", label: "How to use", Icon: GuideIcon },
 ];
 
 export default function App() {
@@ -126,6 +129,7 @@ function Dashboard() {
           <Route path="/api" element={<ApiKeys />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/history" element={<History />} />
+          <Route path="/guide" element={<Guide />} />
         </Routes>
       </main>
     </div>

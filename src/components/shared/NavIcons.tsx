@@ -86,6 +86,16 @@ export function GearIcon({ className }: IconProps) {
   );
 }
 
+export function GuideIcon({ className }: IconProps) {
+  // Open book — reads as "guide/manual" at a glance.
+  return (
+    <svg {...base} className={className}>
+      <path d="M12 6.5C10.5 5 8.5 4.5 6 4.5c-1 0-2 .15-3 .5v13.5c1-.35 2-.5 3-.5 2.5 0 4.5.5 6 2 1.5-1.5 3.5-2 6-2 1 0 2 .15 3 .5V5c-1-.35-2-.5-3-.5-2.5 0-4.5.5-6 2z" />
+      <path d="M12 6.5V20" />
+    </svg>
+  );
+}
+
 export function HistoryIcon({ className }: IconProps) {
   // A clean clock face with a small "rewind" notch at the top-left — reads
   // clearly as recents/history, classy rather than busy.

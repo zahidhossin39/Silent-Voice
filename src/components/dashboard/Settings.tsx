@@ -7,11 +7,8 @@ import { STT_MODELS, LANGUAGES } from "../../services/catalog";
 import {
   listInputDevices,
   setHotkey,
-  getDataLocation,
-  setDataLocation,
-  pickFolder,
+  getAutostart,
 } from "../../services/tauriBridge";
-import type { DataLocation } from "../../services/tauriBridge";
 import HotkeyRecorder from "../shared/HotkeyRecorder";
 import type { SttPreset } from "../../types";
 
@@ -41,41 +38,17 @@ export default function Settings() {
   const { hardware } = useHardwareInfo();
   const [devices, setDevices] = useState<string[]>([]);
   const [hotkeyError, setHotkeyError] = useState<string | null>(null);
-  const [dataLoc, setDataLoc] = useState<DataLocation>({
-    models_root: null,
-    history_root: null,
-  });
-  const [storageMsg, setStorageMsg] = useState<string | null>(null);
 
   useEffect(() => {
     listInputDevices().then(setDevices);
-    getDataLocation().then(setDataLoc);
+    // The registry is the truth for "Launch at startup" — sync the toggle to
+    // it so the UI can't show ON while no Run-key entry actually exists.
+    getAutostart().then((real) => {
+      const current = useSettingsStore.getState().settings.auto_start;
+      if (current !== real) setSettings({ auto_start: real });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  async function handlePickModelsFolder() {
-    const folder = await pickFolder();
-    if (!folder) return;
-    const updated = { ...dataLoc, models_root: folder };
-    setDataLoc(updated);
-    await setDataLocation(updated);
-    setStorageMsg("Models folder saved. New downloads will go here.");
-  }
-
-  async function handlePickHistoryFolder() {
-    const folder = await pickFolder();
-    if (!folder) return;
-    const updated = { ...dataLoc, history_root: folder };
-    setDataLoc(updated);
-    await setDataLocation(updated);
-    setStorageMsg("History folder saved.");
-  }
-
-  async function handleResetStorage() {
-    const reset: DataLocation = { models_root: null, history_root: null };
-    setDataLoc(reset);
-    await setDataLocation(reset);
-    setStorageMsg("Reset to default (C: drive AppData).");
-  }
 
   async function handleHotkeyChange(accelerator: string) {
     setHotkeyError(null);
@@ -90,7 +63,7 @@ export default function Settings() {
   const hasGpu = !!hardware?.gpu_vram_gb && hardware.gpu_vram_gb >= 1;
 
   return (
-    <Page title="Settings" subtitle="Dictation, audio, storage, and appearance">
+    <Page title="Settings" subtitle="Dictation, audio, and appearance">
       <div className="gap-5 lg:columns-2 lg:gap-5">
         <Section title="Dictation">
           <Row
@@ -222,6 +195,35 @@ export default function Settings() {
               onChange={(v) => setSettings({ toggle_mode: v })}
             />
           </Row>
+          <div className="py-3.5">
+            <div className="flex items-center justify-between">
+              <div className="text-sm">Input sensitivity</div>
+              <span className="text-xs tabular-nums text-sv-muted">
+                {settings.input_sensitivity}
+              </span>
+            </div>
+            <div className="mt-0.5 text-xs text-sv-muted">
+              Sounds quieter than this are treated as silence and trimmed
+              before transcription — cuts wind and background hum. Lower =
+              stricter (only clear speech counts); higher = more sensitive.
+            </div>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              step={5}
+              value={settings.input_sensitivity}
+              onChange={(e) =>
+                setSettings({ input_sensitivity: Number(e.target.value) })
+              }
+              className="sv-slider mt-3 w-full"
+              style={
+                {
+                  "--sv-slider-fill": `${settings.input_sensitivity}%`,
+                } as React.CSSProperties
+              }
+            />
+          </div>
         </Section>
 
         <Section
@@ -232,7 +234,7 @@ export default function Settings() {
             <textarea
               value={settings.custom_vocabulary}
               onChange={(e) => setSettings({ custom_vocabulary: e.target.value })}
-              placeholder="e.g. Zaid, Tauri, whisper.cpp, Kubernetes, Nirjhor"
+              placeholder="e.g. Tauri, whisper.cpp, Kubernetes"
               rows={3}
               className="w-full resize-y rounded-lg border border-sv-border bg-sv-bg px-3 py-2 text-sm"
             />
@@ -350,61 +352,6 @@ export default function Settings() {
               onChange={(v) => setSettings({ use_gpu: v })}
             />
           </Row>
-        </Section>
-
-        <Section
-          title="Storage locations"
-          desc="Move models and history off the C drive to any folder. The app creates subfolders inside the root you choose. Existing downloads are NOT moved automatically — copy them yourself, then change the path."
-        >
-          {storageMsg && (
-            <div className="mt-4 rounded-lg border border-sv-good/30 bg-sv-good/10 px-3 py-2 text-xs text-sv-good">
-              {storageMsg}
-            </div>
-          )}
-          <Row
-            label="AI models folder"
-            hint={
-              dataLoc.models_root
-                ? dataLoc.models_root
-                : "%APPDATA%\\SilentVoice\\models (default C drive)"
-            }
-          >
-            <div className="flex gap-2">
-              <button
-                onClick={handlePickModelsFolder}
-                className="rounded-lg border border-sv-border px-3 py-1.5 text-xs hover:bg-sv-surface-2"
-              >
-                Browse…
-              </button>
-            </div>
-          </Row>
-          <Row
-            label="History folder"
-            hint={
-              dataLoc.history_root
-                ? dataLoc.history_root
-                : "%APPDATA%\\SilentVoice (default C drive)"
-            }
-          >
-            <div className="flex gap-2">
-              <button
-                onClick={handlePickHistoryFolder}
-                className="rounded-lg border border-sv-border px-3 py-1.5 text-xs hover:bg-sv-surface-2"
-              >
-                Browse…
-              </button>
-            </div>
-          </Row>
-          {(dataLoc.models_root || dataLoc.history_root) && (
-            <Row label="Reset to defaults" hint="Go back to C drive AppData">
-              <button
-                onClick={handleResetStorage}
-                className="rounded-lg border border-sv-border px-3 py-1.5 text-xs text-sv-muted hover:text-sv-bad"
-              >
-                Reset
-              </button>
-            </Row>
-          )}
         </Section>
 
         <Section title="System">

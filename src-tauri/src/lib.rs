@@ -50,6 +50,9 @@ pub struct RuntimeConfig {
     pub mode_api_key: String,  // for "api": optional (empty for local servers)
     // Behavior flags (Settings toggles).
     pub toggle_mode: bool, // double-tap the hotkey to lock recording on
+    // 0–100 (Discord-style): how loud a sound must be to count as speech.
+    // Quieter audio (wind, hum) is trimmed before transcription. See audio/gate.rs.
+    pub input_sensitivity: u32,
     // Per-app profiles: when the focused app matches, that profile's AI mode
     // overrides the globally active one. Resolved by the frontend (like
     // set_active_mode) so Rust never needs the mode/provider tables.
@@ -88,6 +91,7 @@ impl Default for RuntimeConfig {
             mode_base_url: String::new(),
             mode_api_key: String::new(),
             toggle_mode: true,
+            input_sensitivity: 50,
             app_profiles: Vec::new(),
         }
     }
@@ -212,9 +216,14 @@ fn set_text_replacements(
 }
 
 #[tauri::command]
-fn set_behavior(state: State<AppState>, toggle_mode: bool) -> Result<(), String> {
+fn set_behavior(
+    state: State<AppState>,
+    toggle_mode: bool,
+    input_sensitivity: u32,
+) -> Result<(), String> {
     let mut cfg = state.config.lock().map_err(|e| e.to_string())?;
     cfg.toggle_mode = toggle_mode;
+    cfg.input_sensitivity = input_sensitivity.min(100);
     Ok(())
 }
 
@@ -223,6 +232,16 @@ fn set_app_profiles(state: State<AppState>, profiles: Vec<AppProfile>) -> Result
     let mut cfg = state.config.lock().map_err(|e| e.to_string())?;
     cfg.app_profiles = profiles;
     Ok(())
+}
+
+#[tauri::command]
+fn set_autostart(enabled: bool) -> Result<(), String> {
+    system::autostart::set_enabled(enabled)
+}
+
+#[tauri::command]
+fn get_autostart() -> bool {
+    system::autostart::is_enabled()
 }
 
 #[tauri::command]
@@ -576,6 +595,16 @@ pub fn run() {
     );
 
     tauri::Builder::default()
+        // Must be the first plugin: launching the app while it's already
+        // running focuses the existing dashboard instead of starting a second
+        // process (which would mean two overlays, two hotkey handlers…).
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(win) = app.get_webview_window("main") {
+                let _ = win.show();
+                let _ = win.unminimize();
+                let _ = win.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(
@@ -587,6 +616,17 @@ pub fn run() {
                 .build(),
         )
         .manage(AppState::default())
+        // Closing the dashboard hides it to the tray instead of destroying the
+        // window — otherwise "Open Dashboard" (tray) has nothing left to show
+        // and the app can never surface its UI again without a restart.
+        .on_window_event(|window, event| {
+            if window.label() == "main" {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+        })
         .setup(|app| {
             let _ = registry::ensure_dirs();
             tray::build_tray(app.handle())?;
@@ -616,6 +656,8 @@ pub fn run() {
             set_text_replacements,
             set_behavior,
             set_app_profiles,
+            set_autostart,
+            get_autostart,
             set_hotkey,
             set_active_mode,
             ollama_status,

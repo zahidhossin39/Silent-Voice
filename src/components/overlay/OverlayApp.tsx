@@ -8,12 +8,16 @@ import {
 } from "../../services/tauriBridge";
 import type { RecordingState } from "../../types";
 
-// Opaque pill window (matches overlay.rs). The window is sized to the pill and
-// resized between idle and recording. Center-anchored resize (Rust) + shadow
-// off keeps it exactly where you drag it (no drift).
-const IDLE = { w: 54, h: 20 };
-const ACTIVE = { w: 96, h: 26 };
+// Opaque pill window (matches overlay.rs). The window stays a FIXED size for
+// all dictation states — resizing a WebView2 window is unavoidably janky on
+// Windows, so every idle/recording/processing transition is a CSS animation
+// inside the pill instead. Only the right-click menu changes the window size.
+const PILL = { w: 58, h: 22 };
 const MENU = { w: 190, h: 152 };
+
+// Near-black pill fill (darker than the app surface) — matches the reference
+// look: compact dark capsule + subtle outline + orange waveform.
+const PILL_BG = "#0e1116";
 
 export default function OverlayApp() {
   const [state, setState] = useState<RecordingState>("idle");
@@ -21,8 +25,8 @@ export default function OverlayApp() {
 
   // Opaque dark fill (this window is the pill; DWM rounds its corners).
   useEffect(() => {
-    document.documentElement.style.background = "var(--color-sv-surface)";
-    document.body.style.background = "var(--color-sv-surface)";
+    document.documentElement.style.background = PILL_BG;
+    document.body.style.background = PILL_BG;
     document.body.style.overflow = "hidden";
   }, []);
 
@@ -36,12 +40,11 @@ export default function OverlayApp() {
     };
   }, []);
 
-  // Resize the window: small idle, expanded while recording, large for menu.
+  // Window resize only when the menu opens/closes — never for state changes.
   useEffect(() => {
     if (menuOpen) setOverlaySize(MENU.w, MENU.h);
-    else if (state === "idle") setOverlaySize(IDLE.w, IDLE.h);
-    else setOverlaySize(ACTIVE.w, ACTIVE.h);
-  }, [state, menuOpen]);
+    else setOverlaySize(PILL.w, PILL.h);
+  }, [menuOpen]);
 
   return (
     <div
@@ -50,7 +53,9 @@ export default function OverlayApp() {
         e.preventDefault();
         setMenuOpen(true);
       }}
-      className="flex h-full w-full items-center justify-center overflow-hidden bg-sv-surface"
+      className={`flex h-full w-full items-center justify-center overflow-hidden ${menuOpen ? "" : "rounded-full border border-[#262c3d]"
+        }`}
+      style={{ background: PILL_BG }}
     >
       {menuOpen ? (
         <ContextMenu
@@ -101,9 +106,8 @@ function MenuButton({
   return (
     <button
       onClick={onClick}
-      className={`block w-full px-3 py-2 text-left text-xs hover:bg-sv-surface-2 ${
-        danger ? "text-sv-bad" : "text-sv-text"
-      }`}
+      className={`block w-full px-3 py-2 text-left text-xs hover:bg-sv-surface-2 ${danger ? "text-sv-bad" : "text-sv-text"
+        }`}
     >
       {label}
     </button>

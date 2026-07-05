@@ -6,12 +6,15 @@ pub const OVERLAY_LABEL: &str = "overlay";
 // OPAQUE pill window. Opaque is the reliability choice: a transparent
 // always-on-top WebView2 window gets occlusion-blanked (vanishes) on Windows,
 // and the documented occlusion-disable browser arg breaks rendering here. The
-// window is sized to the pill and resized between idle/recording. Shadow is OFF
-// — the drop shadow inflated size measurements and made the pill drift
-// downward each resize. Win11 corners are rounded via DWM so it still looks
-// like a pill.
-const OVERLAY_W: f64 = 54.0;
-const OVERLAY_H: f64 = 20.0;
+// window is a FIXED size for idle/recording/processing — WebView2 window
+// resizing is inherently janky/flickery on Windows (tauri#4236, #6322), so all
+// state transitions are CSS animations INSIDE the window instead. Only the
+// right-click menu changes the window size (a discrete popup, snapped
+// instantly). Shadow is OFF — the drop shadow inflated size measurements and
+// made the pill drift downward each resize. Win11 corners are rounded via DWM
+// so it still looks like a pill.
+const OVERLAY_W: f64 = 68.0;
+const OVERLAY_H: f64 = 22.0;
 const BOTTOM_MARGIN: f64 = 72.0;
 
 /// Create the always-visible floating pill window.
@@ -107,43 +110,27 @@ fn apply_size(win: &tauri::WebviewWindow, width: f64, height: f64, center: (i32,
     ));
 }
 
-/// Smoothly animate the overlay to a target size, center-anchored, with an
-/// ease-out curve — so idle↔recording expands/contracts in place instead of
-/// snapping (which looked like a glitch). A generation counter supersedes an
-/// in-flight tween if a newer resize arrives.
+/// Resize the overlay window, center-anchored, in ONE step. Window resizing
+/// on Windows/WebView2 repaints so slowly that any multi-step tween reads as
+/// flicker (tauri#4236, #6322) — smooth state transitions are done with CSS
+/// inside the fixed-size pill instead; this only fires for the right-click
+/// menu, where an instant snap looks like a popup opening.
 pub fn animate_resize(app: &AppHandle, target_w: f64, target_h: f64) {
-    let gen = app
-        .try_state::<AppState>()
-        .map(|s| s.overlay_resize_gen.fetch_add(1, Ordering::SeqCst) + 1)
-        .unwrap_or(0);
-    let app = app.clone();
-    tauri::async_runtime::spawn(async move {
-        let Some(win) = app.get_webview_window(OVERLAY_LABEL) else {
-            return;
-        };
-        let Some(center) = current_center(&win) else {
-            return;
-        };
-        let (sw, sh) = current_logical_size(&win);
-        if (sw - target_w).abs() < 1.0 && (sh - target_h).abs() < 1.0 {
-            return;
-        }
-        const STEPS: u32 = 10;
-        for i in 1..=STEPS {
-            if app
-                .try_state::<AppState>()
-                .map(|s| s.overlay_resize_gen.load(Ordering::SeqCst) != gen)
-                .unwrap_or(false)
-            {
-                return;
-            }
-            let t = i as f64 / STEPS as f64;
-            let e = 1.0 - (1.0 - t).powi(3); // ease-out cubic
-            apply_size(&win, sw + (target_w - sw) * e, sh + (target_h - sh) * e, center);
-            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-        }
-        apply_size(&win, target_w, target_h, center);
-    });
+    // Bump the generation so any legacy in-flight tween exits immediately.
+    if let Some(state) = app.try_state::<AppState>() {
+        state.overlay_resize_gen.fetch_add(1, Ordering::SeqCst);
+    }
+    let Some(win) = app.get_webview_window(OVERLAY_LABEL) else {
+        return;
+    };
+    let Some(center) = current_center(&win) else {
+        return;
+    };
+    let (sw, sh) = current_logical_size(&win);
+    if (sw - target_w).abs() < 1.0 && (sh - target_h).abs() < 1.0 {
+        return;
+    }
+    apply_size(&win, target_w, target_h, center);
 }
 
 /// Show the overlay and clear the user-hidden flag.

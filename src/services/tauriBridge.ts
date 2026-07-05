@@ -177,13 +177,36 @@ export async function setTextReplacements(
   }
 }
 
-// Push behavior toggles (double-tap lock).
-export async function setBehavior(toggleMode: boolean): Promise<void> {
+// Push behavior settings (double-tap lock, input sensitivity 0-100).
+export async function setBehavior(
+  toggleMode: boolean,
+  inputSensitivity: number
+): Promise<void> {
   if (!isTauri()) return;
   try {
-    await invoke<void>("set_behavior", { toggleMode });
+    await invoke<void>("set_behavior", { toggleMode, inputSensitivity });
   } catch (e) {
     console.warn("set_behavior failed", e);
+  }
+}
+
+// Add/remove the per-user Windows Run-key entry ("Launch at startup").
+export async function setAutostart(enabled: boolean): Promise<void> {
+  if (!isTauri()) return;
+  try {
+    await invoke<void>("set_autostart", { enabled });
+  } catch (e) {
+    console.warn("set_autostart failed", e);
+  }
+}
+
+/** Whether the Run-key entry actually exists right now (registry truth). */
+export async function getAutostart(): Promise<boolean> {
+  if (!isTauri()) return false;
+  try {
+    return await invoke<boolean>("get_autostart");
+  } catch {
+    return false;
   }
 }
 

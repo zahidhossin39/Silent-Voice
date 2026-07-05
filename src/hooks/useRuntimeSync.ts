@@ -8,6 +8,7 @@ import {
   setTextReplacements,
   setBehavior,
   setAppProfiles,
+  setAutostart,
 } from "../services/tauriBridge";
 import type { ResolvedAppProfile } from "../services/tauriBridge";
 import type { Mode, ApiProvider } from "../types";
@@ -53,6 +54,8 @@ export function useRuntimeSync() {
   const snippets = useSettingsStore((s) => s.snippets);
   const appProfiles = useSettingsStore((s) => s.appProfiles);
   const toggleMode = useSettingsStore((s) => s.settings.toggle_mode);
+  const inputSensitivity = useSettingsStore((s) => s.settings.input_sensitivity);
+  const autoStart = useSettingsStore((s) => s.settings.auto_start);
   const overlayOpacity = useSettingsStore((s) => s.settings.overlay_opacity);
 
   useEffect(() => {
@@ -85,8 +88,12 @@ export function useRuntimeSync() {
   }, [snippets]);
 
   useEffect(() => {
-    setBehavior(toggleMode);
-  }, [toggleMode]);
+    setBehavior(toggleMode, inputSensitivity);
+  }, [toggleMode, inputSensitivity]);
+
+  useEffect(() => {
+    setAutostart(autoStart);
+  }, [autoStart]);
 
   // Resolve per-app profile rules to full mode configs and push to Rust.
   useEffect(() => {
