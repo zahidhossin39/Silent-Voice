@@ -664,6 +664,19 @@ All toggles live in Settings and are pushed to Rust via `set_behavior` /
     fixes. Without it, anything on line 2+ selects the wrong chars.
   - **Popup z-order:** show_popup() forces SetWindowPos(HWND_TOPMOST) — an
     always-on-top target app otherwise sits above the popup and eats clicks.
+  - **Popup design (v2):** WHITE card (user request), 1px #dcdcdc border,
+    rounded corners via SetWindowRgn, opens ABOVE the word (falls back below
+    near the screen top). Underlines are STRAIGHT 2px lines (zigzag removed,
+    user request); spelling red #EF4444, grammar blue #3B82F6. Note: curly
+    squiggles seen alongside ours in browsers/Electron are the HOST app's
+    native spellchecker — not ours, can't be removed from our side.
+  - **Dismiss / Add to dictionary rows** (below the suggestions, muted):
+    channel enum is `OverlayAction::{Fix, Dismiss, AddToVocab}`. Dismiss =
+    session-only in-memory HashSet in the watcher. AddToVocab additionally
+    emits `proofread://add-vocab` → useRuntimeSync listener appends to
+    settings.custom_vocabulary (deduped case-insensitive, persists, and
+    thus also primes Whisper). PRODUCT DECISION: fixes never auto-add to
+    vocabulary — adding is always an explicit user click.
   - Verified end-to-end via automated real-UI tests: WPF TextBox
     (single-line + multi-line CRLF), Edge/Chromium textarea, Notepad
     squiggles. WinForms TextBox exposes NO UIA TextPattern — correctly
