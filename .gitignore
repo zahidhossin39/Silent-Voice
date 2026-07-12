@@ -27,3 +27,4 @@ Thumbs.db
 # Logs
 *.log
 npm-debug.log*
+uia-probe/target
