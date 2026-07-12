@@ -296,7 +296,7 @@ unsafe fn paint_popup(hwnd: HWND) {
 
         // Draw 'Add to Dictionary'
         let is_add_hovered = hover == 100;
-        let add_color = if is_add_hovered { 0x001673f9 } else { 0x00303030 };
+        let add_color = if is_add_hovered { 0x00f6823b } else { 0x00303030 };
 
         SelectObject(hdc, font_footer_glyph);
         SetTextColor(hdc, COLORREF(add_color));
@@ -309,7 +309,7 @@ unsafe fn paint_popup(hwnd: HWND) {
 
         // Draw 'Dismiss'
         let is_dismiss_hovered = hover == 101;
-        let dismiss_color = if is_dismiss_hovered { 0x001673f9 } else { 0x00303030 };
+        let dismiss_color = if is_dismiss_hovered { 0x004444ef } else { 0x00303030 };
 
         SelectObject(hdc, font_footer_glyph);
         SetTextColor(hdc, COLORREF(dismiss_color));
@@ -322,7 +322,7 @@ unsafe fn paint_popup(hwnd: HWND) {
     }
 
     // 8. Draw 1px border around the entire popup card
-    let border_brush = CreateSolidBrush(COLORREF(0x00e0e0e0));
+    let border_brush = CreateSolidBrush(COLORREF(0x001673f9));
     FillRect(hdc, &RECT { left: 0, top: 0, right: POPUP_W, bottom: 1 }, border_brush);
     FillRect(hdc, &RECT { left: 0, top: height - 1, right: POPUP_W, bottom: height }, border_brush);
     FillRect(hdc, &RECT { left: 0, top: 0, right: 1, bottom: height }, border_brush);
