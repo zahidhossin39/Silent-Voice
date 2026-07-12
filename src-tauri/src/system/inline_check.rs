@@ -10,8 +10,11 @@
 // - GetBoundingRectangles returns only the VISIBLE rects (scrolled-away text
 //   yields none), so clipping is free.
 
+use super::squiggle::{FixRequest, SquiggleInfo};
 use crate::proofread;
 use crate::AppState;
+use enigo::{Direction::Release, Enigo, Key, Keyboard, Settings as EnigoSettings};
+use std::sync::mpsc::channel;
 use std::time::Duration;
 use tauri::{AppHandle, Manager};
 use windows::core::Interface;
@@ -66,7 +69,8 @@ fn watcher(app: AppHandle) {
                     return;
                 }
             };
-        let overlay_tx = super::squiggle::spawn();
+        let (fix_tx, fix_rx) = channel::<FixRequest>();
+        let overlay_tx = super::squiggle::spawn(fix_tx);
         let my_pid = GetCurrentProcessId();
 
         let mut last_text = String::new();
@@ -74,6 +78,20 @@ fn watcher(app: AppHandle) {
         let mut was_active = false;
         loop {
             std::thread::sleep(Duration::from_millis(POLL_MS));
+
+            // Apply any clicked suggestion first, then force a re-lint so the
+            // squiggle disappears on the next poll instead of lingering.
+            while let Ok(req) = fix_rx.try_recv() {
+                crate::logging::log_info(
+                    "inline_check",
+                    &format!("fix request: {:?} -> {:?}", req.expected, req.replacement),
+                );
+                if let Err(e) = apply_fix(&automation, &req) {
+                    crate::logging::log_error("inline_check", &format!("fix failed: {e}"));
+                }
+                last_text.clear();
+                issues.clear();
+            }
 
             let (enabled, vocabulary) = {
                 let state = app.state::<AppState>();
@@ -94,7 +112,7 @@ fn watcher(app: AppHandle) {
                 continue;
             }
 
-            let squiggles = poll_once(
+            let (squiggles, reason) = poll_once(
                 &automation,
                 my_pid,
                 &vocabulary,
@@ -102,6 +120,7 @@ fn watcher(app: AppHandle) {
                 &mut issues,
             );
             let active = !squiggles.is_empty();
+            let _ = reason;
             if active || was_active {
                 let _ = overlay_tx.send(squiggles);
             }
@@ -116,7 +135,7 @@ fn poll_once(
     vocabulary: &str,
     last_text: &mut String,
     issues: &mut Vec<proofread::ProofIssue>,
-) -> Vec<super::squiggle::Squiggle> {
+) -> (Vec<SquiggleInfo>, &'static str) {
     unsafe {
         // Never squiggle our own dashboard (its WebView2 child has a different
         // pid, so check the foreground WINDOW's owner, not the element's).
@@ -124,89 +143,224 @@ fn poll_once(
         let mut fg_pid = 0u32;
         GetWindowThreadProcessId(fg, Some(&mut fg_pid));
         if fg_pid == my_pid {
-            return Vec::new();
+            return (Vec::new(), "own process foreground");
         }
 
         let el: IUIAutomationElement = match automation.GetFocusedElement() {
             Ok(e) => e,
-            Err(_) => return Vec::new(),
+            Err(_) => return (Vec::new(), "no focused element"),
         };
         let pid = el.CurrentProcessId().unwrap_or(0) as u32;
         if pid == my_pid {
-            return Vec::new();
+            return (Vec::new(), "own element focused");
         }
         if el.CurrentIsPassword().map(|b| b.as_bool()).unwrap_or(false) {
-            return Vec::new();
+            return (Vec::new(), "password field");
         }
         let exe = process_name(pid);
         if IGNORE_EXES.contains(&exe.as_str()) {
-            return Vec::new();
+            return (Vec::new(), "ignored exe");
         }
         let pattern: IUIAutomationTextPattern = match el
             .GetCurrentPattern(UIA_TextPatternId)
             .and_then(|unk| unk.cast())
         {
             Ok(p) => p,
-            Err(_) => return Vec::new(),
+            Err(_) => return (Vec::new(), "no text pattern"),
         };
         let doc = match pattern.DocumentRange() {
             Ok(d) => d,
-            Err(_) => return Vec::new(),
+            Err(_) => return (Vec::new(), "no document range"),
         };
         let text = match doc.GetText(MAX_TEXT) {
             Ok(t) => t.to_string(),
-            Err(_) => return Vec::new(),
+            Err(_) => return (Vec::new(), "GetText failed"),
         };
         if text.trim().is_empty() {
             last_text.clear();
             issues.clear();
-            return Vec::new();
+            return (Vec::new(), "empty text");
         }
         // Re-lint only when the text actually changed; rects refresh every poll.
         if text != *last_text {
             *issues = proofread::check(&text, vocabulary);
             *last_text = text;
         }
+        let chars: Vec<char> = last_text.chars().collect();
         let mut squiggles = Vec::new();
         for issue in issues.iter() {
-            if let Ok(rects) = issue_rects(&doc, issue) {
+            if let Some(rects) = issue_rects(&doc, &chars, issue) {
+                let expected: String = chars
+                    .get(issue.start..issue.end)
+                    .map(|c| c.iter().collect())
+                    .unwrap_or_default();
                 for (x, y, w, h) in rects {
                     if w < 2.0 || h < 2.0 {
                         continue;
                     }
-                    squiggles.push(super::squiggle::Squiggle {
+                    // Two lints on the same span (e.g. spelling + style) would
+                    // stack identical strips — keep the first.
+                    if squiggles
+                        .iter()
+                        .any(|s: &SquiggleInfo| s.x == x as i32 && s.y == y as i32 && s.w == w as i32)
+                    {
+                        continue;
+                    }
+                    squiggles.push(SquiggleInfo {
                         x: x as i32,
-                        y: (y + h - 2.0) as i32,
+                        y: y as i32,
                         w: w as i32,
+                        h: h as i32,
                         spelling: issue.kind.contains("Spell"),
+                        message: issue.message.clone(),
+                        suggestions: issue.suggestions.clone(),
+                        start: issue.start,
+                        end: issue.end,
+                        expected: expected.clone(),
                     });
                 }
             }
         }
-        squiggles
+        if squiggles.is_empty() {
+            (squiggles, "no visible issue rects")
+        } else {
+            (squiggles, "active")
+        }
     }
+}
+
+/// Replace the flagged char range in the focused field with the clicked
+/// suggestion: select the range via UIA, then type the replacement (typed
+/// text replaces a selection — preserves the app's undo stack and never
+/// touches the clipboard). The popup is WS_EX_NOACTIVATE, so the target
+/// field still owns focus and receives the synthetic input.
+fn apply_fix(automation: &IUIAutomation, req: &FixRequest) -> Result<(), String> {
+    unsafe {
+        let el: IUIAutomationElement = automation
+            .GetFocusedElement()
+            .map_err(|e| format!("no focused element: {e}"))?;
+        let pattern: IUIAutomationTextPattern = el
+            .GetCurrentPattern(UIA_TextPatternId)
+            .and_then(|unk| unk.cast())
+            .map_err(|e| format!("no text pattern: {e}"))?;
+        let doc = pattern.DocumentRange().map_err(|e| e.to_string())?;
+
+        // The text may have changed between the popup opening and the click —
+        // verify the range still holds exactly the word we flagged.
+        let text = doc
+            .GetText(MAX_TEXT)
+            .map_err(|e| e.to_string())?
+            .to_string();
+        let chars: Vec<char> = text.chars().collect();
+        let current: String = chars
+            .get(req.start..req.end)
+            .map(|c| c.iter().collect())
+            .unwrap_or_default();
+        if current != req.expected {
+            return Err(format!(
+                "text changed under fix (expected {:?}, found {:?})",
+                req.expected, current
+            ));
+        }
+
+        let r = range_for(&doc, &chars, req.start, req.end)
+            .ok_or("could not build a verified range for the fix")?;
+        r.Select().map_err(|e| format!("select failed: {e}"))?;
+
+        // Let the selection settle before the synthetic keystrokes arrive
+        // (Chromium applies UIA selections asynchronously).
+        std::thread::sleep(Duration::from_millis(40));
+        let mut enigo =
+            Enigo::new(&EnigoSettings::default()).map_err(|e| e.to_string())?;
+        // A physically held Ctrl/Shift/Alt would turn the typed chars into
+        // shortcuts — release them before typing.
+        for key in [Key::Control, Key::Shift, Key::Alt] {
+            let _ = enigo.key(key, Release);
+        }
+        // Type char-by-char with a small gap: web apps drop synthetic input
+        // that arrives faster than their event loop reconciles.
+        for ch in req.replacement.chars() {
+            enigo.text(&ch.to_string()).map_err(|e| e.to_string())?;
+            std::thread::sleep(Duration::from_millis(8));
+        }
+        Ok(())
+    }
+}
+
+/// How many complete "\r\n" pairs sit fully before char index `idx`.
+/// Harper spans count CRLF as two chars; some UIA providers (WPF, RichEdit)
+/// move TextUnit_Character over it as ONE — offsets drift by one per line.
+fn crlf_pairs_before(chars: &[char], idx: usize) -> usize {
+    let mut n = 0;
+    let mut i = 0;
+    while i + 1 < idx.min(chars.len()) {
+        if chars[i] == '\r' && chars[i + 1] == '\n' {
+            n += 1;
+            i += 2;
+        } else {
+            i += 1;
+        }
+    }
+    n
+}
+
+/// Build a UIA range for chars `start..end`, verified by reading the range's
+/// text back and comparing to what we flagged. Tries the CRLF-collapsed
+/// offset first (WPF/RichEdit behavior), then the raw char offset.
+fn range_for(
+    doc: &IUIAutomationTextRange,
+    chars: &[char],
+    start: usize,
+    end: usize,
+) -> Option<IUIAutomationTextRange> {
+    let expected: String = chars.get(start..end)?.iter().collect();
+    let d_start = crlf_pairs_before(chars, start);
+    let d_end = crlf_pairs_before(chars, end);
+    let mut candidates = vec![(start - d_start, end - d_end)];
+    if d_start != 0 || d_end != 0 {
+        candidates.push((start, end));
+    }
+    unsafe {
+        for (s, e) in candidates {
+            let Ok(r) = doc.Clone() else { continue };
+            if r.MoveEndpointByRange(
+                TextPatternRangeEndpoint_End,
+                doc,
+                TextPatternRangeEndpoint_Start,
+            )
+            .is_err()
+            {
+                continue;
+            }
+            if r.MoveEndpointByUnit(TextPatternRangeEndpoint_Start, TextUnit_Character, s as i32)
+                .is_err()
+                || r.MoveEndpointByUnit(
+                    TextPatternRangeEndpoint_End,
+                    TextUnit_Character,
+                    (e - s) as i32,
+                )
+                .is_err()
+            {
+                continue;
+            }
+            if let Ok(got) = r.GetText(256) {
+                if got.to_string() == expected {
+                    return Some(r);
+                }
+            }
+        }
+    }
+    None
 }
 
 /// Map one issue's char range to its visible screen rectangles.
 fn issue_rects(
     doc: &IUIAutomationTextRange,
+    chars: &[char],
     issue: &proofread::ProofIssue,
-) -> windows::core::Result<Vec<(f64, f64, f64, f64)>> {
-    unsafe {
-        let r = doc.Clone()?;
-        r.MoveEndpointByRange(TextPatternRangeEndpoint_End, doc, TextPatternRangeEndpoint_Start)?;
-        r.MoveEndpointByUnit(
-            TextPatternRangeEndpoint_Start,
-            TextUnit_Character,
-            issue.start as i32,
-        )?;
-        r.MoveEndpointByUnit(
-            TextPatternRangeEndpoint_End,
-            TextUnit_Character,
-            (issue.end - issue.start) as i32,
-        )?;
-        Ok(read_rects(r.GetBoundingRectangles()?))
-    }
+) -> Option<Vec<(f64, f64, f64, f64)>> {
+    let r = range_for(doc, chars, issue.start, issue.end)?;
+    unsafe { r.GetBoundingRectangles().ok().map(read_rects) }
 }
 
 fn read_rects(sa: *mut SAFEARRAY) -> Vec<(f64, f64, f64, f64)> {
