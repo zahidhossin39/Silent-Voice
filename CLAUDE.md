@@ -639,6 +639,12 @@ All toggles live in Settings and are pushed to Rust via `set_behavior` /
     the element's — our dashboard's WebView2 child has a different pid),
     password fields (`CurrentIsPassword`), terminals + password managers
     (IGNORE_EXES), and text > 6000 chars.
+  - **Editability gate (do not remove):** the focused element must also
+    expose a writable ValuePattern, otherwise read-only page content
+    (YouTube titles, article text — anything with TextPattern but no
+    ValuePattern) gets squiggled while browsing. Empirically verified:
+    Notepad (Document), WPF TextBox (Edit), Chromium textarea/URL bar
+    (Edit) all expose ValuePattern; read-only DOM text does not.
   - Wiring: `RuntimeConfig.inline_proofread` (default ON) ← `set_behavior`
     ← Settings → Dictation → "Inline proofreading" toggle
     (`settings.inline_proofread`).
