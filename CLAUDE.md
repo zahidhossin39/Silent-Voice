@@ -670,11 +670,15 @@ All toggles live in Settings and are pushed to Rust via `set_behavior` /
     user request); spelling red #EF4444, grammar blue #3B82F6. Note: curly
     squiggles seen alongside ours in browsers/Electron are the HOST app's
     native spellchecker — not ours, can't be removed from our side.
-  - **Popup v3:** colored category header (8px dot + label: red "Spelling" /
-    blue "Grammar" / orange "Dictionary"), suggestion hover = solid orange
-    fill with white text. "Add to dictionary" opens a PICKER (popup state
+  - **Popup v4 (current, from a user-provided mockup):** bold "Spelling
+    Insights"/"Grammar Insights" title + subtitle, 48px suggestion rows with
+    rounded PEACH hover (#FAE0CE) and thin separators, gray FOOTER BAR with
+    inline "Add to Dictionary" (Segoe MDL2 book glyph) and "Dismiss" (X
+    glyph) side by side. Hit-testing is x+y aware (`hit_at`; codes 100/101
+    for footer actions). "Add to Dictionary" opens a PICKER (popup state
     machine, `PICKER` AtomicBool in squiggle.rs): flagged word + suggestions
-    listed, click one → that word is what gets added — user chooses.
+    listed, click one → that word is what gets added — user chooses. Picker
+    has no footer.
   - **Repetition lint** (proofread.rs): consecutive duplicate words
     ("pop-up pop-up", case-insensitive, whitespace-separated) flagged with
     kind "Repetition", suggestion collapses to a single occurrence. Skipped
