@@ -80,6 +80,69 @@ pub fn check(text: &str, vocabulary: &str) -> Vec<ProofIssue> {
                 .collect(),
         })
         .collect();
+    // Scan text for consecutive duplicate words
+    let chars: Vec<char> = text.chars().collect();
+    struct Word {
+        start: usize,
+        end: usize,
+        text: String,
+    }
+    let mut words = Vec::new();
+    let mut in_word = false;
+    let mut word_start = 0;
+    for (idx, &c) in chars.iter().enumerate() {
+        let is_word_char = c.is_alphanumeric() || c == '\'' || c == '-';
+        if is_word_char {
+            if !in_word {
+                word_start = idx;
+                in_word = true;
+            }
+        } else {
+            if in_word {
+                let word_text: String = chars[word_start..idx].iter().collect();
+                words.push(Word {
+                    start: word_start,
+                    end: idx,
+                    text: word_text,
+                });
+                in_word = false;
+            }
+        }
+    }
+    if in_word {
+        let word_text: String = chars[word_start..chars.len()].iter().collect();
+        words.push(Word {
+            start: word_start,
+            end: chars.len(),
+            text: word_text,
+        });
+    }
+
+    // Find duplicate pairs
+    for i in 0..words.len().saturating_sub(1) {
+        let w1 = &words[i];
+        let w2 = &words[i + 1];
+        if w1.text.to_lowercase() == w2.text.to_lowercase() {
+            // Check if they are separated only by whitespace (spaces, tabs, newlines)
+            let sep_slice = &chars[w1.end..w2.start];
+            if !sep_slice.is_empty() && sep_slice.iter().all(|&c| c == ' ' || c == '\t' || c == '\n' || c == '\r') {
+                let start = w1.start;
+                let end = w2.end;
+                // Skip adding it if any existing Harper issue already overlaps that exact range (avoid duplicates)
+                let overlaps = issues.iter().any(|hi| hi.start < end && start < hi.end);
+                if !overlaps {
+                    issues.push(ProofIssue {
+                        start,
+                        end,
+                        message: format!("Repeated word: '{}'", w1.text),
+                        kind: "Repetition".to_string(),
+                        suggestions: vec![w1.text.clone()],
+                    });
+                }
+            }
+        }
+    }
+
     issues.sort_by_key(|i| i.start);
     issues
 }
@@ -111,5 +174,46 @@ mod tests {
         let issues = check("This sentence is perfectly fine.", "");
         assert!(issues.is_empty(), "unexpected issues: {:?}",
             issues.iter().map(|i| &i.message).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn test_repeated_word_the_the() {
+        let issues = check("the the cat sat", "");
+        let rep_issues: Vec<_> = issues.iter().filter(|i| i.kind == "Repetition").collect();
+        assert_eq!(rep_issues.len(), 1);
+        assert_eq!(rep_issues[0].start, 0);
+        assert_eq!(rep_issues[0].end, 7);
+        assert!(rep_issues[0].suggestions.contains(&"the".to_string()));
+    }
+
+    #[test]
+    fn test_repeated_word_popup() {
+        let issues = check("my pop-up pop-up window", "");
+        let rep_issues: Vec<_> = issues.iter().filter(|i| i.kind == "Repetition").collect();
+        assert_eq!(rep_issues.len(), 1);
+        assert_eq!(rep_issues[0].start, 3);
+        assert_eq!(rep_issues[0].end, 16);
+        assert_eq!(rep_issues[0].message, "Repeated word: 'pop-up'");
+        assert_eq!(rep_issues[0].suggestions, vec!["pop-up".to_string()]);
+    }
+
+    #[test]
+    fn test_repeated_word_clean() {
+        let issues = check("this sentence is clean", "");
+        let rep_issues: Vec<_> = issues.iter().filter(|i| i.kind == "Repetition").collect();
+        assert!(rep_issues.is_empty());
+    }
+
+    #[test]
+    fn test_repeated_word_case_insensitive() {
+        let issues = check("The the cat sat", "");
+        let rep_issues: Vec<_> = issues.iter().filter(|i| i.kind == "Repetition").collect();
+        assert_eq!(rep_issues.len(), 1);
+        assert_eq!(rep_issues[0].start, 0);
+        assert_eq!(rep_issues[0].end, 7);
+        assert!(
+            rep_issues[0].suggestions.contains(&"The".to_string())
+                || rep_issues[0].suggestions.contains(&"the".to_string())
+        );
     }
 }

@@ -14,7 +14,7 @@
 // thread, which owns the UIA objects (COM apartment rules: don't touch UIA
 // from this thread).
 
-use std::sync::atomic::{AtomicI32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
@@ -27,7 +27,7 @@ use windows::Win32::Graphics::Gdi::{
     CreateSolidBrush, DeleteDC, DeleteObject, EndPaint, FillRect, GetDC, InvalidateRect,
     ReleaseDC, SelectObject, SetBkMode, SetTextColor, TextOutW, AC_SRC_ALPHA, AC_SRC_OVER,
     BITMAPINFO, BITMAPINFOHEADER, BI_RGB, BLENDFUNCTION, DIB_RGB_COLORS, FW_NORMAL, FW_SEMIBOLD,
-    HBITMAP, HFONT, PAINTSTRUCT, TRANSPARENT, SetWindowRgn,
+    HBITMAP, HFONT, PAINTSTRUCT, TRANSPARENT, SetWindowRgn, CreatePen, Ellipse, PS_SOLID,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -47,17 +47,16 @@ const BLUE: u32 = 0xFF3B82F6; // grammar/style
 // Popup metrics/colors (GDI COLORREF is 0x00BBGGRR).
 const POPUP_W: i32 = 300;
 const PAD: i32 = 14;
+const HEADER_H: i32 = 20;
 const MSG_H: i32 = 20;
 const ROW_H: i32 = 38;
 const ACTION_H: i32 = 30;
-const ROWS_TOP: i32 = PAD + MSG_H + 12;
+const ROWS_TOP: i32 = PAD + HEADER_H + 2 + MSG_H + 12;
 const BG: u32 = 0x00ffffff; // white
-const ROW_HOVER_BG: u32 = 0x00f5ede3; // light warm
 const TXT_MUTED: u32 = 0x00707070;
 const TXT_MAIN: u32 = 0x001a1a1a;
 const TXT_ACCENT: u32 = 0x001673f9; // orange #f97316 as BGR
 const TXT_ACTION: u32 = 0x00909090;
-const TXT_ACTION_HOVER: u32 = 0x00404040;
 
 /// One flagged word occurrence on screen (word rect in physical pixels).
 #[derive(Clone, PartialEq)]
@@ -96,12 +95,22 @@ static POPUP_ROWS: OnceLock<Mutex<Vec<String>>> = OnceLock::new();
 static POPUP_MSG: OnceLock<Mutex<String>> = OnceLock::new();
 static HOVER_ROW: AtomicI32 = AtomicI32::new(-1);
 static CLICKED_ROW: AtomicI32 = AtomicI32::new(-1);
+static POPUP_SPELLING: AtomicBool = AtomicBool::new(false);
+static PICKER: AtomicBool = AtomicBool::new(false);
 
 fn popup_rows() -> &'static Mutex<Vec<String>> {
     POPUP_ROWS.get_or_init(|| Mutex::new(Vec::new()))
 }
 fn popup_msg() -> &'static Mutex<String> {
     POPUP_MSG.get_or_init(|| Mutex::new(String::new()))
+}
+
+fn get_popup_height(n_rows: i32, is_picker: bool) -> i32 {
+    if is_picker {
+        ROWS_TOP + n_rows * ROW_H + PAD
+    } else {
+        ROWS_TOP + n_rows * ROW_H + 9 + 2 * ACTION_H + PAD
+    }
 }
 
 fn row_at(y: i32) -> i32 {
@@ -111,6 +120,9 @@ fn row_at(y: i32) -> i32 {
         if y >= top && y < top + ROW_H {
             return i;
         }
+    }
+    if PICKER.load(Ordering::Relaxed) {
+        return -1;
     }
     let action_start = ROWS_TOP + n * ROW_H + 9;
     if y >= action_start && y < action_start + ACTION_H {
@@ -161,7 +173,8 @@ unsafe fn paint_popup(hwnd: HWND) {
     let message = popup_msg().lock().map(|m| m.clone()).unwrap_or_default();
     let hover = HOVER_ROW.load(Ordering::Relaxed);
     let n = rows.len() as i32;
-    let height = ROWS_TOP + n * ROW_H + 9 + 2 * ACTION_H + PAD;
+    let is_picker = PICKER.load(Ordering::Relaxed);
+    let height = get_popup_height(n, is_picker);
 
     let bg = CreateSolidBrush(COLORREF(BG));
     FillRect(hdc, &RECT { left: 0, top: 0, right: POPUP_W, bottom: height }, bg);
@@ -182,14 +195,48 @@ unsafe fn paint_popup(hwnd: HWND) {
     let font_row: HFONT = CreateFontW(
         -17, 0, 0, 0, FW_SEMIBOLD.0 as i32, 0, 0, 0, 0, 0, 0, 0, 0, w!("Segoe UI"),
     );
+    let font_hdr: HFONT = CreateFontW(
+        -13, 0, 0, 0, FW_SEMIBOLD.0 as i32, 0, 0, 0, 0, 0, 0, 0, 0, w!("Segoe UI"),
+    );
 
     let old = SelectObject(hdc, font_msg);
+
+    // Draw Header
+    let (hdr_label, hdr_color) = if is_picker {
+        ("Dictionary", TXT_ACCENT)
+    } else {
+        if POPUP_SPELLING.load(Ordering::Relaxed) {
+            ("Spelling", 0x004444ef)
+        } else {
+            ("Grammar", 0x00f6823b)
+        }
+    };
+
+    let dot_y_center = PAD + HEADER_H / 2;
+    let dot_brush = CreateSolidBrush(COLORREF(hdr_color));
+    let dot_pen = CreatePen(PS_SOLID, 1, COLORREF(hdr_color));
+    let old_brush = SelectObject(hdc, dot_brush);
+    let old_pen = SelectObject(hdc, dot_pen);
+    let _ = Ellipse(hdc, PAD, dot_y_center - 4, PAD + 8, dot_y_center + 4);
+    SelectObject(hdc, old_brush);
+    SelectObject(hdc, old_pen);
+    let _ = DeleteObject(dot_brush);
+    let _ = DeleteObject(dot_pen);
+
+    SelectObject(hdc, font_hdr);
+    SetTextColor(hdc, COLORREF(hdr_color));
+    let hdr_utf16: Vec<u16> = hdr_label.encode_utf16().collect();
+    let _ = TextOutW(hdc, PAD + 16, PAD + 2, &hdr_utf16);
+
+    // Draw Message
+    SelectObject(hdc, font_msg);
     SetTextColor(hdc, COLORREF(TXT_MUTED));
     let msg_utf16: Vec<u16> = message.encode_utf16().collect();
-    let _ = TextOutW(hdc, PAD, PAD, &msg_utf16);
+    let _ = TextOutW(hdc, PAD, PAD + HEADER_H + 2, &msg_utf16);
 
-    let sep_color = CreateSolidBrush(COLORREF(0x00e8e8e8));
-    let sep_y = PAD + MSG_H + 6;
+    // Draw Separator 1
+    let sep_color = CreateSolidBrush(COLORREF(0x00ececec));
+    let sep_y = PAD + HEADER_H + 2 + MSG_H + 6;
     FillRect(
         hdc,
         &RECT {
@@ -202,87 +249,93 @@ unsafe fn paint_popup(hwnd: HWND) {
     );
     let _ = DeleteObject(sep_color);
 
+    // Draw Suggestion rows
     SelectObject(hdc, font_row);
     for (i, row) in rows.iter().enumerate() {
         let top = ROWS_TOP + i as i32 * ROW_H;
-        if i as i32 == hover {
-            let hb = CreateSolidBrush(COLORREF(ROW_HOVER_BG));
+        let is_hovered = i as i32 == hover;
+        if is_hovered {
+            let hb = CreateSolidBrush(COLORREF(TXT_ACCENT)); // Solid orange
             FillRect(
                 hdc,
                 &RECT { left: 6, top, right: POPUP_W - 6, bottom: top + ROW_H },
                 hb,
             );
             let _ = DeleteObject(hb);
+            SetTextColor(hdc, COLORREF(0x00ffffff)); // White
+        } else {
+            SetTextColor(hdc, COLORREF(TXT_MAIN)); // Text main
         }
-        SetTextColor(hdc, COLORREF(if i as i32 == hover { TXT_ACCENT } else { TXT_MAIN }));
         let row_utf16: Vec<u16> = row.encode_utf16().collect();
         let text_y = top + (ROW_H - 22) / 2;
         let _ = TextOutW(hdc, PAD, text_y, &row_utf16);
     }
 
-    // Draw second separator: "after the suggestion rows, a second separator (0x00e8e8e8, 1px, PAD to POPUP_W-PAD, 4px below the last suggestion row)"
-    let sep2_color = CreateSolidBrush(COLORREF(0x00e8e8e8));
-    let sep2_y = ROWS_TOP + n * ROW_H + 4;
-    FillRect(
-        hdc,
-        &RECT {
-            left: PAD,
-            top: sep2_y,
-            right: POPUP_W - PAD,
-            bottom: sep2_y + 1,
-        },
-        sep2_color,
-    );
-    let _ = DeleteObject(sep2_color);
+    if !is_picker {
+        // Draw second separator
+        let sep2_color = CreateSolidBrush(COLORREF(0x00e8e8e8));
+        let sep2_y = ROWS_TOP + n * ROW_H + 4;
+        FillRect(
+            hdc,
+            &RECT {
+                left: PAD,
+                top: sep2_y,
+                right: POPUP_W - PAD,
+                bottom: sep2_y + 1,
+            },
+            sep2_color,
+        );
+        let _ = DeleteObject(sep2_color);
 
-    // Draw Action rows: "Dismiss" and "Add to dictionary"
-    // Style: font -14 Segoe UI regular, color 0x00909090; hovered: text 0x00404040, same light hover fill
-    SelectObject(hdc, font_msg); // -14 Segoe UI regular
-    let action_start = ROWS_TOP + n * ROW_H + 9;
+        // Draw Action rows
+        SelectObject(hdc, font_msg);
+        let action_start = ROWS_TOP + n * ROW_H + 9;
 
-    // Row n: Dismiss
-    {
-        let top = action_start;
-        if hover == n {
-            let hb = CreateSolidBrush(COLORREF(ROW_HOVER_BG));
-            FillRect(
-                hdc,
-                &RECT { left: 6, top, right: POPUP_W - 6, bottom: top + ACTION_H },
-                hb,
-            );
-            let _ = DeleteObject(hb);
-            SetTextColor(hdc, COLORREF(TXT_ACTION_HOVER));
-        } else {
-            SetTextColor(hdc, COLORREF(TXT_ACTION));
+        // Row n: Dismiss
+        {
+            let top = action_start;
+            if hover == n {
+                let hb = CreateSolidBrush(COLORREF(0x00f2f2f2));
+                FillRect(
+                    hdc,
+                    &RECT { left: 6, top, right: POPUP_W - 6, bottom: top + ACTION_H },
+                    hb,
+                );
+                let _ = DeleteObject(hb);
+                SetTextColor(hdc, COLORREF(0x00333333));
+            } else {
+                SetTextColor(hdc, COLORREF(TXT_ACTION));
+            }
+            let txt_utf16: Vec<u16> = "Dismiss".encode_utf16().collect();
+            let text_y = top + (ACTION_H - 16) / 2;
+            let _ = TextOutW(hdc, PAD, text_y, &txt_utf16);
         }
-        let txt_utf16: Vec<u16> = "Dismiss".encode_utf16().collect();
-        let text_y = top + (ACTION_H - 16) / 2;
-        let _ = TextOutW(hdc, PAD, text_y, &txt_utf16);
-    }
 
-    // Row n+1: Add to dictionary
-    {
-        let top = action_start + ACTION_H;
-        if hover == n + 1 {
-            let hb = CreateSolidBrush(COLORREF(ROW_HOVER_BG));
-            FillRect(
-                hdc,
-                &RECT { left: 6, top, right: POPUP_W - 6, bottom: top + ACTION_H },
-                hb,
-            );
-            let _ = DeleteObject(hb);
-            SetTextColor(hdc, COLORREF(TXT_ACTION_HOVER));
-        } else {
-            SetTextColor(hdc, COLORREF(TXT_ACTION));
+        // Row n+1: Add to dictionary
+        {
+            let top = action_start + ACTION_H;
+            if hover == n + 1 {
+                let hb = CreateSolidBrush(COLORREF(0x00f2f2f2));
+                FillRect(
+                    hdc,
+                    &RECT { left: 6, top, right: POPUP_W - 6, bottom: top + ACTION_H },
+                    hb,
+                );
+                let _ = DeleteObject(hb);
+                SetTextColor(hdc, COLORREF(0x00333333));
+            } else {
+                SetTextColor(hdc, COLORREF(TXT_ACTION));
+            }
+            let txt_utf16: Vec<u16> = "Add to dictionary".encode_utf16().collect();
+            let text_y = top + (ACTION_H - 16) / 2;
+            let _ = TextOutW(hdc, PAD, text_y, &txt_utf16);
         }
-        let txt_utf16: Vec<u16> = "Add to dictionary".encode_utf16().collect();
-        let text_y = top + (ACTION_H - 16) / 2;
-        let _ = TextOutW(hdc, PAD, text_y, &txt_utf16);
     }
 
     SelectObject(hdc, old);
     let _ = DeleteObject(font_msg);
     let _ = DeleteObject(font_row);
+    let _ = DeleteObject(font_hdr);
     let _ = EndPaint(hwnd, &ps);
 }
 
@@ -376,28 +429,67 @@ fn run(rx: Receiver<Vec<SquiggleInfo>>, action_tx: Sender<OverlayAction>) {
             let clicked = CLICKED_ROW.swap(-1, Ordering::Relaxed);
             if clicked >= 0 && popup.shown {
                 if let Some(info) = infos.get(popup.info_idx) {
-                    let n = popup_rows().lock().map(|r| r.len() as i32).unwrap_or(0);
-                    if clicked < n {
-                        if let Some(replacement) = info.suggestions.get(clicked as usize) {
-                            let _ = action_tx.send(OverlayAction::Fix {
-                                start: info.start,
-                                end: info.end,
-                                expected: info.expected.clone(),
-                                replacement: replacement.clone(),
-                            });
+                    let is_picker = PICKER.load(Ordering::Relaxed);
+                    if is_picker {
+                        let rows = popup_rows().lock().map(|r| r.clone()).unwrap_or_default();
+                        let n_rows = rows.len() as i32;
+                        if clicked < n_rows {
+                            if let Some(word) = rows.get(clicked as usize) {
+                                let _ = action_tx.send(OverlayAction::AddToVocab {
+                                    word: word.clone(),
+                                });
+                            }
                         }
-                    } else if clicked == n {
-                        let _ = action_tx.send(OverlayAction::Dismiss {
-                            word: info.expected.clone(),
-                        });
-                    } else if clicked == n + 1 {
-                        let _ = action_tx.send(OverlayAction::AddToVocab {
-                            word: info.expected.clone(),
-                        });
+                        hide_popup(&mut popup);
+                        hover_since = None;
+                    } else {
+                        let rows = popup_rows().lock().map(|r| r.clone()).unwrap_or_default();
+                        let n = rows.len() as i32;
+                        if clicked < n {
+                            if let Some(replacement) = info.suggestions.get(clicked as usize) {
+                                let _ = action_tx.send(OverlayAction::Fix {
+                                    start: info.start,
+                                    end: info.end,
+                                    expected: info.expected.clone(),
+                                    replacement: replacement.clone(),
+                                });
+                            }
+                            hide_popup(&mut popup);
+                            hover_since = None;
+                        } else if clicked == n {
+                            let _ = action_tx.send(OverlayAction::Dismiss {
+                                word: info.expected.clone(),
+                            });
+                            hide_popup(&mut popup);
+                            hover_since = None;
+                        } else if clicked == n + 1 {
+                            PICKER.store(true, Ordering::Relaxed);
+                            let mut picker_rows = vec![info.expected.clone()];
+                            picker_rows.extend(info.suggestions.iter().take(3).cloned());
+                            let message = "Add which word to the dictionary?".to_string();
+                            if let Ok(mut r) = popup_rows().lock() {
+                                *r = picker_rows.clone();
+                            }
+                            if let Ok(mut m) = popup_msg().lock() {
+                                *m = message;
+                            }
+                            HOVER_ROW.store(-1, Ordering::Relaxed);
+
+                            let n_rows = picker_rows.len() as i32;
+                            let height = get_popup_height(n_rows, true);
+                            let x = info.x;
+                            let mut y = info.y - height - 6;
+                            if y < 0 {
+                                y = info.y + info.h + SQUIGGLE_H + 2;
+                            }
+                            let _ = MoveWindow(popup.hwnd, x, y, POPUP_W, height, true);
+                            let rgn = CreateRoundRectRgn(0, 0, POPUP_W + 1, height + 1, 12, 12);
+                            let _ = SetWindowRgn(popup.hwnd, rgn, true);
+                            popup.rect = RECT { left: x, top: y, right: x + POPUP_W, bottom: y + height };
+                            let _ = InvalidateRect(popup.hwnd, None, true);
+                        }
                     }
                 }
-                hide_popup(&mut popup);
-                hover_since = None;
             }
 
             // Hover tracking.
@@ -470,9 +562,11 @@ unsafe fn show_popup(popup: &mut Popup, infos: &[SquiggleInfo], idx: usize) {
         *m = message;
     }
     HOVER_ROW.store(-1, Ordering::Relaxed);
+    PICKER.store(false, Ordering::Relaxed);
+    POPUP_SPELLING.store(info.spelling, Ordering::Relaxed);
 
     let n = rows.len() as i32;
-    let height = ROWS_TOP + n * ROW_H + 9 + 2 * ACTION_H + PAD;
+    let height = get_popup_height(n, false);
     let x = info.x;
     let mut y = info.y - height - 6;
     if y < 0 {
@@ -502,6 +596,7 @@ unsafe fn show_popup(popup: &mut Popup, infos: &[SquiggleInfo], idx: usize) {
 unsafe fn hide_popup(popup: &mut Popup) {
     let _ = ShowWindow(popup.hwnd, SW_HIDE);
     popup.shown = false;
+    PICKER.store(false, Ordering::Relaxed);
 }
 
 // ------------------------- squiggle strip drawing -------------------------
