@@ -639,12 +639,16 @@ All toggles live in Settings and are pushed to Rust via `set_behavior` /
     the element's — our dashboard's WebView2 child has a different pid),
     password fields (`CurrentIsPassword`), terminals + password managers
     (IGNORE_EXES), and text > 6000 chars.
-  - **Editability gate (do not remove):** the focused element must also
-    expose a writable ValuePattern, otherwise read-only page content
-    (YouTube titles, article text — anything with TextPattern but no
-    ValuePattern) gets squiggled while browsing. Empirically verified:
-    Notepad (Document), WPF TextBox (Edit), Chromium textarea/URL bar
-    (Edit) all expose ValuePattern; read-only DOM text does not.
+  - **Editability gate (do not remove) — two routes:** (A) if the focused
+    element exposes a ValuePattern, it's editable unless IsReadOnly=true
+    (Notepad, WPF TextBox, Chromium <textarea>/URL bar; read-only browser
+    Documents expose ValuePattern with IsReadOnly=true so YouTube/articles
+    are rejected). (B) contenteditable / rich editors (Claude desktop's
+    ProseMirror, Discord, Slack, WhatsApp) expose NO ValuePattern — for
+    these, editable iff the TextPattern's SupportedTextSelection != None.
+    NOTE: ProseMirror does NOT implement TextPattern2, so caret-based
+    detection (GetCaretRange) does not work there — don't reintroduce it.
+    Static read-only labels report SupportedTextSelection_None.
   - Wiring: `RuntimeConfig.inline_proofread` (default ON) ← `set_behavior`
     ← Settings → Dictation → "Inline proofreading" toggle
     (`settings.inline_proofread`).
