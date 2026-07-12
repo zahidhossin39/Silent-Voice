@@ -27,7 +27,8 @@ use windows::Win32::Graphics::Gdi::{
     CreateSolidBrush, DeleteDC, DeleteObject, EndPaint, FillRect, GetDC, InvalidateRect,
     ReleaseDC, SelectObject, SetBkMode, SetTextColor, TextOutW, AC_SRC_ALPHA, AC_SRC_OVER,
     BITMAPINFO, BITMAPINFOHEADER, BI_RGB, BLENDFUNCTION, DIB_RGB_COLORS, FW_NORMAL, FW_SEMIBOLD,
-    HBITMAP, HFONT, PAINTSTRUCT, TRANSPARENT, SetWindowRgn, CreatePen, Ellipse, PS_SOLID,
+    FW_BOLD, HBITMAP, HFONT, PAINTSTRUCT, TRANSPARENT, SetWindowRgn, CreatePen, Ellipse, PS_SOLID,
+    RoundRect,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -45,18 +46,13 @@ const RED: u32 = 0xFFEF4444; // spelling (premultiplied BGRA as 0xAARRGGBB)
 const BLUE: u32 = 0xFF3B82F6; // grammar/style
 
 // Popup metrics/colors (GDI COLORREF is 0x00BBGGRR).
-const POPUP_W: i32 = 300;
-const PAD: i32 = 14;
-const HEADER_H: i32 = 20;
-const MSG_H: i32 = 20;
-const ROW_H: i32 = 38;
-const ACTION_H: i32 = 30;
-const ROWS_TOP: i32 = PAD + HEADER_H + 2 + MSG_H + 12;
+const POPUP_W: i32 = 340;
+const PAD: i32 = 18;
+const TITLE_H: i32 = 30;
+const SUB_H: i32 = 22;
+const ROWS_TOP: i32 = PAD + TITLE_H + 4 + SUB_H + 14;
+const ROW_H: i32 = 48;
 const BG: u32 = 0x00ffffff; // white
-const TXT_MUTED: u32 = 0x00707070;
-const TXT_MAIN: u32 = 0x001a1a1a;
-const TXT_ACCENT: u32 = 0x001673f9; // orange #f97316 as BGR
-const TXT_ACTION: u32 = 0x00909090;
 
 /// One flagged word occurrence on screen (word rect in physical pixels).
 #[derive(Clone, PartialEq)]
@@ -109,27 +105,30 @@ fn get_popup_height(n_rows: i32, is_picker: bool) -> i32 {
     if is_picker {
         ROWS_TOP + n_rows * ROW_H + PAD
     } else {
-        ROWS_TOP + n_rows * ROW_H + 9 + 2 * ACTION_H + PAD
+        let footer_top = ROWS_TOP + n_rows * ROW_H + 10;
+        footer_top + 52
     }
 }
 
-fn row_at(y: i32) -> i32 {
+fn hit_at(x: i32, y: i32) -> i32 {
     let n = popup_rows().lock().map(|r| r.len() as i32).unwrap_or(0);
     for i in 0..n {
         let top = ROWS_TOP + i * ROW_H;
-        if y >= top && y < top + ROW_H {
+        if y >= top && y < top + ROW_H && x >= 0 && x <= POPUP_W {
             return i;
         }
     }
     if PICKER.load(Ordering::Relaxed) {
         return -1;
     }
-    let action_start = ROWS_TOP + n * ROW_H + 9;
-    if y >= action_start && y < action_start + ACTION_H {
-        return n;
-    }
-    if y >= action_start + ACTION_H && y < action_start + 2 * ACTION_H {
-        return n + 1;
+    let footer_top = ROWS_TOP + n * ROW_H + 10;
+    if y >= footer_top && y < footer_top + 52 {
+        if x >= PAD - 4 && x < 190 {
+            return 100;
+        }
+        if x >= 196 && x <= POPUP_W - PAD {
+            return 101;
+        }
     }
     -1
 }
@@ -142,18 +141,20 @@ unsafe extern "system" fn popup_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARA
     match msg {
         WM_MOUSEACTIVATE => LRESULT(MA_NOACTIVATE as isize),
         WM_MOUSEMOVE => {
+            let x = (lp.0 as u32 & 0xFFFF) as i16 as i32;
             let y = ((lp.0 as u32) >> 16) as i16 as i32;
-            let row = row_at(y);
-            if HOVER_ROW.swap(row, Ordering::Relaxed) != row {
+            let hit = hit_at(x, y);
+            if HOVER_ROW.swap(hit, Ordering::Relaxed) != hit {
                 let _ = InvalidateRect(hwnd, None, false);
             }
             LRESULT(0)
         }
         WM_LBUTTONDOWN => {
+            let x = (lp.0 as u32 & 0xFFFF) as i16 as i32;
             let y = ((lp.0 as u32) >> 16) as i16 as i32;
-            let row = row_at(y);
-            if row >= 0 {
-                CLICKED_ROW.store(row, Ordering::Relaxed);
+            let hit = hit_at(x, y);
+            if hit != -1 {
+                CLICKED_ROW.store(hit, Ordering::Relaxed);
             }
             LRESULT(0)
         }
@@ -176,166 +177,166 @@ unsafe fn paint_popup(hwnd: HWND) {
     let is_picker = PICKER.load(Ordering::Relaxed);
     let height = get_popup_height(n, is_picker);
 
+    // 1. Draw white background
     let bg = CreateSolidBrush(COLORREF(BG));
     FillRect(hdc, &RECT { left: 0, top: 0, right: POPUP_W, bottom: height }, bg);
     let _ = DeleteObject(bg);
 
-    // Draw a 1px border inside the card (color 0x00dcdcdc)
-    let border_color = CreateSolidBrush(COLORREF(0x00dcdcdc));
-    FillRect(hdc, &RECT { left: 0, top: 0, right: POPUP_W, bottom: 1 }, border_color);
-    FillRect(hdc, &RECT { left: 0, top: height - 1, right: POPUP_W, bottom: height }, border_color);
-    FillRect(hdc, &RECT { left: 0, top: 0, right: 1, bottom: height }, border_color);
-    FillRect(hdc, &RECT { left: POPUP_W - 1, top: 0, right: POPUP_W, bottom: height }, border_color);
-    let _ = DeleteObject(border_color);
-
     SetBkMode(hdc, TRANSPARENT);
-    let font_msg: HFONT = CreateFontW(
-        -14, 0, 0, 0, FW_NORMAL.0 as i32, 0, 0, 0, 0, 0, 0, 0, 0, w!("Segoe UI"),
+
+    // 2. Create fonts
+    let font_title = CreateFontW(
+        -22, 0, 0, 0, FW_BOLD.0 as i32, 0, 0, 0, 0, 0, 0, 0, 0, w!("Segoe UI"),
     );
-    let font_row: HFONT = CreateFontW(
-        -17, 0, 0, 0, FW_SEMIBOLD.0 as i32, 0, 0, 0, 0, 0, 0, 0, 0, w!("Segoe UI"),
+    let font_sub = CreateFontW(
+        -15, 0, 0, 0, FW_NORMAL.0 as i32, 0, 0, 0, 0, 0, 0, 0, 0, w!("Segoe UI"),
     );
-    let font_hdr: HFONT = CreateFontW(
-        -13, 0, 0, 0, FW_SEMIBOLD.0 as i32, 0, 0, 0, 0, 0, 0, 0, 0, w!("Segoe UI"),
+    let font_row = CreateFontW(
+        -20, 0, 0, 0, FW_NORMAL.0 as i32, 0, 0, 0, 0, 0, 0, 0, 0, w!("Segoe UI"),
+    );
+    let font_footer_label = CreateFontW(
+        -16, 0, 0, 0, FW_NORMAL.0 as i32, 0, 0, 0, 0, 0, 0, 0, 0, w!("Segoe UI"),
+    );
+    let font_footer_glyph = CreateFontW(
+        -18, 0, 0, 0, FW_NORMAL.0 as i32, 0, 0, 0, 0, 0, 0, 0, 0, w!("Segoe MDL2 Assets"),
     );
 
-    let old = SelectObject(hdc, font_msg);
-
-    // Draw Header
-    let (hdr_label, hdr_color) = if is_picker {
-        ("Dictionary", TXT_ACCENT)
+    // 3. Draw Title
+    let title_text = if is_picker {
+        "Add to Dictionary"
     } else {
         if POPUP_SPELLING.load(Ordering::Relaxed) {
-            ("Spelling", 0x004444ef)
+            "Spelling Insights"
         } else {
-            ("Grammar", 0x00f6823b)
+            "Grammar Insights"
         }
     };
+    let old_font = SelectObject(hdc, font_title);
+    SetTextColor(hdc, COLORREF(0x00404040));
+    let title_utf16: Vec<u16> = title_text.encode_utf16().collect();
+    let _ = TextOutW(hdc, PAD, PAD, &title_utf16);
 
-    let dot_y_center = PAD + HEADER_H / 2;
-    let dot_brush = CreateSolidBrush(COLORREF(hdr_color));
-    let dot_pen = CreatePen(PS_SOLID, 1, COLORREF(hdr_color));
-    let old_brush = SelectObject(hdc, dot_brush);
-    let old_pen = SelectObject(hdc, dot_pen);
-    let _ = Ellipse(hdc, PAD, dot_y_center - 4, PAD + 8, dot_y_center + 4);
-    SelectObject(hdc, old_brush);
-    SelectObject(hdc, old_pen);
-    let _ = DeleteObject(dot_brush);
-    let _ = DeleteObject(dot_pen);
+    // 4. Draw Subtitle
+    let subtitle_text = if is_picker {
+        "Choose the word to add".to_string()
+    } else {
+        let mut msg = message.clone();
+        if msg.chars().count() > 40 {
+            msg = msg.chars().take(39).collect::<String>() + "…";
+        }
+        msg
+    };
+    SelectObject(hdc, font_sub);
+    SetTextColor(hdc, COLORREF(0x00585858));
+    let sub_utf16: Vec<u16> = subtitle_text.encode_utf16().collect();
+    let _ = TextOutW(hdc, PAD, PAD + TITLE_H + 4, &sub_utf16);
 
-    SelectObject(hdc, font_hdr);
-    SetTextColor(hdc, COLORREF(hdr_color));
-    let hdr_utf16: Vec<u16> = hdr_label.encode_utf16().collect();
-    let _ = TextOutW(hdc, PAD + 16, PAD + 2, &hdr_utf16);
+    // 5. Draw Separators between suggestion rows
+    let sep_brush = CreateSolidBrush(COLORREF(0x00e8e8e8));
+    for i in 0..(n - 1) {
+        let sep_y = ROWS_TOP + (i + 1) * ROW_H;
+        FillRect(
+            hdc,
+            &RECT {
+                left: PAD,
+                top: sep_y,
+                right: POPUP_W - PAD,
+                bottom: sep_y + 1,
+            },
+            sep_brush,
+        );
+    }
+    let _ = DeleteObject(sep_brush);
 
-    // Draw Message
-    SelectObject(hdc, font_msg);
-    SetTextColor(hdc, COLORREF(TXT_MUTED));
-    let msg_utf16: Vec<u16> = message.encode_utf16().collect();
-    let _ = TextOutW(hdc, PAD, PAD + HEADER_H + 2, &msg_utf16);
-
-    // Draw Separator 1
-    let sep_color = CreateSolidBrush(COLORREF(0x00ececec));
-    let sep_y = PAD + HEADER_H + 2 + MSG_H + 6;
-    FillRect(
-        hdc,
-        &RECT {
-            left: PAD,
-            top: sep_y,
-            right: POPUP_W - PAD,
-            bottom: sep_y + 1,
-        },
-        sep_color,
-    );
-    let _ = DeleteObject(sep_color);
-
-    // Draw Suggestion rows
+    // 6. Draw Suggestion rows
     SelectObject(hdc, font_row);
     for (i, row) in rows.iter().enumerate() {
         let top = ROWS_TOP + i as i32 * ROW_H;
         let is_hovered = i as i32 == hover;
         if is_hovered {
-            let hb = CreateSolidBrush(COLORREF(TXT_ACCENT)); // Solid orange
-            FillRect(
+            let hb = CreateSolidBrush(COLORREF(0x00CEE0FA));
+            let hp = CreatePen(PS_SOLID, 1, COLORREF(0x00CEE0FA));
+            let old_brush = SelectObject(hdc, hb);
+            let old_pen = SelectObject(hdc, hp);
+            let _ = RoundRect(
                 hdc,
-                &RECT { left: 6, top, right: POPUP_W - 6, bottom: top + ROW_H },
-                hb,
+                8,
+                top + 3,
+                POPUP_W - 8,
+                top + ROW_H - 3,
+                24,
+                24,
             );
+            SelectObject(hdc, old_brush);
+            SelectObject(hdc, old_pen);
             let _ = DeleteObject(hb);
-            SetTextColor(hdc, COLORREF(0x00ffffff)); // White
-        } else {
-            SetTextColor(hdc, COLORREF(TXT_MAIN)); // Text main
+            let _ = DeleteObject(hp);
         }
+        SetTextColor(hdc, COLORREF(0x00202020));
         let row_utf16: Vec<u16> = row.encode_utf16().collect();
-        let text_y = top + (ROW_H - 22) / 2;
-        let _ = TextOutW(hdc, PAD, text_y, &row_utf16);
+        let text_y = top + (ROW_H - 24) / 2;
+        let _ = TextOutW(hdc, PAD + 6, text_y, &row_utf16);
     }
 
+    // 7. Draw Footer (normal mode only)
     if !is_picker {
-        // Draw second separator
-        let sep2_color = CreateSolidBrush(COLORREF(0x00e8e8e8));
-        let sep2_y = ROWS_TOP + n * ROW_H + 4;
+        let footer_top = ROWS_TOP + n * ROW_H + 10;
+        let footer_bg = CreateSolidBrush(COLORREF(0x00f1f1f1));
         FillRect(
             hdc,
             &RECT {
-                left: PAD,
-                top: sep2_y,
-                right: POPUP_W - PAD,
-                bottom: sep2_y + 1,
+                left: 0,
+                top: footer_top,
+                right: POPUP_W,
+                bottom: footer_top + 52,
             },
-            sep2_color,
+            footer_bg,
         );
-        let _ = DeleteObject(sep2_color);
+        let _ = DeleteObject(footer_bg);
 
-        // Draw Action rows
-        SelectObject(hdc, font_msg);
-        let action_start = ROWS_TOP + n * ROW_H + 9;
+        // Draw 'Add to Dictionary'
+        let is_add_hovered = hover == 100;
+        let add_color = if is_add_hovered { 0x001673f9 } else { 0x00303030 };
 
-        // Row n: Dismiss
-        {
-            let top = action_start;
-            if hover == n {
-                let hb = CreateSolidBrush(COLORREF(0x00f2f2f2));
-                FillRect(
-                    hdc,
-                    &RECT { left: 6, top, right: POPUP_W - 6, bottom: top + ACTION_H },
-                    hb,
-                );
-                let _ = DeleteObject(hb);
-                SetTextColor(hdc, COLORREF(0x00333333));
-            } else {
-                SetTextColor(hdc, COLORREF(TXT_ACTION));
-            }
-            let txt_utf16: Vec<u16> = "Dismiss".encode_utf16().collect();
-            let text_y = top + (ACTION_H - 16) / 2;
-            let _ = TextOutW(hdc, PAD, text_y, &txt_utf16);
-        }
+        SelectObject(hdc, font_footer_glyph);
+        SetTextColor(hdc, COLORREF(add_color));
+        let glyph_add_utf16: Vec<u16> = vec![0xE82D];
+        let _ = TextOutW(hdc, PAD, footer_top + 17, &glyph_add_utf16);
 
-        // Row n+1: Add to dictionary
-        {
-            let top = action_start + ACTION_H;
-            if hover == n + 1 {
-                let hb = CreateSolidBrush(COLORREF(0x00f2f2f2));
-                FillRect(
-                    hdc,
-                    &RECT { left: 6, top, right: POPUP_W - 6, bottom: top + ACTION_H },
-                    hb,
-                );
-                let _ = DeleteObject(hb);
-                SetTextColor(hdc, COLORREF(0x00333333));
-            } else {
-                SetTextColor(hdc, COLORREF(TXT_ACTION));
-            }
-            let txt_utf16: Vec<u16> = "Add to dictionary".encode_utf16().collect();
-            let text_y = top + (ACTION_H - 16) / 2;
-            let _ = TextOutW(hdc, PAD, text_y, &txt_utf16);
-        }
+        SelectObject(hdc, font_footer_label);
+        let label_add_utf16: Vec<u16> = "Add to Dictionary".encode_utf16().collect();
+        let _ = TextOutW(hdc, PAD + 26, footer_top + 18, &label_add_utf16);
+
+        // Draw 'Dismiss'
+        let is_dismiss_hovered = hover == 101;
+        let dismiss_color = if is_dismiss_hovered { 0x001673f9 } else { 0x00303030 };
+
+        SelectObject(hdc, font_footer_glyph);
+        SetTextColor(hdc, COLORREF(dismiss_color));
+        let glyph_dismiss_utf16: Vec<u16> = vec![0xE711];
+        let _ = TextOutW(hdc, 200, footer_top + 17, &glyph_dismiss_utf16);
+
+        SelectObject(hdc, font_footer_label);
+        let label_dismiss_utf16: Vec<u16> = "Dismiss".encode_utf16().collect();
+        let _ = TextOutW(hdc, 226, footer_top + 18, &label_dismiss_utf16);
     }
 
-    SelectObject(hdc, old);
-    let _ = DeleteObject(font_msg);
+    // 8. Draw 1px border around the entire popup card
+    let border_brush = CreateSolidBrush(COLORREF(0x00e0e0e0));
+    FillRect(hdc, &RECT { left: 0, top: 0, right: POPUP_W, bottom: 1 }, border_brush);
+    FillRect(hdc, &RECT { left: 0, top: height - 1, right: POPUP_W, bottom: height }, border_brush);
+    FillRect(hdc, &RECT { left: 0, top: 0, right: 1, bottom: height }, border_brush);
+    FillRect(hdc, &RECT { left: POPUP_W - 1, top: 0, right: POPUP_W, bottom: height }, border_brush);
+    let _ = DeleteObject(border_brush);
+
+    // 9. Clean up fonts
+    SelectObject(hdc, old_font);
+    let _ = DeleteObject(font_title);
+    let _ = DeleteObject(font_sub);
     let _ = DeleteObject(font_row);
-    let _ = DeleteObject(font_hdr);
+    let _ = DeleteObject(font_footer_label);
+    let _ = DeleteObject(font_footer_glyph);
+
     let _ = EndPaint(hwnd, &ps);
 }
 
@@ -423,74 +424,70 @@ fn run(rx: Receiver<Vec<SquiggleInfo>>, action_tx: Sender<OverlayAction>) {
                     }
                 }
                 infos = new_infos;
-            }
-
-            // Suggestion click?
+                    // Suggestion click?
             let clicked = CLICKED_ROW.swap(-1, Ordering::Relaxed);
-            if clicked >= 0 && popup.shown {
+            if clicked != -1 && popup.shown {
                 if let Some(info) = infos.get(popup.info_idx) {
                     let is_picker = PICKER.load(Ordering::Relaxed);
-                    if is_picker {
+                    if clicked < 100 {
                         let rows = popup_rows().lock().map(|r| r.clone()).unwrap_or_default();
-                        let n_rows = rows.len() as i32;
-                        if clicked < n_rows {
-                            if let Some(word) = rows.get(clicked as usize) {
-                                let _ = action_tx.send(OverlayAction::AddToVocab {
-                                    word: word.clone(),
-                                });
+                        if clicked < rows.len() as i32 {
+                            if is_picker {
+                                if let Some(word) = rows.get(clicked as usize) {
+                                    let _ = action_tx.send(OverlayAction::AddToVocab {
+                                        word: word.clone(),
+                                    });
+                                }
+                                hide_popup(&mut popup);
+                                hover_since = None;
+                            } else {
+                                if let Some(replacement) = info.suggestions.get(clicked as usize) {
+                                    let _ = action_tx.send(OverlayAction::Fix {
+                                        start: info.start,
+                                        end: info.end,
+                                        expected: info.expected.clone(),
+                                        replacement: replacement.clone(),
+                                    });
+                                }
+                                hide_popup(&mut popup);
+                                hover_since = None;
                             }
                         }
+                    } else if clicked == 100 {
+                        // Enter picker mode
+                        PICKER.store(true, Ordering::Relaxed);
+                        let mut picker_rows = vec![info.expected.clone()];
+                        picker_rows.extend(info.suggestions.iter().take(3).cloned());
+                        if let Ok(mut r) = popup_rows().lock() {
+                            *r = picker_rows.clone();
+                        }
+                        if let Ok(mut m) = popup_msg().lock() {
+                            *m = "Choose the word to add".to_string();
+                        }
+                        HOVER_ROW.store(-1, Ordering::Relaxed);
+
+                        let n_rows = picker_rows.len() as i32;
+                        let height = get_popup_height(n_rows, true);
+                        let x = info.x;
+                        let mut y = info.y - height - 6;
+                        if y < 0 {
+                            y = info.y + info.h + SQUIGGLE_H + 2;
+                        }
+                        let _ = MoveWindow(popup.hwnd, x, y, POPUP_W, height, true);
+                        let rgn = CreateRoundRectRgn(0, 0, POPUP_W + 1, height + 1, 32, 32);
+                        let _ = SetWindowRgn(popup.hwnd, rgn, true);
+                        popup.rect = RECT { left: x, top: y, right: x + POPUP_W, bottom: y + height };
+                        let _ = InvalidateRect(popup.hwnd, None, true);
+                    } else if clicked == 101 {
+                        // Dismiss
+                        let _ = action_tx.send(OverlayAction::Dismiss {
+                            word: info.expected.clone(),
+                        });
                         hide_popup(&mut popup);
                         hover_since = None;
-                    } else {
-                        let rows = popup_rows().lock().map(|r| r.clone()).unwrap_or_default();
-                        let n = rows.len() as i32;
-                        if clicked < n {
-                            if let Some(replacement) = info.suggestions.get(clicked as usize) {
-                                let _ = action_tx.send(OverlayAction::Fix {
-                                    start: info.start,
-                                    end: info.end,
-                                    expected: info.expected.clone(),
-                                    replacement: replacement.clone(),
-                                });
-                            }
-                            hide_popup(&mut popup);
-                            hover_since = None;
-                        } else if clicked == n {
-                            let _ = action_tx.send(OverlayAction::Dismiss {
-                                word: info.expected.clone(),
-                            });
-                            hide_popup(&mut popup);
-                            hover_since = None;
-                        } else if clicked == n + 1 {
-                            PICKER.store(true, Ordering::Relaxed);
-                            let mut picker_rows = vec![info.expected.clone()];
-                            picker_rows.extend(info.suggestions.iter().take(3).cloned());
-                            let message = "Add which word to the dictionary?".to_string();
-                            if let Ok(mut r) = popup_rows().lock() {
-                                *r = picker_rows.clone();
-                            }
-                            if let Ok(mut m) = popup_msg().lock() {
-                                *m = message;
-                            }
-                            HOVER_ROW.store(-1, Ordering::Relaxed);
-
-                            let n_rows = picker_rows.len() as i32;
-                            let height = get_popup_height(n_rows, true);
-                            let x = info.x;
-                            let mut y = info.y - height - 6;
-                            if y < 0 {
-                                y = info.y + info.h + SQUIGGLE_H + 2;
-                            }
-                            let _ = MoveWindow(popup.hwnd, x, y, POPUP_W, height, true);
-                            let rgn = CreateRoundRectRgn(0, 0, POPUP_W + 1, height + 1, 12, 12);
-                            let _ = SetWindowRgn(popup.hwnd, rgn, true);
-                            popup.rect = RECT { left: x, top: y, right: x + POPUP_W, bottom: y + height };
-                            let _ = InvalidateRect(popup.hwnd, None, true);
-                        }
                     }
                 }
-            }
+            }      }
 
             // Hover tracking.
             let mut cursor = POINT::default();
@@ -552,8 +549,8 @@ unsafe fn show_popup(popup: &mut Popup, infos: &[SquiggleInfo], idx: usize) {
     // No suggestions → still show the message so the user knows what's wrong.
     let rows: Vec<String> = info.suggestions.iter().take(3).cloned().collect();
     let mut message = info.message.clone();
-    if message.chars().count() > 46 {
-        message = message.chars().take(45).collect::<String>() + "…";
+    if message.chars().count() > 40 {
+        message = message.chars().take(39).collect::<String>() + "…";
     }
     if let Ok(mut r) = popup_rows().lock() {
         *r = rows.clone();
@@ -573,7 +570,7 @@ unsafe fn show_popup(popup: &mut Popup, infos: &[SquiggleInfo], idx: usize) {
         y = info.y + info.h + SQUIGGLE_H + 2;
     }
     let _ = MoveWindow(popup.hwnd, x, y, POPUP_W, height, true);
-    let rgn = CreateRoundRectRgn(0, 0, POPUP_W + 1, height + 1, 12, 12);
+    let rgn = CreateRoundRectRgn(0, 0, POPUP_W + 1, height + 1, 32, 32);
     let _ = SetWindowRgn(popup.hwnd, rgn, true);
     popup.rect = RECT { left: x, top: y, right: x + POPUP_W, bottom: y + height };
     popup.info_idx = idx;
