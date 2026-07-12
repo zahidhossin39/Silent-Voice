@@ -9,6 +9,7 @@ import {
   setBehavior,
   setAppProfiles,
   setAutostart,
+  setTts,
 } from "../services/tauriBridge";
 import type { ResolvedAppProfile } from "../services/tauriBridge";
 import type { Mode, ApiProvider } from "../types";
@@ -55,6 +56,9 @@ export function useRuntimeSync() {
   const appProfiles = useSettingsStore((s) => s.appProfiles);
   const toggleMode = useSettingsStore((s) => s.settings.toggle_mode);
   const inputSensitivity = useSettingsStore((s) => s.settings.input_sensitivity);
+  const inlineProofread = useSettingsStore((s) => s.settings.inline_proofread);
+  const ttsVoice = useSettingsStore((s) => s.settings.active_tts_voice);
+  const ttsHotkey = useSettingsStore((s) => s.settings.tts_hotkey);
   const autoStart = useSettingsStore((s) => s.settings.auto_start);
   const overlayOpacity = useSettingsStore((s) => s.settings.overlay_opacity);
 
@@ -88,12 +92,16 @@ export function useRuntimeSync() {
   }, [snippets]);
 
   useEffect(() => {
-    setBehavior(toggleMode, inputSensitivity);
-  }, [toggleMode, inputSensitivity]);
+    setBehavior(toggleMode, inputSensitivity, inlineProofread);
+  }, [toggleMode, inputSensitivity, inlineProofread]);
 
   useEffect(() => {
     setAutostart(autoStart);
   }, [autoStart]);
+
+  useEffect(() => {
+    setTts(ttsVoice ?? "", ttsHotkey);
+  }, [ttsVoice, ttsHotkey]);
 
   // Resolve per-app profile rules to full mode configs and push to Rust.
   useEffect(() => {

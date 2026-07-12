@@ -13,7 +13,7 @@ hard-won bugs.
 Hold a hotkey → speak → release → transcribed (and optionally AI-processed) text is
 pasted at the cursor. Like SuperWhisper / Wispr Flow but free, offline, and open-source.
 
-**Original spec:** `Silent-Voice-Complete-Build-Plan.md` in the project root.
+**Original spec:** Documented in `CLAUDE.md`.
 
 ---
 
@@ -43,7 +43,6 @@ All local inference runs on CPU. GPU paths exist but untested.
 ```
 Silent voice/
 ├── CLAUDE.md                        ← this file
-├── Silent-Voice-Complete-Build-Plan.md  ← original spec
 ├── package.json
 ├── vite.config.ts
 ├── tsconfig.json
@@ -54,7 +53,7 @@ Silent voice/
 │   ├── styles.css                   ← Tailwind + CSS variables + sv-bar keyframe
 │   ├── types/index.ts               ← all shared TypeScript interfaces
 │   ├── components/
-│   │   ├── dashboard/               ← 6 tabs: Home, ModelStore, Modes, ApiKeys, Settings, History
+│   │   ├── dashboard/               ← 7 tabs: Home, ModelStore, Modes, ApiKeys, Settings, History, Guide
 │   │   ├── overlay/
 │   │   │   ├── OverlayApp.tsx       ← the always-on-top pill window app
 │   │   │   └── RecordingOverlay.tsx ← pill content (idle line / recording dot+waveform)
@@ -67,8 +66,7 @@ Silent voice/
 │   ├── hooks/
 │   │   ├── useHardwareInfo.ts
 │   │   ├── usePipeline.ts           ← subscribes to pipeline:// events
-│   │   ├── useRuntimeSync.ts        ← keeps Rust RuntimeConfig in sync with settings
-│   │   └── useRuntimeSync.ts
+│   │   └── useRuntimeSync.ts        ← keeps Rust RuntimeConfig in sync with settings
 │   ├── services/
 │   │   ├── catalog.ts               ← STT + LLM model catalogs with verified URLs
 │   │   ├── format.ts                ← smart MB/GB formatting
@@ -95,9 +93,11 @@ Silent voice/
         ├── main.rs                  ← windows_subsystem = "windows"
         ├── lib.rs                   ← ALL Tauri commands + AppState + run()
         ├── history.rs               ← load/save/append/clear JSON history file
+        ├── logging.rs               ← append to %APPDATA%\SilentVoice\logs\silent-voice.log (2MB rotation)
         ├── audio/
         │   ├── mod.rs
-        │   └── capture.rs           ← cpal mic → 16kHz WAV + device listing
+        │   ├── capture.rs           ← cpal mic → 16kHz WAV + device listing
+        │   └── gate.rs              ← RMS noise gate: trim_silence(samples, sensitivity) → Option<Vec<f32>>
         ├── transcription/
         │   ├── mod.rs
         │   └── whisper.rs           ← sidecar invocation (whisper-cli flags: -m -f -t -l --no-timestamps)
@@ -108,15 +108,40 @@ Silent voice/
         │   └── openai.rs            ← generic OpenAI-compatible chat + list_models
         ├── models/
         │   ├── mod.rs
-        │   ├── downloader.rs        ← download_model (STT) + download_llm_model (GGUF) with progress events
-        │   └── registry.rs          ← data dir paths, model file names, list_downloaded*
+        │   ├── downloader.rs        ← download_model (STT) + download_llm_model (GGUF) + download_tts_model
+        │   └── registry.rs          ← data dir paths, model file names, list_downloaded*, tts_model_path()
         └── system/
             ├── mod.rs
             ├── hardware.rs          ← CPU/RAM/GPU detection (sysinfo + DXGI)
             ├── hotkey.rs            ← on_pressed / on_released pipeline; tidy_ai_output
-            ├── overlay.rs           ← overlay window creation + animate_resize tween
+            ├── overlay.rs           ← overlay window creation + animate_resize (snaps, no tween)
             ├── paste.rs             ← arboard + enigo paste-at-cursor
-            └── tray.rs              ← system tray menu
+            ├── tray.rs              ← system tray menu
+            ├── autostart.rs         ← HKCU Run key (set_enabled / is_enabled via winreg)
+            ├── foreground.rs        ← Windows API: get foreground exe basename for per-app profiles
+            ├── textfmt.rs           ← format_numbers() — always-on spoken→digit conversion
+            └── tts.rs               ← Piper TTS: read_selection / speak_text / stop / synth_and_play
+```
+
+Frontend additions since initial build:
+```
+src/
+├── components/
+│   ├── dashboard/
+│   │   └── Guide.tsx               ← "How to use" page with visual pill mockups
+│   └── onboarding/
+│       └── Onboarding.tsx          ← 4-step first-launch wizard; hardware-based model recommendation
+└── services/
+    └── catalog.ts                  ← now also exports TTS_MODELS (29 Piper voices)
+```
+
+Sidecars:
+```
+src-tauri/sidecars/
+├── piper/                          ← Piper TTS engine (release 2023.11.14-2); installed as piper/ next to exe
+│   ├── piper.exe
+│   └── *.dll
+└── (whisper + llama unchanged)
 ```
 
 ---
@@ -156,7 +181,7 @@ Cargo version: 1.96.0 MSVC. VS 2022 Build Tools with C++ workload already instal
 | 4 | Model Store + hardware recommendations | ✅ UI complete; STT download works; LLM download works. Catalog expanded to ~49 STT models (OpenAI + distil-whisper + 16 language-specific fine-tunes from BELLE-2, Kotoba Technologies, ReazonSpeech, VinAI, KBLab, etc — see §15) |
 | 5 | Always-listening (Silero VAD + openWakeWord) | ❌ Not started |
 | 6 | Cloud API integration (OpenAI, OpenRouter, etc.) | ✅ Complete (generic OpenAI client) |
-| 7 | Polish + Windows installer + onboarding | ❌ Not started |
+| 7 | Polish + Windows installer + onboarding | ✅ Mostly complete (v0.1.2). Done: onboarding wizard, app icon, error logging, NSIS installer, resource bundling fix. Remaining: auto-updater only. |
 
 ---
 
@@ -192,6 +217,9 @@ The user never loses their words.
 | LLM (GGUF) models | `%APPDATA%\SilentVoice\llm\<id>.gguf` |
 | Transcription history | `%APPDATA%\SilentVoice\history.json` |
 | Temp audio | `%APPDATA%\SilentVoice\audio\last.wav` |
+| TTS temp WAV | `%APPDATA%\SilentVoice\audio\tts.wav` |
+| TTS (Piper) voices | `%APPDATA%\SilentVoice\tts\<id>.onnx` + `<id>.onnx.json` (pair required) |
+| Error log | `%APPDATA%\SilentVoice\logs\silent-voice.log` (rotates to `.old` at 2MB) |
 | Settings | localStorage (key: `silent-voice-settings`) |
 
 ---
@@ -312,18 +340,25 @@ The `tidy_ai_output()` function in `hotkey.rs` strips common preamble lines ("He
 - Integration point: continuous mic loop in Rust → VAD → optional wake word check → trigger same pipeline as hotkey on_released
 - Requires `ort` crate (ONNX Runtime for Rust)
 
-### Phase 7 — Polish + Installer (Not started)
-**Packaging issue to fix:** whisper DLLs and the `llama/` folder need to be beside the exe
-in the installed app. Current `tauri.conf.json` has `"resources": ["sidecars/*.dll", "sidecars/llama/*"]`
-but the runtime paths in Rust assume they're next to the exe. Validate with `tauri build` and adjust
-resource destination paths in `tauri.conf.json` if needed.
+### Phase 7 — Polish + Installer (v0.1.2 — mostly complete)
 
-**Other Phase 7 items:**
-- First-launch onboarding wizard (device scan → model recommendations → hotkey setup)
-- Auto-updater
-- NSIS/MSI installer via `tauri build`
-- App icon branding polish
-- Error logging to file
+**DONE:**
+- First-launch onboarding wizard (`src/components/onboarding/Onboarding.tsx`) — 4 steps, hardware-based model recommendation, skippable
+- App icon: `app-icon.svg` (black rounded square, orange waveform bars, white center peak). Regenerate platform icons: `npx tauri icon app-icon.svg`
+- Error logging: `logging.rs` → `%APPDATA%\SilentVoice\logs\silent-voice.log`
+- NSIS installer: `npx tauri build` → `Install/Silent Voice_<version>_x64-setup.exe`
+- Resource bundling fix: `tauri.conf.json` uses **object-map** form so DLLs land next to exe:
+  ```json
+  "resources": {
+    "sidecars/*.dll": "./",
+    "sidecars/llama/": "llama/",
+    "sidecars/piper/": "piper/"
+  }
+  ```
+  Do NOT revert to the array form — it broke local STT + LLM in installed builds.
+
+**REMAINING:**
+- Auto-updater (Tauri updater plugin + update server endpoint)
 
 ---
 
@@ -363,6 +398,14 @@ All commands are registered in `src-tauri/src/lib.rs` → `tauri::generate_handl
 | `set_overlay_size` | Animated resize of the overlay window |
 | `set_overlay_opacity` | (harmless dead code — transparency was dropped) |
 | `quit_app` | Exit the app |
+| `set_autostart` | Write/remove HKCU Run key (bool) |
+| `get_autostart` | Read HKCU Run key → bool |
+| `list_downloaded_tts` | Lists downloaded Piper voice ids (complete .onnx+.json pairs only) |
+| `download_tts_model` | Download Piper voice pair (.onnx.json first, then .onnx) with progress events |
+| `delete_tts_model` | Delete a Piper voice pair |
+| `set_tts` | Set active voice id + TTS hotkey in RuntimeConfig; re-registers global shortcut |
+| `speak_text` | Synthesize + play explicit text string (Settings "Test voice" button) |
+| `stop_tts` | Stop active TTS playback |
 
 ---
 
@@ -378,6 +421,7 @@ All commands are registered in `src-tauri/src/lib.rs` → `tauri::generate_handl
 | `overlay://opacity` | Rust → Overlay | `number` | (dead code — kept but not used) |
 | `tray://toggle-record` | Rust → Frontend | `()` | Tray menu record toggle |
 | `tray://toggle-listen` | Rust → Frontend | `()` | Tray menu always-listen toggle |
+| `tts://state` | Rust → Frontend | `"synthesizing"\|"speaking"\|"idle"` | TTS playback state (for future UI indicator) |
 
 ---
 
@@ -507,3 +551,101 @@ All toggles live in Settings and are pushed to Rust via `set_behavior` /
   object-map form so whisper DLLs land NEXT TO the exe and llama files in
   `llama/` — the array form put them under `sidecars/` where the runtime
   paths never looked (local STT + LLM silently broken in installed builds).
+- **Read aloud (TTS, added v0.1.2):** bundled Piper engine (fast, offline, CPU-friendly)
+  (`sidecars/piper/` → installed `piper/` next to the exe, adds ~38 MB to the install; release
+  2023.11.14-2). Select text anywhere → TTS hotkey (default Ctrl+Alt+S,
+  Settings → "Read aloud" — allows changing hotkey, picking downloaded voice from dropdown, and has a ▶ Play sample button to test instantly) → `system/tts.rs` copies the selection via Ctrl+C
+  (clipboard preserved), synthesizes WAV via
+  `piper.exe --model <voice.onnx> --output_file`, plays it with rodio; hotkey
+  again = stop (toggle). Voices are Piper .onnx + .onnx.json PAIRS stored in
+  `%APPDATA%\SilentVoice\tts\<id>.onnx[.json]` — both files required
+  (`download_tts_model` fetches the pair; `list_downloaded_tts` only counts
+  complete pairs). Catalog: `TTS_MODELS` in catalog.ts, 29 verified English
+  Piper voices (mix of male/female, American/British; tiers Fast [~61 MB], Balanced,
+  Natural HD [~109-116 MB]), Model Store third tab "Text-to-Speech". STT vs TTS are clearly separated
+  (different tabs, different icons like speaker glyph vs provider logos, different wording). The global-shortcut
+  handler in lib.rs routes by comparing the fired shortcut against
+  `cfg.tts_hotkey` — TTS fires on Pressed only; everything else goes to the
+  dictation press/release pipeline. NOTE: piper.exe was bundled but never
+  executed during development (auto-mode restriction) — the flags follow the
+  official README; first real run is the user's.
+- **Second TTS engine — sherpa-onnx (added for Bangla, v0.1.4):** Piper has no
+  Bangla voices at all (verified against its voices.json; no community
+  Piper-format ones exist either), so a second engine is bundled:
+  `sidecars/sherpa/` → installed `sherpa/` next to the exe (3 files, ~19 MB:
+  `sherpa-onnx-offline-tts.exe` + onnxruntime DLLs, from k2-fsa/sherpa-onnx
+  v1.13.4 win-x64-shared-MD-Release; Apache-2.0). Sherpa voices are k2-fsa
+  `.tar.bz2` archives (GitHub `tts-models` release tag) whose top-level folder
+  equals the voice id; `download_tts_model` treats an EMPTY `url_json` as the
+  sherpa-archive marker: downloads the archive, extracts with the system `tar`
+  (bsdtar, ships with Win10+) into `%APPDATA%\SilentVoice\tts\<id>\`, deletes
+  the archive. `registry::list_downloaded_tts` counts both flat Piper pairs
+  AND dirs containing `tokens.txt` + a `.onnx`. Synthesis routing:
+  `tts.rs::resolve_voice()` → `Voice::Piper | Voice::Sherpa`.
+  **CRITICAL — sherpa synthesis MUST go through the C-API FFI
+  (`system/sherpa.rs` → `sherpa-onnx-c-api.dll`), NEVER the CLI exe:** the
+  CLI uses narrow `main(char* argv[])`, so on Windows the CRT converts the
+  command line to the ANSI codepage, which cannot represent Bengali (or any
+  non-Latin script) — the model receives `????` and speaks gibberish. This
+  bug shipped once and was diagnosed the hard way. The FFI mirrors the
+  v1.13.4 c-api.h struct layout exactly (do not upgrade the DLL without
+  re-checking the header) and PRE-LOADS `sherpa/onnxruntime.dll` by absolute
+  path before the c-api DLL — otherwise Windows can resolve the dependency
+  to an incompatible onnxruntime (OS-shipped or Piper's) → access violation.
+  Unit test `sherpa::tests::bengali_text_synthesizes` covers real Bengali
+  text through the FFI (needs DLLs copied to `target/debug/deps/sherpa/`).
+  A second sherpa layout exists: `url_json` ending in `tokens.txt` = two-file
+  voice (MMS conversions: `dir/model.onnx` + `dir/tokens.txt`).
+  Frontend: `TtsModel.engine: "piper"|"sherpa"` + `language` on every entry;
+  catalog ~50 voices (19 non-English Piper languages + 2 Bangla sherpa
+  voices — Mitra/Coqui and Meta MMS; every URL curl-verified → 200, same
+  invariant as §15). `vits-mimic3-bn-multi_low` was tried and REMOVED — its
+  espeak phonemization fails on Bengali (sub-second gibberish blip). TTS tab
+  has search + language filter; sort order is active → downloaded → quality.
+- **Proofreading (Grammarly Phase 1, v0.1.4):** `harper-core` 2.5.0 (Apache-2.0,
+  pure Rust, `concurrent` feature for thread-safety) compiled into the binary.
+  `src-tauri/src/proofread.rs` → `proofread_text` command → History entries
+  render Grammarly-style squiggles (red = spelling, blue = grammar/style,
+  hover for message + suggestions; `ProofreadText` in History.tsx). Offsets
+  are CHAR indices (Harper `Span<char>`) — frontend must slice via
+  `Array.from(text)`, never `text.slice()`. The custom vocabulary doubles as
+  the personal dictionary: entries AND their punctuation-split sub-tokens
+  (e.g. "whisper.cpp" → "whisper", "cpp") are merged into Harper's dictionary
+  so they're never flagged. Unit tests in proofread.rs. English-only by
+  design (Harper limitation). The full Grammarly feasibility research lives
+  in the "grammarly-report" artifact (phases 2–4: fix-writing hotkey via
+  LLM, tone modes, system-wide UIA overlay = deferred).
+- **Inline proofreading — system-wide squiggles (Grammarly Phase 2, v0.1.4,
+  TOP USER PRIORITY):** squiggles under errors in ANY app's focused text
+  field, live. Architecture (validated first in the standalone `uia-probe/`
+  prototype at the repo root — keep it, it's the test harness):
+  - `system/inline_check.rs`: watcher thread (spawned in lib.rs setup), MTA
+    COM (`COINIT_MULTITHREADED` — required for UIA clients), polls
+    `GetFocusedElement` every 400ms → TextPattern → `GetText(6000)` →
+    `proofread::check(text, cfg.vocabulary)` (re-lint only when text
+    changed) → per-issue char ranges mapped to screen rects via
+    `MoveEndpointByUnit(TextUnit_Character)` + `GetBoundingRectangles`
+    (returns only VISIBLE rects, so scrolled-away text clips itself).
+    Harper spans are char indices and UIA moves by character — they align
+    for English. Rects re-read EVERY poll so squiggles track
+    scroll/typing/window moves.
+  - `system/squiggle.rs`: pool of tiny click-through layered Win32 windows
+    (WS_EX_LAYERED|TRANSPARENT|NOACTIVATE|TOPMOST|TOOLWINDOW), one per
+    flagged word, 4px-tall premultiplied-alpha DIB zigzag via
+    `UpdateLayeredWindow`. **Deliberately NOT a webview and NOT one big
+    fullscreen overlay** — Grammarly's own architecture; cheap on weak
+    iGPUs, and transparent WebView2 is known-broken here (§8.1).
+  - Guards: skips our own process (checks the foreground WINDOW's pid, not
+    the element's — our dashboard's WebView2 child has a different pid),
+    password fields (`CurrentIsPassword`), terminals + password managers
+    (IGNORE_EXES), and text > 6000 chars.
+  - Wiring: `RuntimeConfig.inline_proofread` (default ON) ← `set_behavior`
+    ← Settings → Dictation → "Inline proofreading" toggle
+    (`settings.inline_proofread`).
+  - Verified working in Notepad (Win11) and Edge/Chromium textareas.
+    Chromium enables its accessibility tree automatically when a UIA client
+    queries it — no flags needed.
+  - NOT YET BUILT (Week 2+): hover tooltip with the message, click-to-fix
+    suggestion popup, per-app compatibility hardening. The two pink blobs
+    that confused testing were Windows' "text cursor indicator"
+    accessibility feature, not ours.

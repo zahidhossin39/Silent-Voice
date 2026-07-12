@@ -57,6 +57,22 @@ export interface LlmModel {
   best_for: string;
 }
 
+// ---------- TTS (Piper read-aloud) voices ----------
+export type TtsQuality = "fast" | "balanced" | "natural";
+
+export interface TtsModel {
+  id: string; // Piper voice id (e.g. "en_US-amy-medium") or sherpa archive stem (e.g. "vits-coqui-bn-custom_female")
+  label: string; // "Amy (US, female)"
+  gender: "female" | "male" | "unknown";
+  accent: "US" | "UK"; // legacy — only meaningful for English voices
+  language: string; // display language, e.g. "English (US)", "German", "Bangla"
+  quality: TtsQuality; // low → fast, medium → balanced, high → natural
+  size_mb: number;
+  engine: "piper" | "sherpa"; // which bundled TTS engine synthesizes this voice
+  url_onnx: string; // piper: .onnx URL · sherpa: .tar.bz2 archive URL
+  url_json: string; // piper: .onnx.json URL · sherpa: "" (everything is in the archive)
+}
+
 // ---------- Download state ----------
 export type DownloadStatus =
   | "not_downloaded"
@@ -151,5 +167,8 @@ export interface Settings {
   stt_cloud_provider_id: string | null; // null = use local active_stt_model; else an ApiProvider.id with uses including "stt"
   toggle_mode: boolean; // double-tap the hotkey to lock recording on; single press stops
   input_sensitivity: number; // 0-100 (Discord-style): how loud a sound must be to count as speech
+  inline_proofread: boolean; // squiggles under spelling/grammar errors in any app's text field (English)
+  active_tts_voice: string | null; // Piper voice id for read-aloud; null = none selected
+  tts_hotkey: string; // global hotkey that reads the current text selection aloud
   onboarded: boolean; // true once the first-launch setup wizard has been completed/skipped
 }

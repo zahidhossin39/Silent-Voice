@@ -1,5 +1,6 @@
 mod audio;
 mod history;
+mod proofread;
 mod llm;
 mod logging;
 mod models;
@@ -15,7 +16,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::Mutex;
 use std::time::Instant;
 use system::{hardware, hotkey, overlay, paste, tray};
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 /// Runtime config mirrored from the frontend so the global-hotkey pipeline
@@ -53,6 +54,13 @@ pub struct RuntimeConfig {
     // 0–100 (Discord-style): how loud a sound must be to count as speech.
     // Quieter audio (wind, hum) is trimmed before transcription. See audio/gate.rs.
     pub input_sensitivity: u32,
+    // Inline proofreading: squiggles under spelling/grammar errors in ANY
+    // app's focused text field (system/inline_check.rs). English-only.
+    pub inline_proofread: bool,
+    // Read-aloud (TTS): active Piper voice id + the hotkey that reads the
+    // current text selection. See system/tts.rs.
+    pub tts_voice_id: String,
+    pub tts_hotkey: String,
     // Per-app profiles: when the focused app matches, that profile's AI mode
     // overrides the globally active one. Resolved by the frontend (like
     // set_active_mode) so Rust never needs the mode/provider tables.
@@ -92,6 +100,9 @@ impl Default for RuntimeConfig {
             mode_api_key: String::new(),
             toggle_mode: true,
             input_sensitivity: 50,
+            inline_proofread: true,
+            tts_voice_id: String::new(),
+            tts_hotkey: "Ctrl+Alt+S".into(),
             app_profiles: Vec::new(),
         }
     }
@@ -130,6 +141,8 @@ pub struct AppState {
     pub tap: Mutex<TapState>,
     /// Exe basename of the app focused when recording started (per-app profiles).
     pub active_app: Mutex<String>,
+    /// Read-aloud playback state (see system/tts.rs).
+    pub tts: system::tts::TtsState,
 }
 
 /// Ensure the bundled llama.cpp server is running for `model_id`, then run a
@@ -220,10 +233,12 @@ fn set_behavior(
     state: State<AppState>,
     toggle_mode: bool,
     input_sensitivity: u32,
+    inline_proofread: bool,
 ) -> Result<(), String> {
     let mut cfg = state.config.lock().map_err(|e| e.to_string())?;
     cfg.toggle_mode = toggle_mode;
     cfg.input_sensitivity = input_sensitivity.min(100);
+    cfg.inline_proofread = inline_proofread;
     Ok(())
 }
 
@@ -261,6 +276,100 @@ fn set_hotkey(app: AppHandle, state: State<AppState>, accelerator: String) -> Re
         .map_err(|e| e.to_string())?;
     state.config.lock().map_err(|e| e.to_string())?.hotkey = accelerator;
     Ok(())
+}
+
+// ---------------- Read aloud (TTS) ----------------
+
+#[tauri::command]
+fn set_tts(app: AppHandle, state: State<AppState>, voice_id: String, hotkey: String) -> Result<(), String> {
+    // Store the voice FIRST, unconditionally — a hotkey problem must never
+    // leave the voice unset (that bug made every TTS action report
+    // "No voice downloaded" even with voices installed).
+    let prev = {
+        let mut cfg = state.config.lock().map_err(|e| e.to_string())?;
+        cfg.tts_voice_id = voice_id;
+        cfg.tts_hotkey.clone()
+    };
+    if prev != hotkey {
+        // Parse the new hotkey BEFORE touching the old registration, so a
+        // bad accelerator can't leave read-aloud with no hotkey at all.
+        let shortcut = match Shortcut::from_str(&hotkey) {
+            Ok(s) => s,
+            Err(_) => {
+                let msg = format!("Read-aloud hotkey '{hotkey}' is not valid — keeping '{prev}'.");
+                crate::logging::log_error("tts", &msg);
+                let _ = app.emit("pipeline://error", msg.clone());
+                return Err(msg);
+            }
+        };
+        if let Ok(s) = Shortcut::from_str(&prev) {
+            let _ = app.global_shortcut().unregister(s);
+        }
+        if let Err(e) = app.global_shortcut().register(shortcut) {
+            // Roll back so the previous hotkey keeps working.
+            if let Ok(s) = Shortcut::from_str(&prev) {
+                let _ = app.global_shortcut().register(s);
+            }
+            let msg = format!("Could not register read-aloud hotkey '{hotkey}' ({e}) — keeping '{prev}'.");
+            crate::logging::log_error("tts", &msg);
+            let _ = app.emit("pipeline://error", msg.clone());
+            return Err(msg);
+        }
+        state.config.lock().map_err(|e| e.to_string())?.tts_hotkey = hotkey;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn tts_read_selection(app: AppHandle) {
+    system::tts::read_selection(&app);
+}
+
+#[tauri::command]
+fn tts_stop(app: AppHandle) {
+    system::tts::stop(&app);
+}
+
+#[tauri::command]
+fn tts_speak_text(app: AppHandle, text: String) {
+    system::tts::speak_text(&app, text);
+}
+
+#[tauri::command]
+fn list_downloaded_tts() -> Vec<String> {
+    registry::list_downloaded_tts()
+}
+
+// ---------------- Proofreading (Harper) ----------------
+
+/// Check text for spelling/grammar issues. Runs on a blocking thread — the
+/// curated dictionary load takes a moment on first call. Custom vocabulary
+/// words are never flagged (personal dictionary).
+#[tauri::command]
+async fn proofread_text(state: State<'_, AppState>, text: String) -> Result<Vec<proofread::ProofIssue>, String> {
+    let vocabulary = state
+        .config
+        .lock()
+        .map(|c| c.vocabulary.clone())
+        .unwrap_or_default();
+    tokio::task::spawn_blocking(move || proofread::check(&text, &vocabulary))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn download_tts_model(
+    app: AppHandle,
+    voice_id: String,
+    url_onnx: String,
+    url_json: String,
+) -> Result<(), String> {
+    downloader::download_tts_model(app, voice_id, url_onnx, url_json).await
+}
+
+#[tauri::command]
+fn delete_tts_model(voice_id: String) -> Result<(), String> {
+    downloader::delete_tts_model(&voice_id)
 }
 
 #[tauri::command]
@@ -595,9 +704,6 @@ pub fn run() {
     );
 
     tauri::Builder::default()
-        // Must be the first plugin: launching the app while it's already
-        // running focuses the existing dashboard instead of starting a second
-        // process (which would mean two overlays, two hotkey handlers…).
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Some(win) = app.get_webview_window("main") {
                 let _ = win.show();
@@ -609,9 +715,26 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
-                .with_handler(|app, _shortcut, event| match event.state() {
-                    ShortcutState::Pressed => hotkey::on_pressed(app),
-                    ShortcutState::Released => hotkey::on_released(app),
+                .with_handler(|app, shortcut, event| {
+                    // Route between the dictation hotkey and the read-aloud
+                    // (TTS) hotkey — both are registered globally.
+                    let tts_hotkey = app
+                        .try_state::<AppState>()
+                        .and_then(|s| s.config.lock().ok().map(|c| c.tts_hotkey.clone()))
+                        .unwrap_or_default();
+                    let is_tts = Shortcut::from_str(&tts_hotkey)
+                        .map(|s| s == *shortcut)
+                        .unwrap_or(false);
+                    if is_tts {
+                        if let ShortcutState::Pressed = event.state() {
+                            system::tts::read_selection(app);
+                        }
+                    } else {
+                        match event.state() {
+                            ShortcutState::Pressed => hotkey::on_pressed(app),
+                            ShortcutState::Released => hotkey::on_released(app),
+                        }
+                    }
                 })
                 .build(),
         )
@@ -632,11 +755,24 @@ pub fn run() {
             tray::build_tray(app.handle())?;
             overlay::create_overlay(app.handle())?;
 
-            // Register the default push-to-talk hotkey.
-            let default_hotkey = RuntimeConfig::default().hotkey;
-            if let Ok(shortcut) = Shortcut::from_str(&default_hotkey) {
+            // Force the main window to be visible, centered, and focused.
+            if let Some(win) = app.get_webview_window("main") {
+                let _ = win.center();
+                let _ = win.show();
+                let _ = win.set_focus();
+            }
+
+            // Register the default push-to-talk + read-aloud hotkeys.
+            let defaults = RuntimeConfig::default();
+            if let Ok(shortcut) = Shortcut::from_str(&defaults.hotkey) {
                 let _ = app.global_shortcut().register(shortcut);
             }
+            if let Ok(shortcut) = Shortcut::from_str(&defaults.tts_hotkey) {
+                let _ = app.global_shortcut().register(shortcut);
+            }
+
+            // Inline proofreading watcher (squiggles in any app's text field).
+            system::inline_check::start(app.handle().clone());
 
             // Keep-alive: periodically re-assert the overlay as visible +
             // topmost so it never silently disappears (unless the user hid it).
@@ -659,6 +795,14 @@ pub fn run() {
             set_autostart,
             get_autostart,
             set_hotkey,
+            set_tts,
+            tts_read_selection,
+            tts_stop,
+            tts_speak_text,
+            list_downloaded_tts,
+            proofread_text,
+            download_tts_model,
+            delete_tts_model,
             set_active_mode,
             ollama_status,
             ollama_generate,

@@ -9,6 +9,29 @@ import type {
 } from "../types";
 import { BUILTIN_MODES } from "../services/modes";
 
+// Mirrors the Tauri global-shortcut parser's accepted main keys (see
+// HotkeyRecorder.tsx's isSupportedMain). Used to sanitize hotkeys loaded
+// from localStorage that predate that validation — without this, a
+// previously-saved unsupported key (e.g. "ContextMenu") would be re-sent to
+// Rust on every launch and fail forever with no way to self-heal.
+const SUPPORTED_NAMED_MAIN = new Set([
+  "Space", "Up", "Down", "Left", "Right", "Escape", "Tab", "Return",
+  "Backspace", "Delete", "Home", "End", "PageUp", "PageDown", "Insert",
+  "Pause", "ScrollLock", "PrintScreen", "NumLock", "CapsLock",
+  "Alt", "Ctrl", "Shift", "Super",
+]);
+
+function isValidAccelerator(accel: string | undefined | null): boolean {
+  if (!accel) return false;
+  const parts = accel.split("+");
+  const main = parts[parts.length - 1];
+  return (
+    /^[A-Z0-9]$/.test(main) ||
+    /^F([1-9]|1[0-9]|2[0-4])$/.test(main) ||
+    SUPPORTED_NAMED_MAIN.has(main)
+  );
+}
+
 const DEFAULT_SETTINGS: Settings = {
   hotkey: "Ctrl+Shift+Space",
   active_stt_model: "base.en",
@@ -24,6 +47,9 @@ const DEFAULT_SETTINGS: Settings = {
   stt_cloud_provider_id: null,
   toggle_mode: true,
   input_sensitivity: 50,
+  inline_proofread: true,
+  active_tts_voice: null,
+  tts_hotkey: "Ctrl+Alt+S",
   onboarded: false,
 };
 
@@ -116,6 +142,36 @@ export const useSettingsStore = create<SettingsState>()(
           appProfiles: s.appProfiles.filter((p) => p.id !== id),
         })),
     }),
-    { name: "silent-voice-settings" }
+    {
+      name: "silent-voice-settings",
+      merge: (persistedState: any, currentState) => {
+        // Deep merge the settings object so new keys added to DEFAULT_SETTINGS
+        // aren't lost when loading an older persisted state.
+        const mergedSettings = {
+          ...currentState.settings,
+          ...(persistedState?.settings || {}),
+        };
+        // Also ensure new keys are strictly populated if undefined in persisted state
+        for (const key in currentState.settings) {
+          if (mergedSettings[key] === undefined) {
+            mergedSettings[key] = currentState.settings[key as keyof Settings];
+          }
+        }
+        // Self-heal hotkeys saved before Tauri-accelerator validation
+        // existed — an unsupported key would otherwise fail on the Rust
+        // side forever with the same error banner on every launch.
+        if (!isValidAccelerator(mergedSettings.hotkey)) {
+          mergedSettings.hotkey = DEFAULT_SETTINGS.hotkey;
+        }
+        if (!isValidAccelerator(mergedSettings.tts_hotkey)) {
+          mergedSettings.tts_hotkey = DEFAULT_SETTINGS.tts_hotkey;
+        }
+        return {
+          ...currentState,
+          ...persistedState,
+          settings: mergedSettings,
+        };
+      },
+    }
   )
 );

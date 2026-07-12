@@ -177,14 +177,15 @@ export async function setTextReplacements(
   }
 }
 
-// Push behavior settings (double-tap lock, input sensitivity 0-100).
+// Push behavior settings (double-tap lock, input sensitivity, inline proofread).
 export async function setBehavior(
   toggleMode: boolean,
-  inputSensitivity: number
+  inputSensitivity: number,
+  inlineProofread: boolean
 ): Promise<void> {
   if (!isTauri()) return;
   try {
-    await invoke<void>("set_behavior", { toggleMode, inputSensitivity });
+    await invoke<void>("set_behavior", { toggleMode, inputSensitivity, inlineProofread });
   } catch (e) {
     console.warn("set_behavior failed", e);
   }
@@ -208,6 +209,71 @@ export async function getAutostart(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+// ---------------- Read aloud (TTS) ----------------
+
+/** Push the active read-aloud voice + hotkey to Rust (registers the hotkey). */
+export async function setTts(voiceId: string, hotkey: string): Promise<void> {
+  if (!isTauri()) return;
+  try {
+    await invoke<void>("set_tts", { voiceId, hotkey });
+  } catch (e) {
+    console.warn("set_tts failed", e);
+  }
+}
+
+export async function listDownloadedTts(): Promise<string[]> {
+  if (!isTauri()) return [];
+  return invoke<string[]>("list_downloaded_tts");
+}
+
+export async function downloadTtsModel(
+  voiceId: string,
+  urlOnnx: string,
+  urlJson: string
+): Promise<void> {
+  if (!isTauri()) throw new Error("Voice downloads require the desktop app");
+  await invoke<void>("download_tts_model", { voiceId, urlOnnx, urlJson });
+}
+
+export async function deleteTtsModel(voiceId: string): Promise<void> {
+  if (!isTauri()) return;
+  await invoke<void>("delete_tts_model", { voiceId });
+}
+
+/** Read the current text selection aloud (same as pressing the TTS hotkey). */
+export async function ttsReadSelection(): Promise<void> {
+  if (!isTauri()) return;
+  await invoke<void>("tts_read_selection");
+}
+
+export async function ttsStop(): Promise<void> {
+  if (!isTauri()) return;
+  await invoke<void>("tts_stop");
+}
+
+/** Speak an explicit string with the active voice (Settings "Test voice"). */
+export async function ttsSpeakText(text: string): Promise<void> {
+  if (!isTauri()) return;
+  await invoke<void>("tts_speak_text", { text });
+}
+
+/** One spelling/grammar issue found by Harper. Offsets are CHAR indices
+ * (use Array.from(text), not text.slice, to map them). */
+export interface ProofIssue {
+  start: number;
+  end: number;
+  message: string;
+  kind: string;
+  suggestions: string[];
+}
+
+/** Check text for spelling/grammar issues (offline, Harper). Custom
+ * vocabulary words are never flagged. */
+export async function proofreadText(text: string): Promise<ProofIssue[]> {
+  if (!isTauri()) return [];
+  return invoke<ProofIssue[]>("proofread_text", { text });
 }
 
 // Push per-app profile rules, fully resolved (mode → prompt/model/keys) so the
