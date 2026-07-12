@@ -676,7 +676,16 @@ All toggles live in Settings and are pushed to Rust via `set_behavior` /
     user request); spelling red #EF4444, grammar blue #3B82F6. Note: curly
     squiggles seen alongside ours in browsers/Electron are the HOST app's
     native spellchecker — not ours, can't be removed from our side.
-  - **Popup v4 (current, from a user-provided mockup):** bold "Spelling
+  - **Popup rendering (v5, do not regress to WM_PAINT):** the popup is a
+    per-pixel-alpha LAYERED window (UpdateLayeredWindow + premultiplied
+    ARGB DIB), NOT an opaque region-clipped window — CreateRoundRectRgn has
+    1-bit edges and made corners jagged. render_popup() GDI-draws content
+    into the DIB, then an SDF pass (radius 24) computes anti-aliased corner
+    coverage AND paints the 2px orange border in the same math, so border
+    and corner geometry cannot drift (a GDI RoundRect border was tried and
+    clipped — GDI's corner param is a DIAMETER, not radius). Hover repaints
+    go through a NEEDS_REDRAW atomic polled by the overlay loop.
+  - **Popup v4 (layout, from a user-provided mockup):** bold "Spelling
     Insights"/"Grammar Insights" title + subtitle, 48px suggestion rows with
     rounded PEACH hover (#FAE0CE) and thin separators, gray FOOTER BAR with
     inline "Add to Dictionary" (Segoe MDL2 book glyph) and "Dismiss" (X
