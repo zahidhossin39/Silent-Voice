@@ -670,6 +670,15 @@ All toggles live in Settings and are pushed to Rust via `set_behavior` /
     user request); spelling red #EF4444, grammar blue #3B82F6. Note: curly
     squiggles seen alongside ours in browsers/Electron are the HOST app's
     native spellchecker — not ours, can't be removed from our side.
+  - **Popup v3:** colored category header (8px dot + label: red "Spelling" /
+    blue "Grammar" / orange "Dictionary"), suggestion hover = solid orange
+    fill with white text. "Add to dictionary" opens a PICKER (popup state
+    machine, `PICKER` AtomicBool in squiggle.rs): flagged word + suggestions
+    listed, click one → that word is what gets added — user chooses.
+  - **Repetition lint** (proofread.rs): consecutive duplicate words
+    ("pop-up pop-up", case-insensitive, whitespace-separated) flagged with
+    kind "Repetition", suggestion collapses to a single occurrence. Skipped
+    when a Harper issue already overlaps the range. Unit tested.
   - **Dismiss / Add to dictionary rows** (below the suggestions, muted):
     channel enum is `OverlayAction::{Fix, Dismiss, AddToVocab}`. Dismiss =
     session-only in-memory HashSet in the watcher. AddToVocab additionally
