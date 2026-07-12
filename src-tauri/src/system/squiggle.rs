@@ -1,9 +1,9 @@
-// Squiggle overlay + suggestion popup for inline proofreading.
+﻿// Squiggle overlay + suggestion popup for inline proofreading.
 //
 // - Squiggles: a pool of tiny click-through layered Win32 windows, one per
 //   flagged word (Grammarly's architecture). Deliberately NOT a webview:
 //   fullscreen overlays are expensive on integrated GPUs, and transparent
-//   WebView2 windows are known-broken on some hardware (CLAUDE.md §8.1).
+//   WebView2 windows are known-broken on some hardware (CLAUDE.md Â§8.1).
 // - Popup: hovering a flagged word ~250ms shows a small native card with the
 //   problem + clickable suggestions. The card is WS_EX_NOACTIVATE and answers
 //   WM_MOUSEACTIVATE with MA_NOACTIVATE, so clicking it never steals focus
@@ -71,7 +71,7 @@ pub struct SquiggleInfo {
     pub expected: String,
 }
 
-/// Overlay → watcher: actions representing either fixing a word, dismissing,
+/// Overlay â†’ watcher: actions representing either fixing a word, dismissing,
 /// or adding to the vocabulary.
 pub enum OverlayAction {
     Fix { start: usize, end: usize, expected: String, replacement: String },
@@ -322,11 +322,11 @@ unsafe fn paint_popup(hwnd: HWND) {
     }
 
     // 8. Draw 1px rounded border around the entire popup card
-    let border_pen = CreatePen(PS_SOLID, 1, COLORREF(0x001673f9));
+    let border_pen = CreatePen(PS_SOLID, 2, COLORREF(0x001673f9));
     let null_brush = GetStockObject(NULL_BRUSH);
     let old_pen = SelectObject(hdc, border_pen);
     let old_brush = SelectObject(hdc, null_brush);
-    let _ = RoundRect(hdc, 0, 0, POPUP_W, height, 32, 32);
+    let _ = RoundRect(hdc, 1, 1, POPUP_W - 1, height - 1, 32, 32);
     SelectObject(hdc, old_pen);
     SelectObject(hdc, old_brush);
     let _ = DeleteObject(border_pen);
@@ -548,7 +548,7 @@ fn popup_still_valid(popup: &Popup, new_infos: &[SquiggleInfo], old_infos: &[Squ
 
 unsafe fn show_popup(popup: &mut Popup, infos: &[SquiggleInfo], idx: usize) {
     let Some(info) = infos.get(idx) else { return };
-    // No suggestions → still show the message so the user knows what's wrong.
+    // No suggestions â†’ still show the message so the user knows what's wrong.
     let rows: Vec<String> = info.suggestions.iter().take(3).cloned().collect();
     let mut message = info.message.clone();
     if message.chars().count() > 40 {
@@ -671,10 +671,11 @@ unsafe fn draw_squiggle(hwnd: HWND, x: i32, y: i32, w: i32, color: u32) {
 
     let px = std::slice::from_raw_parts_mut(bits as *mut u32, (w * h) as usize);
     px.fill(0);
-    // Straight line: 2px thick, drawn on the top 2 rows (rows 0 and 1), full width.
+    // Straight line: 3px thick, drawn on the top 3 rows (rows 0, 1 and 2), full width.
     for cx in 0..w {
         px[cx as usize] = color;
         px[(w + cx) as usize] = color;
+        px[(2 * w + cx) as usize] = color;
     }
 
     let blend = BLENDFUNCTION {
