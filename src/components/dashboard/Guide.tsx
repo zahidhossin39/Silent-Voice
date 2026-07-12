@@ -96,6 +96,36 @@ export default function Guide() {
           </Card>
         </div>
 
+        {/* INLINE PROOFREADING */}
+        <Card title="Inline Proofreading" className="bg-gradient-to-br from-sv-surface to-sv-bg border-sv-border/80">
+          <div className="flex flex-col lg:flex-row items-center justify-between gap-8 py-2">
+            <div className="flex-1 space-y-6">
+              <Step n={1} title="Spelling & grammar checks">
+                Silent Voice underlines spelling errors in <span className="border-b-2 border-red-500 pb-0.5 font-medium text-sv-text">red</span> and grammar issues in <span className="border-b-2 border-blue-500 pb-0.5 font-medium text-sv-text">blue</span> as you type in almost any app's text field (English only).
+              </Step>
+              <Step n={2} title="Hover for suggestions">
+                Hover over an underline for about a quarter second to see what's wrong along with up to 3 smart suggestions.
+              </Step>
+              <Step n={3} title="Click to replace instantly">
+                Click a suggestion to replace the word instantly. Your clipboard and the app's undo history remain completely untouched.
+              </Step>
+              <div className="pt-4 border-t border-sv-border/40 space-y-2.5">
+                <p className="text-xs text-sv-muted flex items-center gap-2">
+                  <span className="text-sm">⚙️</span>
+                  <span>Can be turned off in <strong className="text-sv-text font-medium">Settings → Dictation → 'Inline proofreading'</strong>.</span>
+                </p>
+                <p className="text-xs text-sv-muted flex items-center gap-2">
+                  <span className="text-sm">📚</span>
+                  <span>Words added to your <strong className="text-sv-text font-medium">Custom vocabulary</strong> are never flagged.</span>
+                </p>
+              </div>
+            </div>
+            <div className="w-full lg:w-auto flex justify-center mt-6 lg:mt-0">
+              <ProofreadingVisual />
+            </div>
+          </div>
+        </Card>
+
         {/* POWER FEATURES */}
         <Card title="Power Features (Settings)">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pt-2">
@@ -116,6 +146,9 @@ export default function Guide() {
              </FeatureItem>
              <FeatureItem title="Input sensitivity" icon={<SliderIcon />}>
                Adjust the slider to filter out background noise (wind, keyboard clicks, fans).
+             </FeatureItem>
+             <FeatureItem title="Read aloud" icon={<SpeakerIcon />}>
+               Select text in any app and press the read-aloud hotkey to hear it spoken. Voices live in Model Store → Text-to-Speech.
              </FeatureItem>
           </div>
         </Card>
@@ -326,6 +359,46 @@ function ModelScaleVisual() {
   );
 }
 
+function ProofreadingVisual() {
+  return (
+    <div className="relative w-full max-w-[320px] rounded-2xl border border-sv-border bg-sv-surface-2/10 p-5 shadow-sm">
+      <div className="flex items-center justify-between border-b border-sv-border/30 pb-3 mb-4">
+        <div className="flex items-center gap-1.5">
+          <span className="h-2.5 w-2.5 rounded-full bg-sv-accent animate-pulse" />
+          <span className="text-xs font-semibold text-sv-text">Active App Input</span>
+        </div>
+        <span className="text-[10px] text-sv-muted font-mono bg-sv-surface-2 px-2 py-0.5 rounded border border-sv-border/50">English only</span>
+      </div>
+      
+      <div className="space-y-4">
+        <p className="text-sm text-sv-text leading-relaxed font-normal">
+          Silent Voice <span className="border-b-2 border-blue-500 pb-0.5 cursor-help">detect</span> spelling <span className="border-b-2 border-red-500 pb-0.5 cursor-help">erors</span> as you type.
+        </p>
+
+        {/* Hover Suggestion Box Mockup */}
+        <div className="rounded-xl border border-sv-border bg-sv-surface p-3 shadow-lg max-w-[260px] mx-auto animate-in fade-in slide-in-from-top-2 duration-300">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[9px] font-bold text-red-500 uppercase tracking-wider">Spelling Issue</span>
+            <span className="text-[9px] text-sv-muted">Hovered (0.25s)</span>
+          </div>
+          <p className="text-xs text-sv-text mb-2.5 font-medium">Did you mean <span className="text-sv-accent font-semibold">errors</span>?</p>
+          <div className="flex flex-wrap gap-1.5">
+            <button className="text-[11px] font-semibold text-sv-accent bg-sv-accent/10 border border-sv-accent/20 px-2.5 py-1 rounded-lg hover:bg-sv-accent/20 transition-colors cursor-pointer">
+              errors
+            </button>
+            <button className="text-[11px] text-sv-text bg-sv-surface-2 border border-sv-border px-2.5 py-1 rounded-lg hover:bg-sv-surface-2/80 transition-colors cursor-pointer">
+              error
+            </button>
+            <button className="text-[11px] text-sv-text bg-sv-surface-2 border border-sv-border px-2.5 py-1 rounded-lg hover:bg-sv-surface-2/80 transition-colors cursor-pointer">
+              eras
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── Icons ─────────────────────────────────────────────────── */
 function BookIcon() {
   return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>;
@@ -344,4 +417,7 @@ function BrainIcon() {
 }
 function SliderIcon() {
   return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/></svg>;
+}
+function SpeakerIcon() {
+  return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg>;
 }

@@ -23,11 +23,11 @@ use windows::Win32::Foundation::{
     COLORREF, HWND, LPARAM, LRESULT, POINT, RECT, SIZE, WPARAM,
 };
 use windows::Win32::Graphics::Gdi::{
-    BeginPaint, CreateCompatibleDC, CreateDIBSection, CreateFontW, CreateSolidBrush, DeleteDC,
-    DeleteObject, EndPaint, FillRect, GetDC, InvalidateRect, ReleaseDC, SelectObject,
-    SetBkMode, SetTextColor, TextOutW, AC_SRC_ALPHA, AC_SRC_OVER, BITMAPINFO, BITMAPINFOHEADER,
-    BI_RGB, BLENDFUNCTION, DIB_RGB_COLORS, FW_NORMAL, FW_SEMIBOLD, HBITMAP, HFONT, PAINTSTRUCT,
-    TRANSPARENT,
+    BeginPaint, CreateCompatibleDC, CreateDIBSection, CreateFontW, CreateRoundRectRgn,
+    CreateSolidBrush, DeleteDC, DeleteObject, EndPaint, FillRect, GetDC, InvalidateRect,
+    ReleaseDC, SelectObject, SetBkMode, SetTextColor, TextOutW, AC_SRC_ALPHA, AC_SRC_OVER,
+    BITMAPINFO, BITMAPINFOHEADER, BI_RGB, BLENDFUNCTION, DIB_RGB_COLORS, FW_NORMAL, FW_SEMIBOLD,
+    HBITMAP, HFONT, PAINTSTRUCT, TRANSPARENT, SetWindowRgn,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -35,24 +35,25 @@ use windows::Win32::UI::WindowsAndMessaging::{
     RegisterClassW, SetWindowPos, ShowWindow, TranslateMessage, UpdateLayeredWindow,
     HWND_TOPMOST, MA_NOACTIVATE, MSG, PM_REMOVE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
     SW_HIDE, SW_SHOWNOACTIVATE, ULW_ALPHA, WM_LBUTTONDOWN, WM_MOUSEACTIVATE,
-    WM_MOUSEMOVE, WM_PAINT, WNDCLASSW, WS_BORDER, WS_EX_LAYERED, WS_EX_NOACTIVATE,
+    WM_MOUSEMOVE, WM_PAINT, WNDCLASSW, WS_EX_LAYERED, WS_EX_NOACTIVATE,
     WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
 };
 
 const SQUIGGLE_H: i32 = 4;
 const MAX_SQUIGGLES: usize = 24;
-const RED: u32 = 0xFFE5484D; // spelling (premultiplied BGRA as 0xAARRGGBB)
+const RED: u32 = 0xFFEF4444; // spelling (premultiplied BGRA as 0xAARRGGBB)
 const BLUE: u32 = 0xFF3B82F6; // grammar/style
 
 // Popup metrics/colors (GDI COLORREF is 0x00BBGGRR).
-const POPUP_W: i32 = 320;
-const PAD: i32 = 10;
-const MSG_H: i32 = 22;
-const ROW_H: i32 = 28;
-const BG: u32 = 0x001d1814; // near-black, warm
-const ROW_HOVER_BG: u32 = 0x00332a22;
-const TXT_MUTED: u32 = 0x00a3a3a3;
-const TXT_MAIN: u32 = 0x00f5f5f5;
+const POPUP_W: i32 = 260;
+const PAD: i32 = 14;
+const MSG_H: i32 = 20;
+const ROW_H: i32 = 34;
+const ROWS_TOP: i32 = PAD + MSG_H + 12;
+const BG: u32 = 0x00201b17; // near-black, warm
+const ROW_HOVER_BG: u32 = 0x00352a20;
+const TXT_MUTED: u32 = 0x009a9a9a;
+const TXT_MAIN: u32 = 0x00f0f0f0;
 const TXT_ACCENT: u32 = 0x001673f9; // orange #f97316 as BGR
 
 /// One flagged word occurrence on screen (word rect in physical pixels).
@@ -102,7 +103,7 @@ fn popup_msg() -> &'static Mutex<String> {
 }
 
 fn row_at(y: i32) -> i32 {
-    let rel = y - (PAD + MSG_H + 4);
+    let rel = y - ROWS_TOP;
     if rel < 0 {
         return -1;
     }
@@ -153,7 +154,7 @@ unsafe fn paint_popup(hwnd: HWND) {
     let rows = popup_rows().lock().map(|r| r.clone()).unwrap_or_default();
     let message = popup_msg().lock().map(|m| m.clone()).unwrap_or_default();
     let hover = HOVER_ROW.load(Ordering::Relaxed);
-    let height = PAD + MSG_H + 4 + rows.len() as i32 * ROW_H + PAD;
+    let height = ROWS_TOP + rows.len() as i32 * ROW_H + PAD;
 
     let bg = CreateSolidBrush(COLORREF(BG));
     FillRect(hdc, &RECT { left: 0, top: 0, right: POPUP_W, bottom: height }, bg);
@@ -161,7 +162,7 @@ unsafe fn paint_popup(hwnd: HWND) {
 
     SetBkMode(hdc, TRANSPARENT);
     let font_msg: HFONT = CreateFontW(
-        -14, 0, 0, 0, FW_NORMAL.0 as i32, 0, 0, 0, 0, 0, 0, 0, 0, w!("Segoe UI"),
+        -13, 0, 0, 0, FW_NORMAL.0 as i32, 0, 0, 0, 0, 0, 0, 0, 0, w!("Segoe UI"),
     );
     let font_row: HFONT = CreateFontW(
         -15, 0, 0, 0, FW_SEMIBOLD.0 as i32, 0, 0, 0, 0, 0, 0, 0, 0, w!("Segoe UI"),
@@ -172,21 +173,36 @@ unsafe fn paint_popup(hwnd: HWND) {
     let msg_utf16: Vec<u16> = message.encode_utf16().collect();
     let _ = TextOutW(hdc, PAD, PAD, &msg_utf16);
 
+    let sep_color = CreateSolidBrush(COLORREF(0x00393028));
+    let sep_y = PAD + MSG_H + 6;
+    FillRect(
+        hdc,
+        &RECT {
+            left: PAD,
+            top: sep_y,
+            right: POPUP_W - PAD,
+            bottom: sep_y + 1,
+        },
+        sep_color,
+    );
+    let _ = DeleteObject(sep_color);
+
     SelectObject(hdc, font_row);
     for (i, row) in rows.iter().enumerate() {
-        let top = PAD + MSG_H + 4 + i as i32 * ROW_H;
+        let top = ROWS_TOP + i as i32 * ROW_H;
         if i as i32 == hover {
             let hb = CreateSolidBrush(COLORREF(ROW_HOVER_BG));
             FillRect(
                 hdc,
-                &RECT { left: 2, top, right: POPUP_W - 2, bottom: top + ROW_H },
+                &RECT { left: 6, top, right: POPUP_W - 6, bottom: top + ROW_H },
                 hb,
             );
             let _ = DeleteObject(hb);
         }
         SetTextColor(hdc, COLORREF(if i as i32 == hover { TXT_ACCENT } else { TXT_MAIN }));
         let row_utf16: Vec<u16> = row.encode_utf16().collect();
-        let _ = TextOutW(hdc, PAD, top + 4, &row_utf16);
+        let text_y = top + (ROW_H - 20) / 2;
+        let _ = TextOutW(hdc, PAD, text_y, &row_utf16);
     }
 
     SelectObject(hdc, old);
@@ -232,7 +248,7 @@ fn run(rx: Receiver<Vec<SquiggleInfo>>, fix_tx: Sender<FixRequest>) {
             WS_EX_NOACTIVATE | WS_EX_TOPMOST | WS_EX_TOOLWINDOW,
             popup_class,
             w!(""),
-            WS_POPUP | WS_BORDER,
+            WS_POPUP,
             0,
             0,
             POPUP_W,
@@ -369,10 +385,15 @@ unsafe fn show_popup(popup: &mut Popup, infos: &[SquiggleInfo], idx: usize) {
     }
     HOVER_ROW.store(-1, Ordering::Relaxed);
 
-    let height = PAD + MSG_H + 4 + rows.len() as i32 * ROW_H + PAD;
+    let height = ROWS_TOP + rows.len() as i32 * ROW_H + PAD;
     let x = info.x;
-    let y = info.y + info.h + SQUIGGLE_H + 2;
+    let mut y = info.y - height - 6;
+    if y < 0 {
+        y = info.y + info.h + SQUIGGLE_H + 2;
+    }
     let _ = MoveWindow(popup.hwnd, x, y, POPUP_W, height, true);
+    let rgn = CreateRoundRectRgn(0, 0, POPUP_W + 1, height + 1, 12, 12);
+    let _ = SetWindowRgn(popup.hwnd, rgn, true);
     popup.rect = RECT { left: x, top: y, right: x + POPUP_W, bottom: y + height };
     popup.info_idx = idx;
     popup.shown = true;
@@ -469,14 +490,10 @@ unsafe fn draw_squiggle(hwnd: HWND, x: i32, y: i32, w: i32, color: u32) {
 
     let px = std::slice::from_raw_parts_mut(bits as *mut u32, (w * h) as usize);
     px.fill(0);
-    // Classic proofing wave: 4px period, 2px thick.
-    const WAVE: [i32; 4] = [2, 1, 0, 1];
+    // Straight line: 2px thick, drawn on the top 2 rows (rows 0 and 1), full width.
     for cx in 0..w {
-        let cy = WAVE[(cx % 4) as usize];
-        px[(cy * w + cx) as usize] = color;
-        if cy + 1 < h {
-            px[((cy + 1) * w + cx) as usize] = color;
-        }
+        px[cx as usize] = color;
+        px[(w + cx) as usize] = color;
     }
 
     let blend = BLENDFUNCTION {
