@@ -10,13 +10,14 @@
 // - GetBoundingRectangles returns only the VISIBLE rects (scrolled-away text
 //   yields none), so clipping is free.
 
-use super::squiggle::{FixRequest, SquiggleInfo};
+use super::squiggle::{OverlayAction, SquiggleInfo};
 use crate::proofread;
 use crate::AppState;
 use enigo::{Direction::Release, Enigo, Key, Keyboard, Settings as EnigoSettings};
+use std::collections::HashSet;
 use std::sync::mpsc::channel;
 use std::time::Duration;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 use windows::core::Interface;
 use windows::Win32::Foundation::{CloseHandle, HANDLE};
 use windows::Win32::System::Com::{
@@ -69,26 +70,54 @@ fn watcher(app: AppHandle) {
                     return;
                 }
             };
-        let (fix_tx, fix_rx) = channel::<FixRequest>();
-        let overlay_tx = super::squiggle::spawn(fix_tx);
+        let (action_tx, action_rx) = channel::<OverlayAction>();
+        let overlay_tx = super::squiggle::spawn(action_tx);
         let my_pid = GetCurrentProcessId();
 
+        let mut dismissed_words = HashSet::<String>::new();
         let mut last_text = String::new();
         let mut issues: Vec<proofread::ProofIssue> = Vec::new();
         let mut was_active = false;
         loop {
             std::thread::sleep(Duration::from_millis(POLL_MS));
 
-            // Apply any clicked suggestion first, then force a re-lint so the
-            // squiggle disappears on the next poll instead of lingering.
-            while let Ok(req) = fix_rx.try_recv() {
-                crate::logging::log_info(
-                    "inline_check",
-                    &format!("fix request: {:?} -> {:?}", req.expected, req.replacement),
-                );
-                if let Err(e) = apply_fix(&automation, &req) {
-                    crate::logging::log_error("inline_check", &format!("fix failed: {e}"));
+            // Process any incoming overlay actions.
+            let mut check_needed = false;
+            while let Ok(action) = action_rx.try_recv() {
+                match action {
+                    OverlayAction::Fix { start, end, expected, replacement } => {
+                        crate::logging::log_info(
+                            "inline_check",
+                            &format!("fix request: {:?} -> {:?}", expected, replacement),
+                        );
+                        if let Err(e) = apply_fix(&automation, start, end, &expected, &replacement) {
+                            crate::logging::log_error("inline_check", &format!("fix failed: {e}"));
+                        }
+                        check_needed = true;
+                    }
+                    OverlayAction::Dismiss { word } => {
+                        crate::logging::log_info(
+                            "inline_check",
+                            &format!("dismiss request: {:?}", word),
+                        );
+                        dismissed_words.insert(word.to_lowercase());
+                        check_needed = true;
+                    }
+                    OverlayAction::AddToVocab { word } => {
+                        crate::logging::log_info(
+                            "inline_check",
+                            &format!("add to vocab request: {:?}", word),
+                        );
+                        let lower = word.to_lowercase();
+                        dismissed_words.insert(lower);
+                        if let Err(e) = app.emit("proofread://add-vocab", &word) {
+                            crate::logging::log_error("inline_check", &format!("failed to emit add-vocab: {e}"));
+                        }
+                        check_needed = true;
+                    }
                 }
+            }
+            if check_needed {
                 last_text.clear();
                 issues.clear();
             }
@@ -116,6 +145,7 @@ fn watcher(app: AppHandle) {
                 &automation,
                 my_pid,
                 &vocabulary,
+                &dismissed_words,
                 &mut last_text,
                 &mut issues,
             );
@@ -133,6 +163,7 @@ fn poll_once(
     automation: &IUIAutomation,
     my_pid: u32,
     vocabulary: &str,
+    dismissed_words: &HashSet<String>,
     last_text: &mut String,
     issues: &mut Vec<proofread::ProofIssue>,
 ) -> (Vec<SquiggleInfo>, &'static str) {
@@ -189,11 +220,14 @@ fn poll_once(
         let chars: Vec<char> = last_text.chars().collect();
         let mut squiggles = Vec::new();
         for issue in issues.iter() {
+            let expected: String = chars
+                .get(issue.start..issue.end)
+                .map(|c| c.iter().collect())
+                .unwrap_or_default();
+            if dismissed_words.contains(&expected.to_lowercase()) {
+                continue;
+            }
             if let Some(rects) = issue_rects(&doc, &chars, issue) {
-                let expected: String = chars
-                    .get(issue.start..issue.end)
-                    .map(|c| c.iter().collect())
-                    .unwrap_or_default();
                 for (x, y, w, h) in rects {
                     if w < 2.0 || h < 2.0 {
                         continue;
@@ -234,7 +268,13 @@ fn poll_once(
 /// text replaces a selection — preserves the app's undo stack and never
 /// touches the clipboard). The popup is WS_EX_NOACTIVATE, so the target
 /// field still owns focus and receives the synthetic input.
-fn apply_fix(automation: &IUIAutomation, req: &FixRequest) -> Result<(), String> {
+fn apply_fix(
+    automation: &IUIAutomation,
+    start: usize,
+    end: usize,
+    expected: &str,
+    replacement: &str,
+) -> Result<(), String> {
     unsafe {
         let el: IUIAutomationElement = automation
             .GetFocusedElement()
@@ -253,17 +293,17 @@ fn apply_fix(automation: &IUIAutomation, req: &FixRequest) -> Result<(), String>
             .to_string();
         let chars: Vec<char> = text.chars().collect();
         let current: String = chars
-            .get(req.start..req.end)
+            .get(start..end)
             .map(|c| c.iter().collect())
             .unwrap_or_default();
-        if current != req.expected {
+        if current != expected {
             return Err(format!(
                 "text changed under fix (expected {:?}, found {:?})",
-                req.expected, current
+                expected, current
             ));
         }
 
-        let r = range_for(&doc, &chars, req.start, req.end)
+        let r = range_for(&doc, &chars, start, end)
             .ok_or("could not build a verified range for the fix")?;
         r.Select().map_err(|e| format!("select failed: {e}"))?;
 
@@ -279,7 +319,7 @@ fn apply_fix(automation: &IUIAutomation, req: &FixRequest) -> Result<(), String>
         }
         // Type char-by-char with a small gap: web apps drop synthetic input
         // that arrives faster than their event loop reconciles.
-        for ch in req.replacement.chars() {
+        for ch in replacement.chars() {
             enigo.text(&ch.to_string()).map_err(|e| e.to_string())?;
             std::thread::sleep(Duration::from_millis(8));
         }

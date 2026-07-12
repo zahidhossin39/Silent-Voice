@@ -10,6 +10,7 @@ import {
   setAppProfiles,
   setAutostart,
   setTts,
+  listenEvent,
 } from "../services/tauriBridge";
 import type { ResolvedAppProfile } from "../services/tauriBridge";
 import type { Mode, ApiProvider } from "../types";
@@ -61,6 +62,34 @@ export function useRuntimeSync() {
   const ttsHotkey = useSettingsStore((s) => s.settings.tts_hotkey);
   const autoStart = useSettingsStore((s) => s.settings.auto_start);
   const overlayOpacity = useSettingsStore((s) => s.settings.overlay_opacity);
+  const setSettings = useSettingsStore((s) => s.setSettings);
+
+  useEffect(() => {
+    const unsubPromise = listenEvent<string>("proofread://add-vocab", (word) => {
+      const cleanWord = word.trim();
+      if (!cleanWord) return;
+
+      const currentVocab = useSettingsStore.getState().settings.custom_vocabulary || "";
+      const entries = currentVocab
+        .split(/[,\n]/)
+        .map((entry) => entry.trim())
+        .filter((entry) => entry.length > 0);
+
+      const exists = entries.some(
+        (entry) => entry.toLowerCase() === cleanWord.toLowerCase()
+      );
+
+      if (!exists) {
+        const trimmedVocab = currentVocab.trim();
+        const nextVocab = trimmedVocab ? `${trimmedVocab}, ${cleanWord}` : cleanWord;
+        setSettings({ custom_vocabulary: nextVocab });
+      }
+    });
+
+    return () => {
+      unsubPromise.then((unsub) => unsub());
+    };
+  }, [setSettings]);
 
   useEffect(() => {
     setOverlayOpacity(overlayOpacity);

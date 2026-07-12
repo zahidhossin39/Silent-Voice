@@ -45,16 +45,19 @@ const RED: u32 = 0xFFEF4444; // spelling (premultiplied BGRA as 0xAARRGGBB)
 const BLUE: u32 = 0xFF3B82F6; // grammar/style
 
 // Popup metrics/colors (GDI COLORREF is 0x00BBGGRR).
-const POPUP_W: i32 = 260;
+const POPUP_W: i32 = 300;
 const PAD: i32 = 14;
 const MSG_H: i32 = 20;
-const ROW_H: i32 = 34;
+const ROW_H: i32 = 38;
+const ACTION_H: i32 = 30;
 const ROWS_TOP: i32 = PAD + MSG_H + 12;
-const BG: u32 = 0x00201b17; // near-black, warm
-const ROW_HOVER_BG: u32 = 0x00352a20;
-const TXT_MUTED: u32 = 0x009a9a9a;
-const TXT_MAIN: u32 = 0x00f0f0f0;
+const BG: u32 = 0x00ffffff; // white
+const ROW_HOVER_BG: u32 = 0x00f5ede3; // light warm
+const TXT_MUTED: u32 = 0x00707070;
+const TXT_MAIN: u32 = 0x001a1a1a;
 const TXT_ACCENT: u32 = 0x001673f9; // orange #f97316 as BGR
+const TXT_ACTION: u32 = 0x00909090;
+const TXT_ACTION_HOVER: u32 = 0x00404040;
 
 /// One flagged word occurrence on screen (word rect in physical pixels).
 #[derive(Clone, PartialEq)]
@@ -73,18 +76,17 @@ pub struct SquiggleInfo {
     pub expected: String,
 }
 
-/// Overlay → watcher: "replace chars start..end (currently `expected`) with
-/// `replacement` in the focused field".
-pub struct FixRequest {
-    pub start: usize,
-    pub end: usize,
-    pub expected: String,
-    pub replacement: String,
+/// Overlay → watcher: actions representing either fixing a word, dismissing,
+/// or adding to the vocabulary.
+pub enum OverlayAction {
+    Fix { start: usize, end: usize, expected: String, replacement: String },
+    Dismiss { word: String },
+    AddToVocab { word: String },
 }
 
-pub fn spawn(fix_tx: Sender<FixRequest>) -> Sender<Vec<SquiggleInfo>> {
+pub fn spawn(action_tx: Sender<OverlayAction>) -> Sender<Vec<SquiggleInfo>> {
     let (tx, rx) = channel::<Vec<SquiggleInfo>>();
-    std::thread::spawn(move || run(rx, fix_tx));
+    std::thread::spawn(move || run(rx, action_tx));
     tx
 }
 
@@ -103,17 +105,21 @@ fn popup_msg() -> &'static Mutex<String> {
 }
 
 fn row_at(y: i32) -> i32 {
-    let rel = y - ROWS_TOP;
-    if rel < 0 {
-        return -1;
+    let n = popup_rows().lock().map(|r| r.len() as i32).unwrap_or(0);
+    for i in 0..n {
+        let top = ROWS_TOP + i * ROW_H;
+        if y >= top && y < top + ROW_H {
+            return i;
+        }
     }
-    let row = rel / ROW_H;
-    let count = popup_rows().lock().map(|r| r.len() as i32).unwrap_or(0);
-    if row < count {
-        row
-    } else {
-        -1
+    let action_start = ROWS_TOP + n * ROW_H + 9;
+    if y >= action_start && y < action_start + ACTION_H {
+        return n;
     }
+    if y >= action_start + ACTION_H && y < action_start + 2 * ACTION_H {
+        return n + 1;
+    }
+    -1
 }
 
 unsafe extern "system" fn squiggle_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
@@ -154,18 +160,27 @@ unsafe fn paint_popup(hwnd: HWND) {
     let rows = popup_rows().lock().map(|r| r.clone()).unwrap_or_default();
     let message = popup_msg().lock().map(|m| m.clone()).unwrap_or_default();
     let hover = HOVER_ROW.load(Ordering::Relaxed);
-    let height = ROWS_TOP + rows.len() as i32 * ROW_H + PAD;
+    let n = rows.len() as i32;
+    let height = ROWS_TOP + n * ROW_H + 9 + 2 * ACTION_H + PAD;
 
     let bg = CreateSolidBrush(COLORREF(BG));
     FillRect(hdc, &RECT { left: 0, top: 0, right: POPUP_W, bottom: height }, bg);
     let _ = DeleteObject(bg);
 
+    // Draw a 1px border inside the card (color 0x00dcdcdc)
+    let border_color = CreateSolidBrush(COLORREF(0x00dcdcdc));
+    FillRect(hdc, &RECT { left: 0, top: 0, right: POPUP_W, bottom: 1 }, border_color);
+    FillRect(hdc, &RECT { left: 0, top: height - 1, right: POPUP_W, bottom: height }, border_color);
+    FillRect(hdc, &RECT { left: 0, top: 0, right: 1, bottom: height }, border_color);
+    FillRect(hdc, &RECT { left: POPUP_W - 1, top: 0, right: POPUP_W, bottom: height }, border_color);
+    let _ = DeleteObject(border_color);
+
     SetBkMode(hdc, TRANSPARENT);
     let font_msg: HFONT = CreateFontW(
-        -13, 0, 0, 0, FW_NORMAL.0 as i32, 0, 0, 0, 0, 0, 0, 0, 0, w!("Segoe UI"),
+        -14, 0, 0, 0, FW_NORMAL.0 as i32, 0, 0, 0, 0, 0, 0, 0, 0, w!("Segoe UI"),
     );
     let font_row: HFONT = CreateFontW(
-        -15, 0, 0, 0, FW_SEMIBOLD.0 as i32, 0, 0, 0, 0, 0, 0, 0, 0, w!("Segoe UI"),
+        -17, 0, 0, 0, FW_SEMIBOLD.0 as i32, 0, 0, 0, 0, 0, 0, 0, 0, w!("Segoe UI"),
     );
 
     let old = SelectObject(hdc, font_msg);
@@ -173,7 +188,7 @@ unsafe fn paint_popup(hwnd: HWND) {
     let msg_utf16: Vec<u16> = message.encode_utf16().collect();
     let _ = TextOutW(hdc, PAD, PAD, &msg_utf16);
 
-    let sep_color = CreateSolidBrush(COLORREF(0x00393028));
+    let sep_color = CreateSolidBrush(COLORREF(0x00e8e8e8));
     let sep_y = PAD + MSG_H + 6;
     FillRect(
         hdc,
@@ -201,8 +216,68 @@ unsafe fn paint_popup(hwnd: HWND) {
         }
         SetTextColor(hdc, COLORREF(if i as i32 == hover { TXT_ACCENT } else { TXT_MAIN }));
         let row_utf16: Vec<u16> = row.encode_utf16().collect();
-        let text_y = top + (ROW_H - 20) / 2;
+        let text_y = top + (ROW_H - 22) / 2;
         let _ = TextOutW(hdc, PAD, text_y, &row_utf16);
+    }
+
+    // Draw second separator: "after the suggestion rows, a second separator (0x00e8e8e8, 1px, PAD to POPUP_W-PAD, 4px below the last suggestion row)"
+    let sep2_color = CreateSolidBrush(COLORREF(0x00e8e8e8));
+    let sep2_y = ROWS_TOP + n * ROW_H + 4;
+    FillRect(
+        hdc,
+        &RECT {
+            left: PAD,
+            top: sep2_y,
+            right: POPUP_W - PAD,
+            bottom: sep2_y + 1,
+        },
+        sep2_color,
+    );
+    let _ = DeleteObject(sep2_color);
+
+    // Draw Action rows: "Dismiss" and "Add to dictionary"
+    // Style: font -14 Segoe UI regular, color 0x00909090; hovered: text 0x00404040, same light hover fill
+    SelectObject(hdc, font_msg); // -14 Segoe UI regular
+    let action_start = ROWS_TOP + n * ROW_H + 9;
+
+    // Row n: Dismiss
+    {
+        let top = action_start;
+        if hover == n {
+            let hb = CreateSolidBrush(COLORREF(ROW_HOVER_BG));
+            FillRect(
+                hdc,
+                &RECT { left: 6, top, right: POPUP_W - 6, bottom: top + ACTION_H },
+                hb,
+            );
+            let _ = DeleteObject(hb);
+            SetTextColor(hdc, COLORREF(TXT_ACTION_HOVER));
+        } else {
+            SetTextColor(hdc, COLORREF(TXT_ACTION));
+        }
+        let txt_utf16: Vec<u16> = "Dismiss".encode_utf16().collect();
+        let text_y = top + (ACTION_H - 16) / 2;
+        let _ = TextOutW(hdc, PAD, text_y, &txt_utf16);
+    }
+
+    // Row n+1: Add to dictionary
+    {
+        let top = action_start + ACTION_H;
+        if hover == n + 1 {
+            let hb = CreateSolidBrush(COLORREF(ROW_HOVER_BG));
+            FillRect(
+                hdc,
+                &RECT { left: 6, top, right: POPUP_W - 6, bottom: top + ACTION_H },
+                hb,
+            );
+            let _ = DeleteObject(hb);
+            SetTextColor(hdc, COLORREF(TXT_ACTION_HOVER));
+        } else {
+            SetTextColor(hdc, COLORREF(TXT_ACTION));
+        }
+        let txt_utf16: Vec<u16> = "Add to dictionary".encode_utf16().collect();
+        let text_y = top + (ACTION_H - 16) / 2;
+        let _ = TextOutW(hdc, PAD, text_y, &txt_utf16);
     }
 
     SelectObject(hdc, old);
@@ -221,7 +296,7 @@ struct Popup {
     shown: bool,
 }
 
-fn run(rx: Receiver<Vec<SquiggleInfo>>, fix_tx: Sender<FixRequest>) {
+fn run(rx: Receiver<Vec<SquiggleInfo>>, action_tx: Sender<OverlayAction>) {
     unsafe {
         let hinst = match GetModuleHandleW(None) {
             Ok(h) => h,
@@ -301,12 +376,23 @@ fn run(rx: Receiver<Vec<SquiggleInfo>>, fix_tx: Sender<FixRequest>) {
             let clicked = CLICKED_ROW.swap(-1, Ordering::Relaxed);
             if clicked >= 0 && popup.shown {
                 if let Some(info) = infos.get(popup.info_idx) {
-                    if let Some(replacement) = info.suggestions.get(clicked as usize) {
-                        let _ = fix_tx.send(FixRequest {
-                            start: info.start,
-                            end: info.end,
-                            expected: info.expected.clone(),
-                            replacement: replacement.clone(),
+                    let n = popup_rows().lock().map(|r| r.len() as i32).unwrap_or(0);
+                    if clicked < n {
+                        if let Some(replacement) = info.suggestions.get(clicked as usize) {
+                            let _ = action_tx.send(OverlayAction::Fix {
+                                start: info.start,
+                                end: info.end,
+                                expected: info.expected.clone(),
+                                replacement: replacement.clone(),
+                            });
+                        }
+                    } else if clicked == n {
+                        let _ = action_tx.send(OverlayAction::Dismiss {
+                            word: info.expected.clone(),
+                        });
+                    } else if clicked == n + 1 {
+                        let _ = action_tx.send(OverlayAction::AddToVocab {
+                            word: info.expected.clone(),
                         });
                     }
                 }
@@ -374,8 +460,8 @@ unsafe fn show_popup(popup: &mut Popup, infos: &[SquiggleInfo], idx: usize) {
     // No suggestions → still show the message so the user knows what's wrong.
     let rows: Vec<String> = info.suggestions.iter().take(3).cloned().collect();
     let mut message = info.message.clone();
-    if message.chars().count() > 42 {
-        message = message.chars().take(41).collect::<String>() + "…";
+    if message.chars().count() > 46 {
+        message = message.chars().take(45).collect::<String>() + "…";
     }
     if let Ok(mut r) = popup_rows().lock() {
         *r = rows.clone();
@@ -385,7 +471,8 @@ unsafe fn show_popup(popup: &mut Popup, infos: &[SquiggleInfo], idx: usize) {
     }
     HOVER_ROW.store(-1, Ordering::Relaxed);
 
-    let height = ROWS_TOP + rows.len() as i32 * ROW_H + PAD;
+    let n = rows.len() as i32;
+    let height = ROWS_TOP + n * ROW_H + 9 + 2 * ACTION_H + PAD;
     let x = info.x;
     let mut y = info.y - height - 6;
     if y < 0 {
