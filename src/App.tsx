@@ -14,6 +14,7 @@ import { useSettingsStore } from "./stores/settingsStore";
 import { useHistoryStore } from "./stores/historyStore";
 import { usePipeline } from "./hooks/usePipeline";
 import { useRuntimeSync } from "./hooks/useRuntimeSync";
+import { checkForUpdates } from "./services/updater";
 import {
   HomeIcon,
   StoreIcon,
@@ -72,6 +73,8 @@ function Dashboard() {
   useEffect(() => {
     refresh();
     hydrate();
+    const t = setTimeout(() => checkForUpdates(), 5000);
+    return () => clearTimeout(t);
   }, [refresh, hydrate]);
 
   return (
@@ -115,7 +118,7 @@ function Dashboard() {
         </nav>
 
         <div className="px-5 py-4 text-[11px] text-sv-muted">
-          v0.1.0 · offline-ready
+          v0.1.3 · offline-ready
         </div>
       </aside>
 
