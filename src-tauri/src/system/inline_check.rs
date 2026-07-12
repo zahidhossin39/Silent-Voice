@@ -32,8 +32,9 @@ use windows::Win32::System::Threading::{
 };
 use windows::Win32::UI::Accessibility::{
     CUIAutomation, IUIAutomation, IUIAutomationElement, IUIAutomationTextPattern,
-    IUIAutomationTextRange, IUIAutomationValuePattern, TextPatternRangeEndpoint_End,
-    TextPatternRangeEndpoint_Start, TextUnit_Character, UIA_TextPatternId, UIA_ValuePatternId,
+    IUIAutomationTextRange, IUIAutomationValuePattern, SupportedTextSelection_None,
+    TextPatternRangeEndpoint_End, TextPatternRangeEndpoint_Start, TextUnit_Character,
+    UIA_TextPatternId, UIA_ValuePatternId,
 };
 use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
 
@@ -188,16 +189,6 @@ fn poll_once(
         if el.CurrentIsPassword().map(|b| b.as_bool()).unwrap_or(false) {
             return (Vec::new(), "password field");
         }
-        let val_pattern: IUIAutomationValuePattern = match el
-            .GetCurrentPattern(UIA_ValuePatternId)
-            .and_then(|unk| unk.cast())
-        {
-            Ok(vp) => vp,
-            Err(_) => return (Vec::new(), "not editable"),
-        };
-        if val_pattern.CurrentIsReadOnly().map(|b| b.as_bool()) == Ok(true) {
-            return (Vec::new(), "read-only");
-        }
         let exe = process_name(pid);
         if IGNORE_EXES.contains(&exe.as_str()) {
             return (Vec::new(), "ignored exe");
@@ -209,6 +200,29 @@ fn poll_once(
             Ok(p) => p,
             Err(_) => return (Vec::new(), "no text pattern"),
         };
+        // Editability gate.
+        let mut editable = false;
+        if let Ok(vp) = el
+            .GetCurrentPattern(UIA_ValuePatternId)
+            .and_then(|unk| unk.cast::<IUIAutomationValuePattern>())
+        {
+            // Form control (input/textarea, Notepad, WPF Edit): editable unless read-only.
+            if vp.CurrentIsReadOnly().map(|b| b.as_bool()) == Ok(true) {
+                return (Vec::new(), "read-only");
+            }
+            editable = true;
+        }
+        if !editable {
+            // No ValuePattern: contenteditable / rich editor (e.g. ProseMirror,
+            // which does not implement TextPattern2). Treat it as editable only
+            // if the text supports selection -- static read-only labels report
+            // SupportedTextSelection_None. Read-only browser documents are
+            // already rejected above via ValuePattern IsReadOnly.
+            match pattern.SupportedTextSelection() {
+                Ok(sel) if sel != SupportedTextSelection_None => {}
+                _ => return (Vec::new(), "not selectable"),
+            }
+        }
         let doc = match pattern.DocumentRange() {
             Ok(d) => d,
             Err(_) => return (Vec::new(), "no document range"),
