@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Silent Voice",
-  "version": "0.1.0",
+  "version": "0.1.3",
   "identifier": "app.silentvoice.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -13,6 +13,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
+        "label": "main",
         "title": "Silent Voice",
         "width": 980,
         "height": 700,
@@ -20,7 +21,8 @@
         "minHeight": 560,
         "resizable": true,
         "visible": true,
-        "decorations": false
+        "decorations": false,
+        "center": true
       }
     ],
     "security": {
@@ -30,6 +32,7 @@
   "bundle": {
     "active": true,
     "targets": ["nsis"],
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -38,9 +41,18 @@
     ],
     "resources": {
       "sidecars/*.dll": "./",
-      "sidecars/llama/": "llama/"
+      "sidecars/llama/": "llama/",
+      "sidecars/piper/": "piper/",
+      "sidecars/sherpa/": "sherpa/"
     },
     "externalBin": ["sidecars/whisper-cpp"]
   },
-  "plugins": {}
+  "plugins": {
+    "updater": {
+      "pubkey": "TODO_REPLACE_WITH_TAURI_SIGNER_PUBLIC_KEY",
+      "endpoints": [
+        "https://github.com/zahidhossin39/Silent-Voice/releases/latest/download/latest.json"
+      ]
+    }
+  }
 }
