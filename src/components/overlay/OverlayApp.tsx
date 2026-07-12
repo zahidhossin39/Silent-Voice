@@ -8,6 +8,9 @@ import {
 } from "../../services/tauriBridge";
 import type { RecordingState } from "../../types";
 
+// Read-aloud playback state (mirrors the Rust `tts://state` event).
+export type TtsState = "idle" | "synthesizing" | "speaking";
+
 // Opaque pill window (matches overlay.rs). The window stays a FIXED size for
 // all dictation states — resizing a WebView2 window is unavoidably janky on
 // Windows, so every idle/recording/processing transition is a CSS animation
@@ -21,6 +24,7 @@ const PILL_BG = "#0e1116";
 
 export default function OverlayApp() {
   const [state, setState] = useState<RecordingState>("idle");
+  const [tts, setTts] = useState<TtsState>("idle");
   const [menuOpen, setMenuOpen] = useState(false);
 
   // Opaque dark fill (this window is the pill; DWM rounds its corners).
@@ -35,6 +39,15 @@ export default function OverlayApp() {
       "pipeline://state",
       (p) => setState(p.state)
     );
+    return () => {
+      unlisten.then((f) => f());
+    };
+  }, []);
+
+  // Read-aloud (TTS) state — shows a distinct blue waveform in the pill so
+  // the user can see TTS is working (and tell it apart from dictation).
+  useEffect(() => {
+    const unlisten = listenEvent<TtsState>("tts://state", (p) => setTts(p));
     return () => {
       unlisten.then((f) => f());
     };
@@ -67,7 +80,7 @@ export default function OverlayApp() {
           onClose={() => setMenuOpen(false)}
         />
       ) : (
-        <RecordingOverlay state={state} />
+        <RecordingOverlay state={state} tts={tts} />
       )}
     </div>
   );

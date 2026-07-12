@@ -22,8 +22,8 @@ export default defineConfig(async () => ({
         }
       : undefined,
     watch: {
-      // Don't watch the Rust backend dir
-      ignored: ["**/src-tauri/**"],
+      // Don't watch the Rust backend dir or installers
+      ignored: ["**/src-tauri/**", "**/Install/**"],
     },
   },
 }));

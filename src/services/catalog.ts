@@ -1,4 +1,4 @@
-import type { SttModel, LlmModel } from "../types";
+import type { SttModel, LlmModel, TtsModel, TtsQuality } from "../types";
 
 // Base URL for Whisper GGML models on Hugging Face
 export const WHISPER_BASE_URL =
@@ -1092,6 +1092,213 @@ export const LLM_MODELS: LlmModel[] = [
     best_for: "Reasoning-focused text cleanup",
   },
 ];
+
+// ============================================================
+// TTS voices (Piper) — read-aloud. Every entry verified against the
+// rhasspy/piper-voices HF tree (en/<region>/<voice>/<tier>/<id>.onnx[.json]).
+// Each voice needs BOTH files; download_tts_model fetches the pair.
+// Tier naming: Piper low → "fast", medium → "balanced", high → "natural".
+// ============================================================
+const PIPER_BASE = "https://huggingface.co/rhasspy/piper-voices/resolve/main";
+
+const TIER: Record<string, TtsQuality> = {
+  low: "fast",
+  medium: "balanced",
+  high: "natural",
+};
+
+function piperVoice(
+  region: "en_US" | "en_GB",
+  voice: string,
+  tier: "low" | "medium" | "high",
+  gender: "female" | "male" | "unknown",
+  sizeMb: number,
+  name: string
+): TtsModel {
+  const id = `${region}-${voice}-${tier}`;
+  const base = `${PIPER_BASE}/en/${region}/${voice}/${tier}/${id}.onnx`;
+  const accent = region === "en_US" ? "US" : "UK";
+  return {
+    id,
+    label: `${name} (${accent}, ${gender === "unknown" ? "voice" : gender})`,
+    gender,
+    accent,
+    language: `English (${accent})`,
+    engine: "piper",
+    quality: TIER[tier],
+    size_mb: sizeMb,
+    url_onnx: base,
+    url_json: `${base}.json`,
+  };
+}
+
+// Non-English Piper voice, e.g. piperVoiceLang("de", "de_DE", "thorsten", "high", "male", 109, "German").
+function piperVoiceLang(
+  langCode: string,
+  region: string,
+  voice: string,
+  tier: "low" | "medium" | "high",
+  gender: "female" | "male" | "unknown",
+  sizeMb: number,
+  language: string
+): TtsModel {
+  const id = `${region}-${voice}-${tier}`;
+  const base = `${PIPER_BASE}/${langCode}/${region}/${voice}/${tier}/${id}.onnx`;
+  return {
+    id,
+    label: `${voice[0].toUpperCase()}${voice.slice(1)} (${language}, ${gender === "unknown" ? "voice" : gender})`,
+    gender,
+    accent: "US", // unused for non-English voices — language carries the real info
+    language,
+    engine: "piper",
+    quality: TIER[tier],
+    size_mb: sizeMb,
+    url_onnx: base,
+    url_json: `${base}.json`,
+  };
+}
+
+export const TTS_MODELS: TtsModel[] = [
+  // ── US voices ─────────────────────────────────────────────
+  piperVoice("en_US", "amy", "low", "female", 61, "Amy — fast"),
+  piperVoice("en_US", "amy", "medium", "female", 61, "Amy"),
+  piperVoice("en_US", "danny", "low", "male", 61, "Danny — fast"),
+  piperVoice("en_US", "kathleen", "low", "female", 61, "Kathleen — fast"),
+  piperVoice("en_US", "ryan", "low", "male", 61, "Ryan — fast"),
+  piperVoice("en_US", "ryan", "medium", "male", 61, "Ryan"),
+  piperVoice("en_US", "ryan", "high", "male", 116, "Ryan HD"),
+  piperVoice("en_US", "lessac", "low", "female", 61, "Lessac — fast"),
+  piperVoice("en_US", "lessac", "medium", "female", 61, "Lessac"),
+  piperVoice("en_US", "lessac", "high", "female", 109, "Lessac HD"),
+  piperVoice("en_US", "joe", "medium", "male", 61, "Joe"),
+  piperVoice("en_US", "john", "medium", "male", 61, "John"),
+  piperVoice("en_US", "kristin", "medium", "female", 61, "Kristin"),
+  piperVoice("en_US", "hfc_female", "medium", "female", 61, "Clara"),
+  piperVoice("en_US", "hfc_male", "medium", "male", 61, "Henry"),
+  piperVoice("en_US", "norman", "medium", "male", 61, "Norman"),
+  piperVoice("en_US", "bryce", "medium", "male", 61, "Bryce"),
+  piperVoice("en_US", "sam", "medium", "unknown", 60, "Sam"),
+  piperVoice("en_US", "kusal", "medium", "unknown", 61, "Kusal"),
+  piperVoice("en_US", "ljspeech", "medium", "female", 61, "Linda"),
+  piperVoice("en_US", "ljspeech", "high", "female", 109, "Linda HD"),
+  // ── UK voices ─────────────────────────────────────────────
+  piperVoice("en_GB", "alan", "low", "male", 61, "Alan — fast"),
+  piperVoice("en_GB", "alan", "medium", "male", 61, "Alan"),
+  piperVoice("en_GB", "alba", "medium", "female", 61, "Alba (Scottish)"),
+  piperVoice("en_GB", "cori", "medium", "female", 61, "Cori"),
+  piperVoice("en_GB", "cori", "high", "female", 109, "Cori HD"),
+  piperVoice("en_GB", "jenny_dioco", "medium", "female", 61, "Jenny"),
+  piperVoice("en_GB", "northern_english_male", "medium", "male", 61, "Leeds"),
+  piperVoice("en_GB", "southern_english_female", "low", "female", 61, "Rosie — fast"),
+  piperVoice("en_US", "reza_ibrahim", "medium", "male", 61, "Reza"),
+
+  // ── Other languages ──────────────────────────────────────────
+  // Verified against rhasspy/piper-voices on Hugging Face (every .onnx and
+  // .onnx.json URL checked with curl -I -L → 200 before being added — see
+  // §15 of CLAUDE.md, the same invariant applies to TTS as STT).
+  //
+  // NOTE on Bangla: researched thoroughly (agy deep research + manual check
+  // of rhasspy/piper-voices' voices.json) — Piper has NO Bangla voice, and no
+  // community Piper-format (.onnx + .onnx.json) Bangla model exists either.
+  // The closest things are VITS ONNX models built for the Mycroft Mimic3 /
+  // Coqui engines (e.g. huggingface.co/csukuangfj/vits-mimic3-bn-multi_low),
+  // but they use a different config schema and are NOT plug-and-play with
+  // Piper's CLI — adding them here would silently break on synth. Bangla
+  // would require either training a real Piper voice from scratch (e.g. on
+  // OpenSLR SLR37) or integrating a second TTS engine (sherpa-onnx) — out of
+  // scope for a catalog entry.
+  piperVoiceLang("de", "de_DE", "thorsten", "high", "male", 109, "German"),
+  piperVoiceLang("es", "es_AR", "daniela", "high", "female", 109, "Spanish (Argentina)"),
+  piperVoiceLang("pl", "pl_PL", "bass", "high", "male", 109, "Polish"),
+  piperVoiceLang("uk", "uk_UA", "tetiana", "high", "female", 109, "Ukrainian"),
+  piperVoiceLang("kk", "kk_KZ", "issai", "high", "unknown", 122, "Kazakh"),
+  piperVoiceLang("is", "is_IS", "salka", "medium", "female", 73, "Icelandic"),
+  piperVoiceLang("nl", "nl_NL", "alex", "medium", "male", 61, "Dutch"),
+  piperVoiceLang("fr", "fr_FR", "tom", "medium", "male", 61, "French"),
+  piperVoiceLang("it", "it_IT", "paola", "medium", "female", 61, "Italian"),
+  piperVoiceLang("hi", "hi_IN", "priyamvada", "medium", "female", 61, "Hindi"),
+  piperVoiceLang("el", "el_GR", "joy", "medium", "female", 61, "Greek"),
+  piperVoiceLang("zh", "zh_CN", "xiao_ya", "medium", "female", 60, "Chinese"),
+  piperVoiceLang("bg", "bg_BG", "dimitar", "medium", "male", 60, "Bulgarian"),
+  piperVoiceLang("ar", "ar_JO", "kareem", "medium", "male", 60, "Arabic"),
+  piperVoiceLang("pt", "pt_BR", "faber", "medium", "male", 60, "Portuguese (Brazil)"),
+  piperVoiceLang("ru", "ru_RU", "irina", "medium", "female", 60, "Russian"),
+  piperVoiceLang("vi", "vi_VN", "vais1000", "medium", "female", 60, "Vietnamese"),
+  piperVoiceLang("tr", "tr_TR", "dfki", "medium", "female", 60, "Turkish"),
+  piperVoiceLang("cs", "cs_CZ", "jirka", "medium", "male", 60, "Czech"),
+
+  // ── Bangla (sherpa-onnx engine) ─────────────────────────────
+  // Piper has no Bangla voices, so these run on the second bundled engine
+  // (sherpa-onnx, sidecars/sherpa/). They're distributed as .tar.bz2 archives
+  // by k2-fsa whose top-level folder equals the id — Rust extracts them into
+  // %APPDATA%\SilentVoice\tts\<id>\. url_json is intentionally "" — that's
+  // how download_tts_model (Rust) tells a sherpa archive from a Piper pair.
+  // Both URLs verified with curl -I -L → 200; synthesis end-to-end tested
+  // with sherpa-onnx-offline-tts.exe on real Bengali text before adding.
+  {
+    id: "vits-coqui-bn-custom_female",
+    label: "Mitra (Bangla, female)",
+    gender: "female",
+    accent: "US",
+    language: "Bangla",
+    quality: "natural",
+    size_mb: 103,
+    engine: "sherpa",
+    url_onnx:
+      "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-coqui-bn-custom_female.tar.bz2",
+    url_json: "",
+  },
+  // Meta MMS Bengali (sherpa-ready ONNX conversion). Distributed as two loose
+  // files, not an archive — url_json pointing at tokens.txt is the marker the
+  // Rust downloader uses for the two-file sherpa layout (dir/model.onnx +
+  // dir/tokens.txt). Trained by Meta on much more data than the community
+  // Coqui voice — offered as the higher-quality Bangla option.
+  {
+    id: "mms-tts-bengali",
+    label: "Meta MMS (Bangla, female)",
+    gender: "female",
+    accent: "US",
+    language: "Bangla",
+    quality: "natural",
+    size_mb: 109,
+    engine: "sherpa",
+    url_onnx:
+      "https://huggingface.co/willwade/mms-tts-multilingual-models-onnx/resolve/main/ben/model.onnx",
+    url_json:
+      "https://huggingface.co/willwade/mms-tts-multilingual-models-onnx/resolve/main/ben/tokens.txt",
+  },
+  // NOTE: vits-mimic3-bn-multi_low was tried and REMOVED — its espeak-based
+  // phonemization pipeline fails on Bengali script (produces a sub-second
+  // gibberish blip; verified: 11 KB WAV vs Mitra's 645 KB for the same
+  // sentence). Do not re-add it without solving that.
+];
+
+// Language-appropriate "Play sample" sentences for the Settings test button —
+// a voice model can only pronounce its own language's script; feeding the
+// English sample to e.g. a Bangla voice produces pure gibberish.
+export const TTS_SAMPLE_TEXT: Record<string, string> = {
+  default: "Hello! This is my voice reading your text aloud for you.",
+  Bangla: "হ্যালো! এটি আমার কণ্ঠস্বর, যা আপনার লেখাটি জোরে পড়ে শোনাচ্ছে।",
+  German: "Hallo! Das ist meine Stimme, die Ihren Text laut vorliest.",
+  "Spanish (Argentina)": "¡Hola! Esta es mi voz leyendo tu texto en voz alta.",
+  Polish: "Cześć! To jest mój głos, który głośno czyta Twój tekst.",
+  Ukrainian: "Привіт! Це мій голос, який голосно читає ваш текст.",
+  Kazakh: "Сәлем! Бұл сіздің жазған мәтініңізді дауыстап оқып жатқан дауысым.",
+  Icelandic: "Halló! Þetta er röddin mín að lesa textann þinn upphátt.",
+  Dutch: "Hallo! Dit is mijn stem die jouw tekst hardop voorleest.",
+  French: "Bonjour ! Voici ma voix qui lit votre texte à haute voix.",
+  Italian: "Ciao! Sono la tua voce che legge questo testo ad alta voce.",
+  Hindi: "नमस्कार! यह मेरी आवाज़ है जो आपके पाठ को पढ़ रही है।",
+  Greek: "Γεια σας! Αυτή είναι η φωνή μου που διαβάζει το κείμενό σας.",
+  Chinese: "你好！这是我的声音在为你朗读这段文字。",
+  Bulgarian: "Здравейте! Това е моят глас, който чете вашия текст на глас.",
+  Arabic: "مرحباً! هذا هو صوتي وهو يقرأ نصك بصوت عالٍ.",
+  "Portuguese (Brazil)": "Olá! Esta é minha voz lendo seu texto em voz alta.",
+  Russian: "Привет! Это мой голос, который читает ваш текст вслух.",
+  Vietnamese: "Xin chào! Đây là giọng tôi đang đọc văn bản của bạn.",
+  Turkish: "Merhaba! Bu, metninizi yüksek sesle okuyan benim sesimdir.",
+  Czech: "Ahoj! Tohle je můj hlas, který nahlas čte tvůj text.",
+};
 
 // Human-readable language of an STT model, derived from its label/flags — used
 // to power the Model Store language filter. Language-specific models put the

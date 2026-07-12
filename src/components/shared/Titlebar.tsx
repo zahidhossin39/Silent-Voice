@@ -1,6 +1,7 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { isTauri } from "../../services/tauriBridge";
 
-const appWindow = getCurrentWindow();
+const appWindow = isTauri() ? getCurrentWindow() : null;
 
 export function Titlebar() {
   return (
@@ -12,7 +13,7 @@ export function Titlebar() {
         {/* Minimize */}
         <button
           className="flex h-full w-12 items-center justify-center text-sv-muted hover:bg-white/10 hover:text-sv-text"
-          onClick={() => appWindow.minimize()}
+          onClick={() => appWindow?.minimize()}
           title="Minimize"
         >
           <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
@@ -23,7 +24,7 @@ export function Titlebar() {
         {/* Maximize */}
         <button
           className="flex h-full w-12 items-center justify-center text-sv-muted hover:bg-white/10 hover:text-sv-text"
-          onClick={() => appWindow.toggleMaximize()}
+          onClick={() => appWindow?.toggleMaximize()}
           title="Maximize"
         >
           <svg
@@ -41,7 +42,7 @@ export function Titlebar() {
         {/* Close */}
         <button
           className="flex h-full w-12 items-center justify-center text-sv-muted hover:bg-red-500 hover:text-white"
-          onClick={() => appWindow.close()}
+          onClick={() => appWindow?.close()}
           title="Close"
         >
           <svg

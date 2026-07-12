@@ -6,7 +6,7 @@ Hold a hotkey, speak, release → your words are transcribed by a local Whisper 
 
 ## Status
 
-🚧 **In active development.** Built phase-by-phase from `Silent-Voice-Complete-Build-Plan.md`.
+🚧 **In active development.**
 
 | Phase | Goal | State |
 |-------|------|-------|

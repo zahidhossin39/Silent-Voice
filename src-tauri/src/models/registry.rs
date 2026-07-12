@@ -71,6 +71,68 @@ pub fn llm_model_path(model_id: &str) -> PathBuf {
     llm_models_dir().join(format!("{model_id}.gguf"))
 }
 
+/// Where downloaded TTS (Piper) voices live. Each voice is a pair of files:
+/// <id>.onnx (the model) + <id>.onnx.json (its config).
+pub fn tts_models_dir() -> PathBuf {
+    let loc = load_data_location();
+    match loc.models_root {
+        Some(p) if !p.is_empty() => PathBuf::from(p).join("tts"),
+        _ => default_data_dir().join("tts"),
+    }
+}
+
+/// Full path for a downloaded TTS voice model.
+pub fn tts_model_path(voice_id: &str) -> PathBuf {
+    tts_models_dir().join(format!("{voice_id}.onnx"))
+}
+
+/// Full path for a TTS voice's config JSON (required by Piper alongside .onnx).
+pub fn tts_config_path(voice_id: &str) -> PathBuf {
+    tts_models_dir().join(format!("{voice_id}.onnx.json"))
+}
+
+/// Directory of a sherpa-onnx voice (extracted archive). Sherpa voices are a
+/// whole folder — model .onnx + tokens.txt (+ optional espeak-ng-data) — while
+/// Piper voices are a flat .onnx/.onnx.json file pair in tts_models_dir().
+pub fn sherpa_voice_dir(voice_id: &str) -> PathBuf {
+    tts_models_dir().join(voice_id)
+}
+
+/// The .onnx model inside a sherpa voice dir (first *.onnx found), if the
+/// voice looks complete (tokens.txt present too).
+pub fn sherpa_voice_model(voice_id: &str) -> Option<PathBuf> {
+    let dir = sherpa_voice_dir(voice_id);
+    if !dir.join("tokens.txt").exists() {
+        return None;
+    }
+    std::fs::read_dir(&dir).ok()?.flatten().find_map(|e| {
+        let p = e.path();
+        (p.extension().and_then(|x| x.to_str()) == Some("onnx")).then_some(p)
+    })
+}
+
+/// List downloaded TTS voice ids — Piper voices (both files of the pair
+/// present) and sherpa voices (directory with tokens.txt + a .onnx).
+pub fn list_downloaded_tts() -> Vec<String> {
+    let mut ids = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(tts_models_dir()) {
+        for entry in entries.flatten() {
+            if let Some(name) = entry.file_name().to_str() {
+                if entry.path().is_dir() {
+                    if sherpa_voice_model(name).is_some() {
+                        ids.push(name.to_string());
+                    }
+                } else if let Some(id) = name.strip_suffix(".onnx") {
+                    if tts_config_path(id).exists() {
+                        ids.push(id.to_string());
+                    }
+                }
+            }
+        }
+    }
+    ids
+}
+
 /// Directory for temporary audio captures (always next to the bootstrap dir).
 pub fn audio_dir() -> PathBuf {
     bootstrap_dir().join("audio")
@@ -90,6 +152,7 @@ pub fn ensure_dirs() -> std::io::Result<()> {
     std::fs::create_dir_all(bootstrap_dir())?;
     std::fs::create_dir_all(models_dir())?;
     std::fs::create_dir_all(llm_models_dir())?;
+    std::fs::create_dir_all(tts_models_dir())?;
     std::fs::create_dir_all(audio_dir())?;
     Ok(())
 }

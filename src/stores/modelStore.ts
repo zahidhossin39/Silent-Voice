@@ -7,18 +7,29 @@ import {
   listDownloadedLlm,
   downloadLlmModel as bridgeDownloadLlm,
   deleteLlmModel as bridgeDeleteLlm,
+  listDownloadedTts,
+  downloadTtsModel as bridgeDownloadTts,
+  deleteTtsModel as bridgeDeleteTts,
 } from "../services/tauriBridge";
-import { STT_MODELS, WHISPER_BASE_URL, LLM_MODELS } from "../services/catalog";
+import {
+  STT_MODELS,
+  WHISPER_BASE_URL,
+  LLM_MODELS,
+  TTS_MODELS,
+} from "../services/catalog";
 
 interface ModelState {
   downloaded: Set<string>; // STT (whisper) model ids
   downloadedLlm: Set<string>; // LLM (GGUF) model ids
+  downloadedTts: Set<string>; // TTS (Piper) voice ids
   progress: Record<string, DownloadProgress>;
   refresh: () => Promise<void>;
   download: (modelId: string) => Promise<void>;
   remove: (modelId: string) => Promise<void>;
   downloadLlm: (modelId: string) => Promise<void>;
   removeLlm: (modelId: string) => Promise<void>;
+  downloadTts: (voiceId: string) => Promise<void>;
+  removeTts: (voiceId: string) => Promise<void>;
 }
 
 function startProgress(
@@ -42,14 +53,20 @@ function startProgress(
 export const useModelStore = create<ModelState>((set) => ({
   downloaded: new Set<string>(),
   downloadedLlm: new Set<string>(),
+  downloadedTts: new Set<string>(),
   progress: {},
 
   refresh: async () => {
-    const [stt, llm] = await Promise.all([
+    const [stt, llm, tts] = await Promise.all([
       listDownloadedModels(),
       listDownloadedLlm(),
+      listDownloadedTts(),
     ]);
-    set({ downloaded: new Set(stt), downloadedLlm: new Set(llm) });
+    set({
+      downloaded: new Set(stt),
+      downloadedLlm: new Set(llm),
+      downloadedTts: new Set(tts),
+    });
   },
 
   download: async (modelId) => {
@@ -126,6 +143,44 @@ export const useModelStore = create<ModelState>((set) => ({
       const progress = { ...s.progress };
       delete progress[modelId];
       return { downloadedLlm, progress };
+    });
+  },
+
+  downloadTts: async (voiceId) => {
+    const voice = TTS_MODELS.find((v) => v.id === voiceId);
+    if (!voice) return;
+    startProgress(set, voiceId, voice.size_mb * 1024 * 1024);
+    try {
+      await bridgeDownloadTts(voiceId, voice.url_onnx, voice.url_json);
+      set((s) => {
+        const downloadedTts = new Set(s.downloadedTts);
+        downloadedTts.add(voiceId);
+        return {
+          downloadedTts,
+          progress: {
+            ...s.progress,
+            [voiceId]: { ...s.progress[voiceId], status: "downloaded" },
+          },
+        };
+      });
+    } catch (e) {
+      set((s) => ({
+        progress: {
+          ...s.progress,
+          [voiceId]: { ...s.progress[voiceId], status: "error", error: String(e) },
+        },
+      }));
+    }
+  },
+
+  removeTts: async (voiceId) => {
+    await bridgeDeleteTts(voiceId);
+    set((s) => {
+      const downloadedTts = new Set(s.downloadedTts);
+      downloadedTts.delete(voiceId);
+      const progress = { ...s.progress };
+      delete progress[voiceId];
+      return { downloadedTts, progress };
     });
   },
 }));

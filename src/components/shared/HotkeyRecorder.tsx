@@ -31,6 +31,23 @@ const SAFE_SOLO_KEYS = new Set([
   "PageUp","PageDown","Home","End","Insert","Pause","ScrollLock","PrintScreen",
 ]);
 
+// Main keys the Tauri global-shortcut parser actually accepts. Anything
+// outside this set (ContextMenu, media keys, IME keys, …) would fail to
+// register in Rust — so refuse to capture it in the first place.
+const SUPPORTED_NAMED_MAIN = new Set([
+  "Space", "Up", "Down", "Left", "Right", "Escape", "Tab", "Return",
+  "Backspace", "Delete", "Home", "End", "PageUp", "PageDown", "Insert",
+  "Pause", "ScrollLock", "PrintScreen", "NumLock", "CapsLock",
+]);
+
+function isSupportedMain(main: string): boolean {
+  return (
+    /^[A-Z0-9]$/.test(main) ||
+    /^F([1-9]|1[0-9]|2[0-4])$/.test(main) ||
+    SUPPORTED_NAMED_MAIN.has(main)
+  );
+}
+
 function buildAccelerator(e: KeyboardEvent): string | null {
   if (IGNORED_AS_MAIN.has(e.key)) return null;
 
@@ -41,6 +58,7 @@ function buildAccelerator(e: KeyboardEvent): string | null {
   if (e.metaKey) parts.push("Super");
 
   const main = KEY_ALIAS[e.key] ?? (e.key.length === 1 ? e.key.toUpperCase() : e.key);
+  if (!isSupportedMain(main)) return null;
   parts.push(main);
 
   return parts.join("+");
@@ -61,7 +79,7 @@ function soloKeyWarning(accelerator: string): string | null {
 
 // Render a hotkey string like "Ctrl+Shift+Space" as visual key chips.
 function KeyChips({ value }: { value: string }) {
-  const parts = value.split("+");
+  const parts = (value || "").split("+");
   return (
     <div className="flex flex-wrap items-center gap-1">
       {parts.map((p, i) => (
@@ -122,6 +140,11 @@ export default function HotkeyRecorder({ value, onChange, error }: Props) {
           stopRecording();
           return;
         }
+        // A real key was pressed but it can't be used as a global hotkey
+        // (e.g. ContextMenu, media keys) — tell the user instead of
+        // silently ignoring it.
+        setPreview(`${e.key} — not supported, try another key`);
+        return;
       }
       // Still holding only modifiers — show partial preview.
       setPreview(mods.length ? mods.join("+") + "+" : null);
@@ -185,18 +208,14 @@ export default function HotkeyRecorder({ value, onChange, error }: Props) {
         <p className="text-[11px] text-sv-warn">⚠ {warning}</p>
       )}
 
-      {/* Quick-pick presets — includes solo-key examples */}
+      {/* Quick-pick presets — F9 is a genuine single-key option (bare
+          modifier keys like solo "Alt" can't be registered as global
+          hotkeys — the OS-level API has no code path for that). */}
       <div className="flex flex-wrap justify-start gap-1.5">
         {[
-          "Ctrl+Shift+Space",
           "Alt+Space",
-          "Alt+Right",
-          "PageUp",
-          "F8",
           "F9",
-          "F12",
-          "ScrollLock",
-          "Ctrl+Alt+R",
+          "PageUp",
           "Alt+C",
         ].map((preset) => (
           <button

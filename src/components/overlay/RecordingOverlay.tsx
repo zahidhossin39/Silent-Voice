@@ -1,4 +1,5 @@
 import type { RecordingState } from "../../types";
+import type { TtsState } from "./OverlayApp";
 
 // Content of the fixed-size pill window (68×22). The SAME five bars are
 // always rendered and morph between states with CSS transitions
@@ -6,12 +7,25 @@ import type { RecordingState } from "../../types";
 //   idle       → single solid horizontal line in center (perfectly smooth capsule)
 //   recording  → orange waveform (5 vertical bars scaled from guide: [6, 10, 13, 9, 5])
 //   processing → gray waveform pulsing slower (same 5-bar shape, bg-sv-muted)
+//   TTS        → BLUE waveform (sv-bar-tts wave) — read-aloud playback; the
+//                different color + motion keeps it visually distinct from STT.
 const BASE_HEIGHTS = [6, 10, 13, 9, 5];
 
-export default function RecordingOverlay({ state }: { state: RecordingState }) {
-  const idle = state === "idle";
+// Sky blue — deliberately far from the orange accent so STT vs TTS is obvious.
+const TTS_BLUE = "#38bdf8";
+
+export default function RecordingOverlay({
+  state,
+  tts = "idle",
+}: {
+  state: RecordingState;
+  tts?: TtsState;
+}) {
   const recording = state === "recording";
   const processing = state === "processing";
+  // Dictation states own the pill; TTS shows only when dictation is idle.
+  const ttsActive = !recording && !processing && tts !== "idle";
+  const idle = !recording && !processing && !ttsActive;
 
   return (
     <div
@@ -25,7 +39,7 @@ export default function RecordingOverlay({ state }: { state: RecordingState }) {
       {[0, 1, 2, 3, 4].map((i) => {
         const isCenter = i === 2;
         let w = "2px";
-        let h = "20px";
+        let h = "2px";
         let opacity = 1;
 
         if (idle) {
@@ -45,12 +59,17 @@ export default function RecordingOverlay({ state }: { state: RecordingState }) {
               ? "sv-bar bg-sv-accent"
               : processing
                 ? "sv-bar-slow bg-sv-muted"
-                : "bg-sv-muted"
+                : ttsActive
+                  ? tts === "speaking"
+                    ? "sv-bar-tts"
+                    : "sv-bar-slow"
+                  : "bg-sv-muted"
               }`}
             style={{
               width: w,
               height: h,
-              opacity: opacity,
+              opacity: ttsActive && tts === "synthesizing" ? 0.7 : opacity,
+              background: ttsActive ? TTS_BLUE : undefined,
               animationDelay: `${i * 0.1}s`,
             }}
           />

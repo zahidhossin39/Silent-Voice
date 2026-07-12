@@ -1,7 +1,80 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Page from "../shared/Page";
 import { useHistoryStore } from "../../stores/historyStore";
 import { useSettingsStore } from "../../stores/settingsStore";
+import { proofreadText, type ProofIssue } from "../../services/tauriBridge";
+
+// Cache proofread results per exact text so re-renders and searches don't
+// re-run the checker (it's fast, but no reason to repeat work).
+const proofCache = new Map<string, ProofIssue[]>();
+
+/** Transcription text with Grammarly-style squiggles: red for spelling,
+ * blue for grammar/style. Hover shows the problem + best suggestion.
+ * Harper reports CHAR offsets, so slicing must go through Array.from. */
+function ProofreadText({ text }: { text: string }) {
+  const [issues, setIssues] = useState<ProofIssue[]>(
+    () => proofCache.get(text) ?? []
+  );
+
+  useEffect(() => {
+    let stale = false;
+    if (proofCache.has(text)) {
+      setIssues(proofCache.get(text)!);
+      return;
+    }
+    proofreadText(text).then((found) => {
+      proofCache.set(text, found);
+      if (!stale) setIssues(found);
+    });
+    return () => {
+      stale = true;
+    };
+  }, [text]);
+
+  if (issues.length === 0) return <p className="text-sm">{text}</p>;
+
+  const chars = Array.from(text);
+  const parts: React.ReactNode[] = [];
+  let pos = 0;
+  issues.forEach((iss, n) => {
+    if (iss.start < pos || iss.end > chars.length) return; // overlapping/stale
+    if (iss.start > pos) parts.push(chars.slice(pos, iss.start).join(""));
+    const flagged = chars.slice(iss.start, iss.end).join("");
+    const spelling = iss.kind.toLowerCase().includes("spell");
+    const tip =
+      iss.suggestions.length > 0
+        ? `${iss.message} Suggestion: ${iss.suggestions.join(", ")}`
+        : iss.message;
+    parts.push(
+      <span
+        key={n}
+        title={tip}
+        className="cursor-help"
+        style={{
+          textDecoration: "underline wavy",
+          textDecorationColor: spelling ? "var(--color-sv-bad)" : "#3b82f6",
+          textUnderlineOffset: "3px",
+        }}
+      >
+        {flagged}
+      </span>
+    );
+    pos = iss.end;
+  });
+  if (pos < chars.length) parts.push(chars.slice(pos).join(""));
+
+  return (
+    <p className="text-sm">
+      {parts}
+      <span
+        className="ml-2 align-middle text-[10px] font-medium text-sv-bad"
+        title="Spelling/grammar issues found — hover the underlined words. Edit the entry to fix them."
+      >
+        {issues.length} issue{issues.length > 1 ? "s" : ""}
+      </span>
+    </p>
+  );
+}
 
 // Words from a correction worth learning: real words (letters, 3+ chars) that
 // didn't appear anywhere in the original transcription.
@@ -180,7 +253,7 @@ export default function History() {
                     </div>
                   </div>
                 ) : (
-                  <p className="text-sm">{displayed}</p>
+                  <ProofreadText text={displayed} />
                 )}
               </li>
             );
