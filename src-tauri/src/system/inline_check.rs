@@ -32,8 +32,8 @@ use windows::Win32::System::Threading::{
 };
 use windows::Win32::UI::Accessibility::{
     CUIAutomation, IUIAutomation, IUIAutomationElement, IUIAutomationTextPattern,
-    IUIAutomationTextRange, TextPatternRangeEndpoint_End, TextPatternRangeEndpoint_Start,
-    TextUnit_Character, UIA_TextPatternId,
+    IUIAutomationTextRange, IUIAutomationValuePattern, TextPatternRangeEndpoint_End,
+    TextPatternRangeEndpoint_Start, TextUnit_Character, UIA_TextPatternId, UIA_ValuePatternId,
 };
 use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
 
@@ -187,6 +187,16 @@ fn poll_once(
         }
         if el.CurrentIsPassword().map(|b| b.as_bool()).unwrap_or(false) {
             return (Vec::new(), "password field");
+        }
+        let val_pattern: IUIAutomationValuePattern = match el
+            .GetCurrentPattern(UIA_ValuePatternId)
+            .and_then(|unk| unk.cast())
+        {
+            Ok(vp) => vp,
+            Err(_) => return (Vec::new(), "not editable"),
+        };
+        if val_pattern.CurrentIsReadOnly().map(|b| b.as_bool()) == Ok(true) {
+            return (Vec::new(), "read-only");
         }
         let exe = process_name(pid);
         if IGNORE_EXES.contains(&exe.as_str()) {

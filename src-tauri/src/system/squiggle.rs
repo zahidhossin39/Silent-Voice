@@ -28,7 +28,7 @@ use windows::Win32::Graphics::Gdi::{
     ReleaseDC, SelectObject, SetBkMode, SetTextColor, TextOutW, AC_SRC_ALPHA, AC_SRC_OVER,
     BITMAPINFO, BITMAPINFOHEADER, BI_RGB, BLENDFUNCTION, DIB_RGB_COLORS, FW_NORMAL, FW_SEMIBOLD,
     FW_BOLD, HBITMAP, HFONT, PAINTSTRUCT, TRANSPARENT, SetWindowRgn, CreatePen, Ellipse, PS_SOLID,
-    RoundRect,
+    RoundRect, GetStockObject, NULL_BRUSH,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -321,13 +321,15 @@ unsafe fn paint_popup(hwnd: HWND) {
         let _ = TextOutW(hdc, 226, footer_top + 18, &label_dismiss_utf16);
     }
 
-    // 8. Draw 1px border around the entire popup card
-    let border_brush = CreateSolidBrush(COLORREF(0x001673f9));
-    FillRect(hdc, &RECT { left: 0, top: 0, right: POPUP_W, bottom: 1 }, border_brush);
-    FillRect(hdc, &RECT { left: 0, top: height - 1, right: POPUP_W, bottom: height }, border_brush);
-    FillRect(hdc, &RECT { left: 0, top: 0, right: 1, bottom: height }, border_brush);
-    FillRect(hdc, &RECT { left: POPUP_W - 1, top: 0, right: POPUP_W, bottom: height }, border_brush);
-    let _ = DeleteObject(border_brush);
+    // 8. Draw 1px rounded border around the entire popup card
+    let border_pen = CreatePen(PS_SOLID, 1, COLORREF(0x001673f9));
+    let null_brush = GetStockObject(NULL_BRUSH);
+    let old_pen = SelectObject(hdc, border_pen);
+    let old_brush = SelectObject(hdc, null_brush);
+    let _ = RoundRect(hdc, 0, 0, POPUP_W, height, 32, 32);
+    SelectObject(hdc, old_pen);
+    SelectObject(hdc, old_brush);
+    let _ = DeleteObject(border_pen);
 
     // 9. Clean up fonts
     SelectObject(hdc, old_font);
