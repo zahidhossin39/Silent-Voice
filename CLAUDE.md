@@ -645,7 +645,30 @@ All toggles live in Settings and are pushed to Rust via `set_behavior` /
   - Verified working in Notepad (Win11) and Edge/Chromium textareas.
     Chromium enables its accessibility tree automatically when a UIA client
     queries it — no flags needed.
-  - NOT YET BUILT (Week 2+): hover tooltip with the message, click-to-fix
-    suggestion popup, per-app compatibility hardening. The two pink blobs
-    that confused testing were Windows' "text cursor indicator"
+  - **Hover tooltip + click-to-fix popup (BUILT + verified):** hovering a
+    squiggle ~250ms shows a native GDI card (`SVSuggestPopup` in squiggle.rs:
+    message + up to 3 suggestions); clicking a suggestion sends a
+    `FixRequest` back to the watcher thread (COM apartment rules — only the
+    watcher touches UIA), which re-verifies the flagged chars, selects the
+    range via UIA `Select()`, and TYPES the replacement (enigo unicode
+    input, char-by-char with 8ms gaps — web apps drop faster input). Typed
+    input preserves the app's undo stack and never touches the clipboard.
+    Physical Ctrl/Shift/Alt are released first so a held modifier can't
+    turn typed chars into shortcuts. Popup is WS_EX_NOACTIVATE + answers
+    WM_MOUSEACTIVATE with MA_NOACTIVATE so the target keeps focus.
+  - **CRLF offset drift (fixed — do not regress):** Harper spans count \r\n
+    as 2 chars, but WPF/RichEdit UIA providers move TextUnit_Character over
+    it as ONE. `range_for()` in inline_check.rs builds candidate ranges
+    (CRLF-collapsed offset first, then raw) and VERIFIES each by reading the
+    range's text back before using it — used for BOTH squiggle rects and
+    fixes. Without it, anything on line 2+ selects the wrong chars.
+  - **Popup z-order:** show_popup() forces SetWindowPos(HWND_TOPMOST) — an
+    always-on-top target app otherwise sits above the popup and eats clicks.
+  - Verified end-to-end via automated real-UI tests: WPF TextBox
+    (single-line + multi-line CRLF), Edge/Chromium textarea, Notepad
+    squiggles. WinForms TextBox exposes NO UIA TextPattern — correctly
+    skipped. Note for future testing: PowerShell P/Invoke needs
+    CharSet=Unicode on FindWindow* or class names silently don't match.
+  - NOT YET BUILT (Week 2+): per-app compatibility hardening. The two pink
+    blobs that confused testing were Windows' "text cursor indicator"
     accessibility feature, not ours.
