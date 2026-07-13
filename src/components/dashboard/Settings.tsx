@@ -11,6 +11,7 @@ import {
   ttsSpeakText,
 } from "../../services/tauriBridge";
 import HotkeyRecorder from "../shared/HotkeyRecorder";
+import { checkForUpdatesManual } from "../../services/updater";
 import type { SttPreset } from "../../types";
 
 // Preset → recommended model (build plan §4 mode presets).
@@ -38,6 +39,7 @@ export default function Settings() {
   const downloadedStt = useModelStore((s) => s.downloaded);
   const downloadedTts = useModelStore((s) => s.downloadedTts);
   const { hardware } = useHardwareInfo();
+  const [updateMsg, setUpdateMsg] = useState("");
   const [devices, setDevices] = useState<string[]>([]);
   const [hotkeyError, setHotkeyError] = useState<string | null>(null);
 
@@ -437,6 +439,29 @@ export default function Settings() {
               value={settings.theme}
               onChange={(t) => setSettings({ theme: t })}
             />
+          </Row>
+          <Row
+            label="App updates"
+            hint={updateMsg || "Checks automatically on launch"}
+          >
+            <button
+              onClick={async () => {
+                setUpdateMsg("Checking…");
+                const r = await checkForUpdatesManual();
+                setUpdateMsg(
+                  r.status === "none"
+                    ? "You're on the latest version"
+                    : r.status === "error"
+                    ? "Update check failed"
+                    : r.status === "unsupported"
+                    ? "Updates require the desktop app"
+                    : "Update found — installing…"
+                );
+              }}
+              className="rounded-lg border border-sv-border px-3 py-1.5 text-xs text-sv-text hover:bg-sv-surface-2"
+            >
+              Check for updates
+            </button>
           </Row>
         </Section>
       </div>

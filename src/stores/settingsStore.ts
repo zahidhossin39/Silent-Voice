@@ -1,5 +1,6 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { persist, createJSONStorage } from "zustand/middleware";
+import type { StateStorage } from "zustand/middleware";
 import type {
   Settings,
   ApiProvider,
@@ -8,6 +9,7 @@ import type {
   AppProfileRule,
 } from "../types";
 import { BUILTIN_MODES } from "../services/modes";
+import { isTauri } from "../services/tauriBridge";
 
 // Mirrors the Tauri global-shortcut parser's accepted main keys (see
 // HotkeyRecorder.tsx's isSupportedMain). Used to sanitize hotkeys loaded
@@ -74,6 +76,74 @@ interface SettingsState {
   updateAppProfile: (id: string, patch: Partial<AppProfileRule>) => void;
   deleteAppProfile: (id: string) => void;
 }
+
+// Non-obvious hydration guard and store cache
+let storePromise: Promise<any> | null = null;
+let isLoaded = false;
+
+const customStorage: StateStorage = {
+  getItem: async (name) => {
+    if (isTauri()) {
+      if (!storePromise) {
+        storePromise = (async () => {
+          try {
+            const { Store } = await import("@tauri-apps/plugin-store");
+            const store = await Store.load("settings.json");
+            // One-time migration: copy from localStorage if store is empty
+            const existing = await store.get(name);
+            if (existing === null || existing === undefined) {
+              const oldVal = window.localStorage.getItem(name);
+              if (oldVal !== null) {
+                await store.set(name, oldVal);
+                await store.save();
+              }
+            }
+            return store;
+          } catch (e) {
+            console.error("Tauri store load failed", e);
+            return null;
+          }
+        })();
+      }
+      const store = await storePromise;
+      if (store) {
+        const val = await store.get(name);
+        isLoaded = true;
+        return typeof val === "string" ? val : null;
+      }
+      isLoaded = true;
+      return null;
+    } else {
+      const val = window.localStorage.getItem(name);
+      isLoaded = true;
+      return val;
+    }
+  },
+  setItem: async (name, value) => {
+    // Block write attempts before the existing file state is loaded
+    if (!isLoaded) return;
+    if (isTauri()) {
+      const store = await storePromise;
+      if (store) {
+        await store.set(name, value);
+        await store.save();
+      }
+    } else {
+      window.localStorage.setItem(name, value);
+    }
+  },
+  removeItem: async (name) => {
+    if (isTauri()) {
+      const store = await storePromise;
+      if (store) {
+        await store.delete(name);
+        await store.save();
+      }
+    } else {
+      window.localStorage.removeItem(name);
+    }
+  },
+};
 
 export const useSettingsStore = create<SettingsState>()(
   persist(
@@ -144,6 +214,7 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: "silent-voice-settings",
+      storage: createJSONStorage(() => customStorage),
       merge: (persistedState: any, currentState) => {
         // Deep merge the settings object so new keys added to DEFAULT_SETTINGS
         // aren't lost when loading an older persisted state.

@@ -1,5 +1,6 @@
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { getVersion } from "@tauri-apps/api/app";
 import Home from "./components/dashboard/Home";
 import ModelStore from "./components/dashboard/ModelStore";
 import Modes from "./components/dashboard/Modes";
@@ -15,6 +16,7 @@ import { useHistoryStore } from "./stores/historyStore";
 import { usePipeline } from "./hooks/usePipeline";
 import { useRuntimeSync } from "./hooks/useRuntimeSync";
 import { checkForUpdates } from "./services/updater";
+import { isTauri } from "./services/tauriBridge";
 import {
   HomeIcon,
   StoreIcon,
@@ -43,10 +45,16 @@ export default function App() {
 
   const theme = useSettingsStore((s) => s.settings.theme);
   const onboarded = useSettingsStore((s) => s.settings.onboarded);
+  // Settings now persist to a file (async), so gate the UI until the store
+  // has hydrated — otherwise defaults flash (onboarding wizard, wrong config
+  // pushed to Rust) before the saved settings load.
+  const [hydrated, setHydrated] = useState(() =>
+    useSettingsStore.persist.hasHydrated()
+  );
   useEffect(() => {
-    // Toggle the light-theme class on <html>; default (no class) is dark.
     document.documentElement.classList.toggle("theme-light", theme === "light");
   }, [theme]);
+  useEffect(() => useSettingsStore.persist.onFinishHydration(() => setHydrated(true)), []);
 
   if (isOverlay) {
     return <OverlayApp />;
@@ -56,7 +64,7 @@ export default function App() {
     <div className="flex h-screen w-full flex-col overflow-hidden bg-sv-base">
       <Titlebar />
       <div className="flex-1 overflow-hidden relative">
-        {!onboarded ? <Onboarding /> : <Dashboard />}
+        {!hydrated ? null : !onboarded ? <Onboarding /> : <Dashboard />}
       </div>
     </div>
   );
@@ -65,6 +73,7 @@ export default function App() {
 function Dashboard() {
   const refresh = useModelStore((s) => s.refresh);
   const hydrate = useHistoryStore((s) => s.hydrate);
+  const [version, setVersion] = useState("");
 
   // Subscribe to backend pipeline + download events and keep Rust in sync.
   usePipeline();
@@ -73,6 +82,7 @@ function Dashboard() {
   useEffect(() => {
     refresh();
     hydrate();
+    if (isTauri()) getVersion().then(setVersion);
     const t = setTimeout(() => checkForUpdates(), 5000);
     return () => clearTimeout(t);
   }, [refresh, hydrate]);
@@ -118,7 +128,7 @@ function Dashboard() {
         </nav>
 
         <div className="px-5 py-4 text-[11px] text-sv-muted">
-          v0.1.3 · offline-ready
+          {version ? `v${version}` : "Silent Voice"} · offline-ready
         </div>
       </aside>
 
