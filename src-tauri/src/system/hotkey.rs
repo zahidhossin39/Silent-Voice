@@ -377,6 +377,7 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
         stt_api_key,
         stt_cloud_model,
         use_gpu,
+        high_performance,
         input_sensitivity,
         replacements,
         app_profiles,
@@ -398,6 +399,7 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
             cfg.stt_api_key.clone(),
             cfg.stt_cloud_model.clone(),
             cfg.use_gpu,
+            cfg.high_performance,
             cfg.input_sensitivity,
             cfg.replacements.clone(),
             cfg.app_profiles.clone(),
@@ -454,9 +456,15 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
         return;
     }
 
-    let threads = std::thread::available_parallelism()
+    // Thread count: when high_performance is true, use all cores; when false, use max(2, cores/2)
+    let cores = std::thread::available_parallelism()
         .map(|n| n.get() as u32)
         .unwrap_or(4);
+    let threads = if high_performance {
+        cores
+    } else {
+        std::cmp::max(2, cores / 2)
+    };
 
     let raw_text = match whisper::transcribe_dispatch(
         &app,

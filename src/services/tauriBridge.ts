@@ -177,15 +177,16 @@ export async function setTextReplacements(
   }
 }
 
-// Push behavior settings (double-tap lock, input sensitivity, inline proofread).
+// Push behavior settings (double-tap lock, input sensitivity, inline proofread, high performance).
 export async function setBehavior(
   toggleMode: boolean,
   inputSensitivity: number,
-  inlineProofread: boolean
+  inlineProofread: boolean,
+  highPerformance: boolean
 ): Promise<void> {
   if (!isTauri()) return;
   try {
-    await invoke<void>("set_behavior", { toggleMode, inputSensitivity, inlineProofread });
+    await invoke<void>("set_behavior", { toggleMode, inputSensitivity, inlineProofread, highPerformance });
   } catch (e) {
     console.warn("set_behavior failed", e);
   }

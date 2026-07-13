@@ -12,7 +12,7 @@ import type { HardwareInfo, SttPreset } from "../../types";
 const CHOICES: { id: string; tagline: string; preset: SttPreset }[] = [
   { id: "tiny.en", tagline: "Fastest — best for older PCs and laptops", preset: "speed" },
   { id: "base.en", tagline: "Good balance of speed and accuracy", preset: "balanced" },
-  { id: "small.en", tagline: "More accurate, noticeably slower without a GPU", preset: "accuracy" },
+  { id: "distil-small.en", tagline: "Fast + accurate English — runs fast even on CPU", preset: "accuracy" },
   { id: "distil-large-v3.5", tagline: "Most accurate English — wants a GPU", preset: "accuracy" },
   { id: "small", tagline: "For dictating in other languages", preset: "multilingual" },
 ];
@@ -24,7 +24,7 @@ function recommendId(hw: HardwareInfo | null): string {
   if (!hw) return "base.en";
   const vram = hw.gpu_vram_gb ?? 0;
   if (vram >= 4) return "distil-large-v3.5"; // real dedicated GPU
-  if (vram >= 2) return "small.en";
+  if (vram >= 2) return "distil-small.en";
   // CPU-only (integrated/shared graphics): speed comes from the CPU alone.
   if (hw.logical_cores >= 12) return "base.en";
   return "tiny.en";

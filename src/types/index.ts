@@ -159,6 +159,7 @@ export interface Settings {
   stt_preset: SttPreset;
   language: string; // "auto" or ISO code
   use_gpu: boolean;
+  high_performance: boolean;
   audio_device: string | null;
   auto_start: boolean;
   theme: "dark" | "light";

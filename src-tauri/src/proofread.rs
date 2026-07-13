@@ -60,6 +60,7 @@ pub fn check(text: &str, vocabulary: &str) -> Vec<ProofIssue> {
     let dict = Arc::new(dict);
     let doc = Document::new_plain_english(text, &*dict);
     let mut linter = LintGroup::new_curated(dict, Dialect::American);
+    linter.config.set_rule_enabled("LongSentences", false);
 
     let mut issues: Vec<ProofIssue> = linter
         .lint(&doc)
@@ -214,6 +215,22 @@ mod tests {
         assert!(
             rep_issues[0].suggestions.contains(&"The".to_string())
                 || rep_issues[0].suggestions.contains(&"the".to_string())
+        );
+    }
+
+    #[test]
+    fn long_sentences_do_not_produce_lint() {
+        // A sentence with more than 50 words should not produce a "sentence is X words long" lint.
+        let long_sentence = "This is a very long sentence that has a lot of words to ensure that it exceeds the default long sentence threshold of fifty words which would normally trigger the long sentence style lint from harper core but since we disabled it there should be no issues at all in this text.";
+        let issues = check(long_sentence, "");
+        let long_sentence_issues: Vec<_> = issues
+            .iter()
+            .filter(|i| i.message.contains("words long"))
+            .collect();
+        assert!(
+            long_sentence_issues.is_empty(),
+            "expected no long sentence lint, got: {:?}",
+            long_sentence_issues.iter().map(|i| &i.message).collect::<Vec<_>>()
         );
     }
 }

@@ -425,6 +425,15 @@ export default function Settings() {
               onChange={(v) => setSettings({ use_gpu: v })}
             />
           </Row>
+          <Row
+            label="High performance mode"
+            hint="Uses all CPU cores for faster transcription (may slow other apps)"
+          >
+            <Toggle
+              checked={settings.high_performance}
+              onChange={(v) => setSettings({ high_performance: v })}
+            />
+          </Row>
         </Section>
 
         <Section title="System">
