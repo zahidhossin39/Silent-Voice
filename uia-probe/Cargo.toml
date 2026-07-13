@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 harper-core = "2.5.0"
+windows-core = "0.58"
 windows = { version = "0.58", features = [
   "Win32_Foundation",
   "Win32_Graphics_Gdi",
@@ -16,4 +17,5 @@ windows = { version = "0.58", features = [
   "Win32_UI_Accessibility",
   "Win32_UI_HiDpi",
   "Win32_UI_WindowsAndMessaging",
+  "implement",
 ] }

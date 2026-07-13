@@ -18,13 +18,18 @@ use windows::Win32::System::Threading::{
     GetCurrentProcessId, OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
     PROCESS_QUERY_LIMITED_INFORMATION,
 };
+use windows::core::implement;
 use windows::Win32::UI::Accessibility::{
     CUIAutomation, IUIAutomation, IUIAutomationElement, IUIAutomationTextPattern,
     IUIAutomationTextRange, TextPatternRangeEndpoint_End, TextPatternRangeEndpoint_Start,
-    TextUnit_Character, UIA_TextPatternId,
+    TextUnit_Character, UIA_TextPatternId, IUIAutomationFocusChangedEventHandler,
+    IUIAutomationFocusChangedEventHandler_Impl, TreeScope_Subtree,
 };
 use windows::Win32::UI::HiDpi::{
     SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
+};
+use windows::Win32::UI::WindowsAndMessaging::{
+    SystemParametersInfoW, SPI_SETSCREENREADER, SPIF_SENDCHANGE,
 };
 
 // Apps where squiggling the "document" is nonsense (terminals) or self-referential.
@@ -205,6 +210,11 @@ fn poll_once(
 }
 
 fn main() -> windows::core::Result<()> {
+    let args: Vec<String> = std::env::args().collect();
+    if args.contains(&"--diagnose".to_string()) || args.contains(&"-d".to_string()) {
+        return run_diagnose();
+    }
+
     unsafe {
         let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
         CoInitializeEx(None, COINIT_MULTITHREADED).ok()?;
@@ -223,4 +233,134 @@ fn main() -> windows::core::Result<()> {
         }
     }
     Ok(())
+}
+
+#[implement(IUIAutomationFocusChangedEventHandler)]
+struct FocusHandler;
+
+impl IUIAutomationFocusChangedEventHandler_Impl for FocusHandler_Impl {
+    fn HandleFocusChangedEvent(&self, sender: Option<&IUIAutomationElement>) -> windows::core::Result<()> {
+        if let Some(el) = sender {
+            unsafe {
+                let name = el.CurrentName().map(|b| b.to_string()).unwrap_or_default();
+                let class_name = el.CurrentClassName().map(|b| b.to_string()).unwrap_or_default();
+                println!("[Focus Handler] Focus changed event: Class='{}', Name='{}'", class_name, name);
+            }
+        }
+        Ok(())
+    }
+}
+
+fn run_diagnose() -> windows::core::Result<()> {
+    unsafe {
+        println!("============================================================");
+        println!("                UIA WEBVIEW2 DIAGNOSTIC MODE                ");
+        println!("============================================================");
+        
+        // 1. Set screen reader flag to TRUE to force Chromium/WebView2 accessibility
+        println!("[Diag] Setting SPI_SETSCREENREADER = TRUE...");
+        let spi_res = SystemParametersInfoW(
+            SPI_SETSCREENREADER,
+            1, // TRUE
+            None,
+            SPIF_SENDCHANGE,
+        );
+        match spi_res {
+            Ok(_) => println!("[Diag] SPI_SETSCREENREADER set successfully."),
+            Err(e) => println!("[Diag] Warning: Failed to set SPI_SETSCREENREADER: {:?}", e),
+        }
+
+        // Initialize COM UIA
+        CoInitializeEx(None, COINIT_MULTITHREADED).ok()?;
+        let automation: IUIAutomation = CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER)?;
+
+        // 2. Register Focus Changed Event Handler (nudge Chromium activation)
+        println!("[Diag] Registering UIA Focus Changed Event Handler...");
+        let handler = FocusHandler;
+        let handler_interface: IUIAutomationFocusChangedEventHandler = handler.into();
+        automation.AddFocusChangedEventHandler(None, &handler_interface)?;
+        println!("[Diag] Focus changed handler registered successfully.");
+
+        println!("[Diag] Entering main diagnostic loop (polling focused element every 1.5s).");
+        println!("[Diag] Focus on WhatsApp (process WhatsApp.Root) message compose box to test.");
+        println!("------------------------------------------------------------");
+
+        loop {
+            match automation.GetFocusedElement() {
+                Ok(el) => {
+                    let name = el.CurrentName().map(|b| b.to_string()).unwrap_or_default();
+                    let class_name = el.CurrentClassName().map(|b| b.to_string()).unwrap_or_default();
+                    let control_type = el.CurrentControlType().unwrap_or_default();
+                    let has_text_pattern = el.GetCurrentPattern(UIA_TextPatternId).is_ok();
+
+                    println!(
+                        "[Focused Element] Class: '{}' | Name: '{}' | Type ID: {:?} | HasTextPattern: {}",
+                        class_name, name, control_type, has_text_pattern
+                    );
+
+                    // Check if it's the WinUI3 WebView2 container/bridge
+                    let is_target = class_name.contains("DesktopChildSiteBridge")
+                        || class_name.contains("WebView2")
+                        || class_name.contains("msedgewebview2")
+                        || class_name.contains("Chrome");
+
+                    if is_target && !has_text_pattern {
+                        println!("  [Probe] Target element matches WebView2/bridge (no TextPattern).");
+                        println!("  [Probe] Walk/Find descendants (Subtree scope) to see if Chromium built the tree...");
+                        
+                        // We will try polling a few times with a small delay
+                        for poll_idx in 1..=5 {
+                            std::thread::sleep(Duration::from_millis(300));
+                            let condition = automation.CreateTrueCondition()?;
+                            
+                            match el.FindAll(TreeScope_Subtree, &condition) {
+                                Ok(array) => {
+                                    let count = array.Length().unwrap_or(0);
+                                    println!("    [Poll #{}/5] Found {} descendants", poll_idx, count);
+                                    
+                                    let mut found_any_text = false;
+                                    for i in 0..count {
+                                        if let Ok(child) = array.GetElement(i) {
+                                            let child_class = child.CurrentClassName().map(|b| b.to_string()).unwrap_or_default();
+                                            let child_name = child.CurrentName().map(|b| b.to_string()).unwrap_or_default();
+                                            let child_type = child.CurrentControlType().unwrap_or_default();
+                                            let child_has_text = child.GetCurrentPattern(UIA_TextPatternId).is_ok();
+                                            let child_focus = child.CurrentHasKeyboardFocus().map(|b| b.as_bool()).unwrap_or(false);
+
+                                            // Only the compose box has keyboard focus — this is
+                                            // how we isolate it from all the read-only message text.
+                                            if child_has_text && child_focus {
+                                                println!(
+                                                    "    >>> FOCUSED EDITABLE (compose box): Class='{}' Name='{}' Type={:?}",
+                                                    child_class, child_name, child_type
+                                                );
+                                                if let Ok(pat) = child.GetCurrentPattern(UIA_TextPatternId).and_then(|unk| unk.cast::<IUIAutomationTextPattern>()) {
+                                                    if let Ok(range) = pat.DocumentRange() {
+                                                        if let Ok(text) = range.GetText(200) {
+                                                            println!("        Text: {:?}", text.to_string().trim());
+                                                        }
+                                                    }
+                                                }
+                                                found_any_text = true;
+                                            }
+                                        }
+                                    }
+                                    if found_any_text {
+                                        break; // stop polling if we found the active tree elements with text pattern
+                                    }
+                                }
+                                Err(e) => {
+                                    println!("    [Poll #{}/5] FindAll failed: {:?}", poll_idx, e);
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    println!("[Diag] Failed to get focused element: {:?}", e);
+                }
+            }
+            std::thread::sleep(Duration::from_millis(1500));
+        }
+    }
 }

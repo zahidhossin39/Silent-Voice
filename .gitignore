@@ -28,3 +28,6 @@ Thumbs.db
 *.log
 npm-debug.log*
 uia-probe/target
+
+# Installer output
+Install/
