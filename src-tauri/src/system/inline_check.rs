@@ -18,7 +18,7 @@ use std::collections::HashSet;
 use std::sync::mpsc::channel;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
-use windows::core::Interface;
+use windows::core::{implement, Interface};
 use windows::Win32::Foundation::{CloseHandle, HANDLE};
 use windows::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED, SAFEARRAY,
@@ -34,9 +34,13 @@ use windows::Win32::UI::Accessibility::{
     CUIAutomation, IUIAutomation, IUIAutomationElement, IUIAutomationTextPattern,
     IUIAutomationTextRange, IUIAutomationValuePattern, SupportedTextSelection_None,
     TextPatternRangeEndpoint_End, TextPatternRangeEndpoint_Start, TextUnit_Character,
-    UIA_TextPatternId, UIA_ValuePatternId,
+    UIA_TextPatternId, UIA_ValuePatternId, TreeScope_Descendants, UIA_HasKeyboardFocusPropertyId,
+    IUIAutomationFocusChangedEventHandler, IUIAutomationFocusChangedEventHandler_Impl,
 };
-use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
+use windows::Win32::UI::WindowsAndMessaging::{
+    GetForegroundWindow, GetWindowThreadProcessId, SystemParametersInfoW, SPI_SETSCREENREADER,
+    SPIF_SENDCHANGE,
+};
 
 // Squiggling a terminal's scrollback is noise, and password managers are none
 // of our business. Everything else is fair game.
@@ -57,6 +61,15 @@ pub fn start(app: AppHandle) {
     std::thread::spawn(move || watcher(app));
 }
 
+/// Undo the system-wide screen-reader flag we set to activate WebView2
+/// accessibility (WhatsApp etc.), so other apps don't stay in accessibility
+/// mode after Silent Voice exits.
+pub fn reset_screen_reader() {
+    unsafe {
+        let _ = SystemParametersInfoW(SPI_SETSCREENREADER, 0, None, SPIF_SENDCHANGE);
+    }
+}
+
 fn watcher(app: AppHandle) {
     unsafe {
         if CoInitializeEx(None, COINIT_MULTITHREADED).is_err() {
@@ -71,6 +84,11 @@ fn watcher(app: AppHandle) {
                     return;
                 }
             };
+        let _ = SystemParametersInfoW(SPI_SETSCREENREADER, 1, None, SPIF_SENDCHANGE);
+        let handler: IUIAutomationFocusChangedEventHandler = FocusHandler.into();
+        let _ = automation.AddFocusChangedEventHandler(None, &handler);
+        let _focus_handler = handler;
+
         let (action_tx, action_rx) = channel::<OverlayAction>();
         let overlay_tx = super::squiggle::spawn(action_tx);
         let my_pid = GetCurrentProcessId();
@@ -193,6 +211,10 @@ fn poll_once(
         if IGNORE_EXES.contains(&exe.as_str()) {
             return (Vec::new(), "ignored exe");
         }
+        let el = match resolve_text_element(automation, &el) {
+            Some(e) => e,
+            None => return (Vec::new(), "no text element"),
+        };
         let pattern: IUIAutomationTextPattern = match el
             .GetCurrentPattern(UIA_TextPatternId)
             .and_then(|unk| unk.cast())
@@ -303,6 +325,7 @@ fn apply_fix(
         let el: IUIAutomationElement = automation
             .GetFocusedElement()
             .map_err(|e| format!("no focused element: {e}"))?;
+        let el = resolve_text_element(automation, &el).ok_or("no text element")?;
         let pattern: IUIAutomationTextPattern = el
             .GetCurrentPattern(UIA_TextPatternId)
             .and_then(|unk| unk.cast())
@@ -476,4 +499,29 @@ fn process_name(pid: u32) -> String {
         let _ = CloseHandle(handle);
         name
     }
+}
+
+#[implement(IUIAutomationFocusChangedEventHandler)]
+struct FocusHandler;
+
+impl IUIAutomationFocusChangedEventHandler_Impl for FocusHandler_Impl {
+    fn HandleFocusChangedEvent(&self, _sender: Option<&IUIAutomationElement>) -> windows::core::Result<()> {
+        Ok(())
+    }
+}
+
+// When the focused element has no TextPattern (e.g. a WebView2/WinUI3 host
+// like WhatsApp), the real editable field is a descendant with keyboard
+// focus. Resolve to it; otherwise return the element itself.
+unsafe fn resolve_text_element(automation: &IUIAutomation, el: &IUIAutomationElement) -> Option<IUIAutomationElement> {
+    if el.GetCurrentPattern(UIA_TextPatternId).and_then(|u| u.cast::<IUIAutomationTextPattern>()).is_ok() {
+        return Some(el.clone());
+    }
+    // find the descendant with keyboard focus (the compose box)
+    let cond = automation.CreatePropertyCondition(UIA_HasKeyboardFocusPropertyId, &windows::core::VARIANT::from(true)).ok()?;
+    let found = el.FindFirst(TreeScope_Descendants, &cond).ok()?;
+    // must expose a TextPattern to be usable
+    if found.GetCurrentPattern(UIA_TextPatternId).and_then(|u| u.cast::<IUIAutomationTextPattern>()).is_ok() {
+        Some(found)
+    } else { None }
 }

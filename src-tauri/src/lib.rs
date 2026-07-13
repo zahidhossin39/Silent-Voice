@@ -849,6 +849,7 @@ pub fn run() {
                         server.stop();
                     }
                 }
+                system::inline_check::reset_screen_reader();
             }
         });
 }
