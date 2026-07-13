@@ -719,6 +719,30 @@ All toggles live in Settings and are pushed to Rust via `set_behavior` /
   - NOT YET BUILT (Week 2+): per-app compatibility hardening. The two pink
     blobs that confused testing were Windows' "text cursor indicator"
     accessibility feature, not ours.
+  - **WebView2 apps — WhatsApp Desktop etc. (works, do not regress):**
+    WinUI3 apps hosting WebView2 (WhatsApp is WinUI3 + WebView2) keep
+    Chromium's accessibility tree DISABLED by default, so `GetFocusedElement`
+    returns a `Microsoft.UI.Content.DesktopChildSiteBridge` Pane with NO
+    TextPattern and the content DOM (the compose box) is invisible. Passive
+    UIA reads, the WebView2 anchor HWND, and even the .NET UIA client all
+    fail. The FIX (proven first in the `uia-probe/` harness, then ported to
+    `inline_check.rs`): on watcher start, set `SPI_SETSCREENREADER`(TRUE) AND
+    register a COM `IUIAutomation::AddFocusChangedEventHandler` (keep the
+    handler alive). Together these make UIAutomationCore's
+    `UiaClientsAreListening()` return true, which Chromium watches and then
+    builds its a11y tree (async — appears within ~1s). The editable compose
+    box is then a DESCENDANT of the bridge with `HasKeyboardFocus=true` +
+    TextPattern; `resolve_text_element()` finds it via
+    `FindFirst(Descendants, HasKeyboardFocus==true)` when the focused element
+    itself has no TextPattern, and feeds it to the normal lint/rect/fix path.
+    `apply_fix` resolves the same way. CRITICAL caveats: (1) needs
+    `windows-core` + the `implement` feature; the `#[implement]` handler impls
+    `..._Impl for FocusHandler_Impl` (not `for FocusHandler`). (2) The
+    screen-reader flag is SYSTEM-WIDE — it makes every Chromium/Electron app
+    build a11y trees (CPU/mem cost on weak machines); it is RESET on app Exit
+    (`reset_screen_reader()` in the RunEvent::Exit handler) so the system
+    doesn't stay in accessibility mode. Verified live: 3 squiggles render over
+    WhatsApp's compose box for misspellings.
 - **Auto-updater & Release Process (v0.1.4, shipped):** Background auto-updater powered by Tauri v2 `@tauri-apps/plugin-updater` + `@tauri-apps/plugin-process` on frontend (registered in `src-tauri/src/lib.rs` and permissions in `capabilities/default.json`).
   - *Frontend hook:* `src/services/updater.ts` exports `checkForUpdates()` which calls the plugin's `check()`, downloads/installs, and relaunches the app. `src/App.tsx` calls `checkForUpdates()` silently 5 seconds after `Dashboard` mounts (only in main window, not overlay; no-ops in browser).
   - *Configuration:* `src-tauri/tauri.conf.json` defines `"plugins.updater"` with `endpoints` pointing to `https://github.com/zahidhossin39/Silent-Voice/releases/latest/download/latest.json`, `pubkey` (embedded public signing key), and `"bundle.createUpdaterArtifacts": true`.
