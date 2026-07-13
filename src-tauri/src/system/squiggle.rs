@@ -520,6 +520,14 @@ fn run(rx: Receiver<Vec<SquiggleInfo>>, action_tx: Sender<OverlayAction>) {
                                         let _ = action_tx.send(OverlayAction::AddToVocab {
                                             word: word.clone(),
                                         });
+                                        if word != &info.expected {
+                                            let _ = action_tx.send(OverlayAction::Fix {
+                                                start: info.start,
+                                                end: info.end,
+                                                expected: info.expected.clone(),
+                                                replacement: word.clone(),
+                                            });
+                                        }
                                     }
                                     hide_popup(&mut popup);
                                     hover_since = None;

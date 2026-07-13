@@ -289,9 +289,134 @@ pub fn format_numbers(text: &str) -> String {
     out.join(" ")
 }
 
+#[derive(Debug, Clone, PartialEq)]
+enum RepeatToken {
+    Word(String),
+    Whitespace(String),
+    Other(String),
+}
+
+fn is_potential_word_char(c: char) -> bool {
+    c.is_alphabetic() || c == '-' || c == '\'' || c == '’'
+}
+
+fn is_collapsible_word(s: &str) -> bool {
+    let chars: Vec<char> = s.chars().collect();
+    if chars.len() < 2 {
+        return false;
+    }
+    // Starts and ends with a letter.
+    if !chars[0].is_alphabetic() || !chars[chars.len() - 1].is_alphabetic() {
+        return false;
+    }
+    // Contains only letters, hyphens, and apostrophes.
+    for &c in &chars {
+        if !c.is_alphabetic() && c != '-' && c != '\'' && c != '’' {
+            return false;
+        }
+    }
+    true
+}
+
+fn tokenize_repeated(text: &str) -> Vec<RepeatToken> {
+    let mut tokens = Vec::new();
+    let chars: Vec<char> = text.chars().collect();
+    let mut i = 0;
+
+    while i < chars.len() {
+        let c = chars[i];
+        if is_potential_word_char(c) {
+            let start = i;
+            while i < chars.len() && is_potential_word_char(chars[i]) {
+                i += 1;
+            }
+            let word_str: String = chars[start..i].iter().collect();
+            if is_collapsible_word(&word_str) {
+                tokens.push(RepeatToken::Word(word_str));
+            } else {
+                tokens.push(RepeatToken::Other(word_str));
+            }
+        } else if c.is_whitespace() {
+            let start = i;
+            while i < chars.len() && chars[i].is_whitespace() {
+                i += 1;
+            }
+            let ws_str: String = chars[start..i].iter().collect();
+            tokens.push(RepeatToken::Whitespace(ws_str));
+        } else {
+            let start = i;
+            while i < chars.len() && !is_potential_word_char(chars[i]) && !chars[i].is_whitespace() {
+                i += 1;
+            }
+            let other_str: String = chars[start..i].iter().collect();
+            tokens.push(RepeatToken::Other(other_str));
+        }
+    }
+    tokens
+}
+
+/// Collapse immediate consecutive duplicate words.
+/// Only collapses when the word is >= 2 chars and consists of letters (plus internal hyphens/apostrophes).
+/// Preserves casing of the first occurrence and spacing.
+pub fn collapse_repeated_words(text: &str) -> String {
+    let tokens = tokenize_repeated(text);
+    let mut result: Vec<RepeatToken> = Vec::new();
+
+    for token in tokens {
+        match token {
+            RepeatToken::Word(ref w) => {
+                let mut last_word_idx = None;
+                let mut only_whitespace = true;
+                for (idx, t) in result.iter().enumerate().rev() {
+                    match t {
+                        RepeatToken::Word(_) => {
+                            last_word_idx = Some(idx);
+                            break;
+                        }
+                        RepeatToken::Whitespace(_) => {}
+                        RepeatToken::Other(_) => {
+                            only_whitespace = false;
+                            break;
+                        }
+                    }
+                }
+
+                let mut is_duplicate = false;
+                if let Some(idx) = last_word_idx {
+                    if only_whitespace {
+                        if let RepeatToken::Word(ref last_w) = result[idx] {
+                            if last_w.to_lowercase() == w.to_lowercase() {
+                                is_duplicate = true;
+                                result.truncate(idx + 1);
+                            }
+                        }
+                    }
+                }
+
+                if !is_duplicate {
+                    result.push(token);
+                }
+            }
+            _ => {
+                result.push(token);
+            }
+        }
+    }
+
+    let mut out = String::new();
+    for t in result {
+        match t {
+            RepeatToken::Word(w) => out.push_str(&w),
+            RepeatToken::Whitespace(ws) => out.push_str(&ws),
+            RepeatToken::Other(oth) => out.push_str(&oth),
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
-    use super::format_numbers;
+    use super::{collapse_repeated_words, format_numbers};
 
     #[test]
     fn small_numbers_become_digits_too() {
@@ -356,5 +481,18 @@ mod tests {
     fn empty_and_plain() {
         assert_eq!(format_numbers(""), "");
         assert_eq!(format_numbers("hello world"), "hello world");
+    }
+
+    #[test]
+    fn test_collapse_repeated_words() {
+        assert_eq!(collapse_repeated_words("follow-up follow-up"), "follow-up");
+        assert_eq!(collapse_repeated_words("the the cat"), "the cat");
+        assert_eq!(collapse_repeated_words("New York New York"), "New York New York");
+        assert_eq!(collapse_repeated_words("I I am"), "I I am");
+        assert_eq!(collapse_repeated_words("5 5"), "5 5");
+        assert_eq!(collapse_repeated_words("The the dog"), "The dog");
+        assert_eq!(collapse_repeated_words("no no no"), "no");
+        assert_eq!(collapse_repeated_words("no no no cat"), "no cat");
+        assert_eq!(collapse_repeated_words("no, no"), "no, no");
     }
 }

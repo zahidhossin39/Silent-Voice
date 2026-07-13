@@ -490,6 +490,8 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
         }
     };
 
+    let raw_text = textfmt::collapse_repeated_words(&raw_text);
+
     // Optional AI processing: run the active mode's prompt through a local
     // LLM (Ollama). On any failure, fall back to the raw transcription so
     // the user never loses their words.

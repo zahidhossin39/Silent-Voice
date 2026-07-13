@@ -75,7 +75,12 @@ pub fn check(text: &str, vocabulary: &str) -> Vec<ProofIssue> {
                 .iter()
                 .filter_map(|s| match s {
                     Suggestion::ReplaceWith(chars) => Some(chars.iter().collect::<String>()),
-                    _ => None,
+                    Suggestion::InsertAfter(chars) => {
+                        let mut s: String = text.chars().skip(l.span.start).take(l.span.end - l.span.start).collect();
+                        s.extend(chars.iter());
+                        Some(s)
+                    }
+                    Suggestion::Remove => Some(String::new()),
                 })
                 .take(3)
                 .collect(),
@@ -232,5 +237,20 @@ mod tests {
             "expected no long sentence lint, got: {:?}",
             long_sentence_issues.iter().map(|i| &i.message).collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn test_insertion_suggestion() {
+        // The Oxford comma lint uses InsertAfter.
+        let issues = check("I like apples, oranges and bananas.", "");
+        let comma_issues: Vec<_> = issues
+            .iter()
+            .filter(|i| i.message.contains("Oxford comma"))
+            .collect();
+        
+        assert!(!comma_issues.is_empty(), "expected an Oxford comma lint");
+        assert!(!comma_issues[0].suggestions.is_empty(), "expected a suggestion for the insertion lint");
+        // The span should be around 'oranges', so inserting ',' makes it 'oranges,'
+        assert!(comma_issues[0].suggestions.iter().any(|s| s.contains(",")));
     }
 }
