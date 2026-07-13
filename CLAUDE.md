@@ -348,6 +348,27 @@ The `tidy_ai_output()` function in `hotkey.rs` strips common preamble lines ("He
 - Integration point: continuous mic loop in Rust → VAD → optional wake word check → trigger same pipeline as hotkey on_released
 - Requires `ort` crate (ONNX Runtime for Rust)
 
+### GPU-accelerated transcription (Not started — user-requested, next up)
+- **Problem confirmed by inspection:** the bundled whisper.cpp sidecar
+  (`sidecars/*.dll`) ships ONLY `ggml-cpu-*` backend DLLs — no CUDA, no
+  Vulkan, no OpenCL. The "Use GPU acceleration" toggle in Settings can't
+  actually accelerate anything right now; there's no GPU code path compiled
+  in at all. Confirmed on the user's machine AND on a friend's GPU machine —
+  both ran at identical CPU-only speed on the same model.
+- **Planned fix: bundle a Vulkan-enabled whisper.cpp build.** Vulkan was
+  chosen over CUDA because it works across Intel/AMD/NVIDIA GPUs (the user's
+  own machine is Intel UHD 620 — CUDA would exclude it entirely). This means
+  building/downloading a whisper.cpp binary compiled with
+  `-DGGML_VULKAN=ON`, plus its Vulkan ggml backend DLLs, replacing or
+  supplementing the current CPU-only sidecar. Need to verify the "Use GPU
+  acceleration" toggle's existing plumbing (`use_gpu` → `RuntimeConfig` →
+  `whisper.rs`'s `-ng` flag, see §16) correctly selects the Vulkan backend
+  when present and falls back to CPU cleanly when it isn't (e.g. machines
+  with no compatible GPU/driver).
+- **Interim mitigations already shipped (not a substitute for real GPU
+  support):** distil-whisper models (2-4x faster on CPU) and the
+  high-performance thread toggle — see §16.
+
 ### Phase 7 — Polish + Installer (v0.1.4 — complete)
 
 **DONE:**
