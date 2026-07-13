@@ -5,6 +5,14 @@ Read it fully before touching any code. It contains the architecture, what's don
 left, and — critically — a list of things that **must never be changed** because they fix
 hard-won bugs.
 
+**Current state (check before assuming a release is live):** version files say
+`0.1.5`, but 4 feature commits have landed since that version was released
+(WhatsApp/WebView2 inline proofreading, high-performance thread toggle,
+distil-whisper models, long-sentence lint removal, proofread popup UX fixes,
+doubled-word transcription collapse — see §16 entries marked "committed, not
+yet released"). **A `v0.1.6` release has not been cut.** See §16's "Auto-updater
+& Release Process" for the exact release steps.
+
 ---
 
 ## 1. What This App Is
@@ -743,6 +751,46 @@ All toggles live in Settings and are pushed to Rust via `set_behavior` /
     (`reset_screen_reader()` in the RunEvent::Exit handler) so the system
     doesn't stay in accessibility mode. Verified live: 3 squiggles render over
     WhatsApp's compose box for misspellings.
+  - **Proofread popup UX (committed, not yet released):** the "Add to
+    Dictionary" picker (lists `[flagged word, ...suggestions]`) now ALSO
+    applies a fix when the clicked row is a correction (word !=
+    `info.expected`) — sends `AddToVocab` + `Fix` together; picking the
+    original flagged word still only adds it. Grammar lints with
+    insert/remove suggestions (e.g. "An Oxford comma is necessary here")
+    previously produced NO clickable suggestion because `proofread.rs` only
+    mapped Harper's `Suggestion::ReplaceWith` — `InsertAfter` (span text +
+    inserted chars) and `Remove` (empty string) are now mapped too, so those
+    lints get a real clickable fix.
+- **Doubled-word transcription artifact fix (committed, not yet released):**
+  Whisper tiny sometimes emits immediate consecutive duplicate words (e.g.
+  "the follow-up follow-up message"). `system/textfmt.rs::collapse_repeated_words()`
+  collapses runs of 2+ identical consecutive word tokens (case-insensitive,
+  keeps first casing); skips 1-char tokens and pure numbers to avoid false
+  positives ("I I am", "5 5" are left alone). Called on `raw_text` in
+  `hotkey.rs` right after `whisper::transcribe_dispatch()` resolves, so both
+  history and the pasted/AI-processed text are clean. Unit tested.
+- **High performance mode (committed, not yet released):** Settings →
+  Performance toggle, default OFF. OFF = `max(2, cores/2)` whisper threads
+  (keeps the system responsive); ON = all cores (`available_parallelism()`)
+  for faster transcription. Wired: `settingsStore.settings.high_performance`
+  → `useRuntimeSync` → `set_behavior` Tauri command → `RuntimeConfig` →
+  thread count computed in `system/hotkey.rs` right before
+  `whisper::transcribe_dispatch()`. Mirrors the `use_gpu`/`inline_proofread`
+  plumbing pattern exactly.
+- **Distil-whisper models (committed, not yet released):** added
+  `distil-small.en`, `distil-medium.en`, `distil-large-v2` to `STT_MODELS` in
+  `catalog.ts` — 2–4x faster than the equivalent Whisper size on CPU with
+  near-identical accuracy. All three GGML `.bin` URLs curl-verified against
+  Hugging Face (`distil-whisper/*` repos) before adding, per §15's invariant.
+  Onboarding now prefers `distil-small.en` over `small.en` for capable
+  machines (≥2GB VRAM).
+- **Long-sentence lint disabled (committed, not yet released):** Harper's
+  `LongSentences` rule (produced "This sentence is X words long." with no
+  actionable fix — pure noise for a dictation app where long run-on
+  sentences are normal) is turned off via
+  `linter.config.set_rule_enabled("LongSentences", false)` in
+  `proofread.rs::check()`. All other lints (spelling, grammar, repetition)
+  are unaffected. Unit tested.
 - **Auto-updater & Release Process (v0.1.4, shipped):** Background auto-updater powered by Tauri v2 `@tauri-apps/plugin-updater` + `@tauri-apps/plugin-process` on frontend (registered in `src-tauri/src/lib.rs` and permissions in `capabilities/default.json`).
   - *Frontend hook:* `src/services/updater.ts` exports `checkForUpdates()` which calls the plugin's `check()`, downloads/installs, and relaunches the app. `src/App.tsx` calls `checkForUpdates()` silently 5 seconds after `Dashboard` mounts (only in main window, not overlay; no-ops in browser).
   - *Configuration:* `src-tauri/tauri.conf.json` defines `"plugins.updater"` with `endpoints` pointing to `https://github.com/zahidhossin39/Silent-Voice/releases/latest/download/latest.json`, `pubkey` (embedded public signing key), and `"bundle.createUpdaterArtifacts": true`.
