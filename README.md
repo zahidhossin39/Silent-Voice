@@ -39,6 +39,10 @@ src-tauri/           Rust backend
   src/system/        hardware detection, paste, system tray
 ```
 
+## Installation
+
+To install Silent Voice, download the latest installer from the [GitHub Releases](https://github.com/zahidhossin39/Silent-Voice/releases) page. Once installed, the application will automatically check for and apply updates silently in the background on startup (v0.1.4+). Note that existing installations built or installed before v0.1.4 lack update capabilities and must be manually reinstalled once to begin receiving automatic updates.
+
 ## Develop
 
 ### Frontend only (no Rust required)

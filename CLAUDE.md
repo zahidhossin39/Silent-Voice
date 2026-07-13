@@ -181,7 +181,7 @@ Cargo version: 1.96.0 MSVC. VS 2022 Build Tools with C++ workload already instal
 | 4 | Model Store + hardware recommendations | ✅ UI complete; STT download works; LLM download works. Catalog expanded to ~49 STT models (OpenAI + distil-whisper + 16 language-specific fine-tunes from BELLE-2, Kotoba Technologies, ReazonSpeech, VinAI, KBLab, etc — see §15) |
 | 5 | Always-listening (Silero VAD + openWakeWord) | ❌ Not started |
 | 6 | Cloud API integration (OpenAI, OpenRouter, etc.) | ✅ Complete (generic OpenAI client) |
-| 7 | Polish + Windows installer + onboarding | ✅ Mostly complete (v0.1.2). Done: onboarding wizard, app icon, error logging, NSIS installer, resource bundling fix. Remaining: auto-updater only. |
+| 7 | Polish + Windows installer + onboarding + auto-updater | ✅ Complete (v0.1.4). Done: onboarding wizard, app icon, error logging, NSIS installer, resource bundling fix, auto-updater. |
 
 ---
 
@@ -340,7 +340,7 @@ The `tidy_ai_output()` function in `hotkey.rs` strips common preamble lines ("He
 - Integration point: continuous mic loop in Rust → VAD → optional wake word check → trigger same pipeline as hotkey on_released
 - Requires `ort` crate (ONNX Runtime for Rust)
 
-### Phase 7 — Polish + Installer (v0.1.2 — mostly complete)
+### Phase 7 — Polish + Installer (v0.1.4 — complete)
 
 **DONE:**
 - First-launch onboarding wizard (`src/components/onboarding/Onboarding.tsx`) — 4 steps, hardware-based model recommendation, skippable
@@ -352,13 +352,15 @@ The `tidy_ai_output()` function in `hotkey.rs` strips common preamble lines ("He
   "resources": {
     "sidecars/*.dll": "./",
     "sidecars/llama/": "llama/",
-    "sidecars/piper/": "piper/"
+    "sidecars/piper/": "piper/",
+    "sidecars/sherpa/": "sherpa/"
   }
   ```
   Do NOT revert to the array form — it broke local STT + LLM in installed builds.
+- Auto-updater (v0.1.4): Tauri v2 updater plugin integration (`tauri-plugin-updater` and `tauri-plugin-process`).
 
 **REMAINING:**
-- Auto-updater (Tauri updater plugin + update server endpoint)
+- None.
 
 ---
 
@@ -717,3 +719,16 @@ All toggles live in Settings and are pushed to Rust via `set_behavior` /
   - NOT YET BUILT (Week 2+): per-app compatibility hardening. The two pink
     blobs that confused testing were Windows' "text cursor indicator"
     accessibility feature, not ours.
+- **Auto-updater & Release Process (v0.1.4, shipped):** Background auto-updater powered by Tauri v2 `@tauri-apps/plugin-updater` + `@tauri-apps/plugin-process` on frontend (registered in `src-tauri/src/lib.rs` and permissions in `capabilities/default.json`).
+  - *Frontend hook:* `src/services/updater.ts` exports `checkForUpdates()` which calls the plugin's `check()`, downloads/installs, and relaunches the app. `src/App.tsx` calls `checkForUpdates()` silently 5 seconds after `Dashboard` mounts (only in main window, not overlay; no-ops in browser).
+  - *Configuration:* `src-tauri/tauri.conf.json` defines `"plugins.updater"` with `endpoints` pointing to `https://github.com/zahidhossin39/Silent-Voice/releases/latest/download/latest.json`, `pubkey` (embedded public signing key), and `"bundle.createUpdaterArtifacts": true`.
+  - *Key Generation:* The signing keypair was generated via `npx tauri signer generate` (private key stored locally at `%USERPROFILE%\.tauri\silent-voice.key`, gitignored).
+  - *Release Pipeline:* Tag pushes matching `v*` trigger `.github/workflows/release.yml`. CI runs `tauri-apps/tauri-action@v0` to build, sign (using GitHub Secrets `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`), and publish a draft release (`releaseDraft: true`) containing `latest.json`, `.exe`, and `.sig` signatures.
+  - *Gotcha:* Published releases MUST have the release label set to "None" (NOT "Pre-release") on GitHub, otherwise the `/releases/latest/` endpoint does not list them and the updater fails to find updates.
+  - *Release Steps:*
+    1. Bump matching version in three files: `package.json`, `src-tauri/tauri.conf.json`, and `src-tauri/Cargo.toml`.
+    2. Commit changes (e.g., `git commit -am "bump to vX.Y.Z"`).
+    3. Tag the commit: `git tag vX.Y.Z`.
+    4. Push: `git push origin vX.Y.Z`.
+    5. Review the draft release created by GitHub Actions. Ensure the label is "None", then click "Publish release".
+  - *Caveat:* Pre-v0.1.4 instances lack update-checking code and must be manually reinstalled once from the v0.1.4 (or later) installer to receive future updates.
