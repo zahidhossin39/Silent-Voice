@@ -1,6 +1,6 @@
 [package]
 name = "silent-voice"
-version = "0.1.4"
+version = "0.1.5"
 description = "Free, local-first voice-to-text dictation"
 authors = ["Silent Voice"]
 edition = "2021"
