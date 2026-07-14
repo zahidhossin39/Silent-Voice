@@ -6,12 +6,18 @@ left, and — critically — a list of things that **must never be changed** bec
 hard-won bugs.
 
 **Current state (check before assuming a release is live):** version files say
-`0.1.5`, but 4 feature commits have landed since that version was released
-(WhatsApp/WebView2 inline proofreading, high-performance thread toggle,
-distil-whisper models, long-sentence lint removal, proofread popup UX fixes,
-doubled-word transcription collapse — see §16 entries marked "committed, not
-yet released"). **A `v0.1.6` release has not been cut.** See §16's "Auto-updater
-& Release Process" for the exact release steps.
+`0.1.6` and a large batch of commits has landed since `v0.1.5` was released —
+WhatsApp/WebView2 inline proofreading, high-performance thread toggle (now
+with an adjustable thread-count slider), distil-whisper models, long-sentence
+lint removal, proofread popup UX fixes, doubled-word transcription collapse,
+a Vulkan-enabled whisper.cpp sidecar for real GPU acceleration, HTTP 429
+download retry, a fix for spurious mid-hold hotkey releases, sherpa TTS now
+honoring the performance thread count, a Model Store pinning system, a
+scroll-position bug fix, an accurate downloaded-model count on Home, a
+non-silent updater (shows an "Update available" button instead of installing
+without asking), and Model Store card layout alignment. **`v0.1.6` is about
+to be tagged and pushed** — see §16's "Auto-updater & Release Process" for
+the exact release steps.
 
 ---
 
@@ -843,8 +849,63 @@ All toggles live in Settings and are pushed to Rust via `set_behavior` /
   `linter.config.set_rule_enabled("LongSentences", false)` in
   `proofread.rs::check()`. All other lints (spelling, grammar, repetition)
   are unaffected. Unit tested.
-- **Auto-updater & Release Process (v0.1.4, shipped):** Background auto-updater powered by Tauri v2 `@tauri-apps/plugin-updater` + `@tauri-apps/plugin-process` on frontend (registered in `src-tauri/src/lib.rs` and permissions in `capabilities/default.json`).
-  - *Frontend hook:* `src/services/updater.ts` exports `checkForUpdates()` which calls the plugin's `check()`, downloads/installs, and relaunches the app. `src/App.tsx` calls `checkForUpdates()` silently 5 seconds after `Dashboard` mounts (only in main window, not overlay; no-ops in browser).
+- **Spurious mid-hold hotkey release fix (v0.1.6):** `global-hotkey` (which
+  `tauri-plugin-global-shortcut` wraps) synthesizes key-release events by
+  polling on Windows; during a long hold with OS auto-repeat it could fire a
+  spurious `ShortcutState::Released` while the key was still physically down,
+  stopping recording and pasting mid-sentence. `hotkey.rs::on_released()` now
+  takes the fired `Shortcut` and, before touching any state, checks the main
+  key's physical state via `GetAsyncKeyState` (`key_still_down()` /
+  `main_key_vk()` — maps letters/digits/F-keys/arrows/space/enter/tab to VK
+  codes) and returns immediately if it's still held, ignoring the spurious
+  release. No-op on non-Windows.
+- **Adjustable CPU thread count (v0.1.6):** Settings → Performance → when
+  "High performance mode" is ON, a slider appears ("CPU threads") ranging
+  from the balanced default `max(2, cores/2)` up to all logical cores, with a
+  note stating the default so the user can't go below it. `0` in
+  `settings.performance_threads` means "auto" (all cores). Backend: new
+  `RuntimeConfig.performance_threads` field, shared `resolve_thread_count()`
+  helper in `hotkey.rs` used by BOTH whisper transcription and sherpa TTS
+  synthesis (`tts.rs`) so the setting applies consistently everywhere.
+- **Model Store pinning (v0.1.6):** a star button on every STT/LLM/TTS card
+  toggles a per-category pin (`settings.pinned_stt/llm/tts`, string arrays,
+  persisted). Sort order in each tab is: active/in-use first, then pinned,
+  then the existing downloaded → compatibility → size/quality rules
+  unchanged. Star icon is a `StarIcon` component (filled when pinned) placed
+  as the first item in each card's right-side button cluster — never nested
+  inside the card's existing expand-toggle button.
+- **Model Store card alignment fix (v0.1.6):** each card's right-side action
+  cluster (star/Download/Select/"In use"/"Installed"/trash) previously had a
+  different natural width per state, making rows look jagged. Right clusters
+  now have a fixed `min-w-[168px]` with `justify-end`, the star pinned left
+  via `mr-auto`, and "Download"/"Select" buttons and the state-text span both
+  fixed to `w-[84px]` — so every row aligns regardless of that model's
+  download/active state. Applies to `ModelCard.tsx` (STT) and the local
+  `LlmCard`/`TtsCard` in `ModelStore.tsx`.
+- **Scroll position bug fix (v0.1.6):** `<main>` in `App.tsx` is a single
+  persistent scroll container across all routes (`<Routes>` only swaps its
+  children, `<main>` itself never unmounts) — switching pages used to keep
+  whatever scroll position the previous page was left at. A `useLocation()`
+  + `useEffect` in `Dashboard` now resets `mainRef.current.scrollTo({top:0})`
+  on every path change.
+- **Home "Downloaded models" count fix (v0.1.6):** was only counting STT
+  (`downloaded.size`); now sums STT + LLM + TTS
+  (`downloaded.size + downloadedLlm.size + downloadedTts.size`).
+- **Auto-updater & Release Process (v0.1.4, shipped; non-silent since v0.1.6):** Background auto-updater powered by Tauri v2 `@tauri-apps/plugin-updater` + `@tauri-apps/plugin-process` on frontend (registered in `src-tauri/src/lib.rs` and permissions in `capabilities/default.json`).
+  - *Frontend hook (changed in v0.1.6 — was fully silent, now asks first):*
+    `src/services/updater.ts`'s `checkForUpdates()` now ONLY checks and returns
+    `{available, version}` — it no longer calls `downloadAndInstall()`/`relaunch()`
+    itself. `src/stores/updateStore.ts` (new) holds `available`/`version`/
+    `installing`/`error`; its `checkSilently()` is called from `App.tsx` 5
+    seconds after `Dashboard` mounts (main window only, no-op in browser) and
+    just populates that state — no install. When `available` is true, an
+    "Update available (vX.Y.Z)" button appears in the sidebar (`App.tsx`,
+    directly above the version/"offline-ready" footer text); clicking it
+    calls `installNow()`, which re-checks, downloads, installs, and relaunches.
+    Before this the app updated itself completely without telling the user —
+    intentionally changed per user request. Settings' manual "Check for
+    updates" button (`checkForUpdatesManual()`) is unchanged — it still
+    installs immediately since that's an explicit user-initiated action.
   - *Configuration:* `src-tauri/tauri.conf.json` defines `"plugins.updater"` with `endpoints` pointing to `https://github.com/zahidhossin39/Silent-Voice/releases/latest/download/latest.json`, `pubkey` (embedded public signing key), and `"bundle.createUpdaterArtifacts": true`.
   - *Key Generation:* The signing keypair was generated via `npx tauri signer generate` (private key stored locally at `%USERPROFILE%\.tauri\silent-voice.key`, gitignored).
   - *Release Pipeline:* Tag pushes matching `v*` trigger `.github/workflows/release.yml`. CI runs `tauri-apps/tauri-action@v0` to build, sign (using GitHub Secrets `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`), and publish a draft release (`releaseDraft: true`) containing `latest.json`, `.exe`, and `.sig` signatures.
