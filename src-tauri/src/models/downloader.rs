@@ -67,7 +67,12 @@ pub async fn download_tts_model(
         // url_json → dir/tokens.txt. No archive involved.
         let dir = registry::sherpa_voice_dir(&voice_id);
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-        let tokens = reqwest::get(&url_json)
+        let client = reqwest::Client::builder()
+            .user_agent("SilentVoice/0.1.6 (+https://github.com/zahidhossin39/Silent-Voice)")
+            .build()
+            .map_err(|e| e.to_string())?;
+        let tokens = client.get(&url_json)
+            .send()
             .await
             .map_err(|e| e.to_string())?
             .error_for_status()
@@ -117,7 +122,12 @@ pub async fn download_tts_model(
 
     // Piper pair path. Config first (tiny) — if it fails we haven't wasted a
     // big download.
-    let json = reqwest::get(&url_json)
+    let client = reqwest::Client::builder()
+        .user_agent("SilentVoice/0.1.6 (+https://github.com/zahidhossin39/Silent-Voice)")
+        .build()
+        .map_err(|e| e.to_string())?;
+    let json = client.get(&url_json)
+        .send()
         .await
         .map_err(|e| e.to_string())?
         .error_for_status()
@@ -156,14 +166,21 @@ async fn download_to(
 ) -> Result<(), String> {
     let tmp = dest.with_extension("part");
 
-    let client = reqwest::Client::new();
-    let resp = client
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?
-        .error_for_status()
+    let client = reqwest::Client::builder()
+        .user_agent("SilentVoice/0.1.6 (+https://github.com/zahidhossin39/Silent-Voice)")
+        .build()
         .map_err(|e| e.to_string())?;
+    
+    let mut attempts = 0;
+    let resp = loop {
+        attempts += 1;
+        let r = client.get(&url).send().await.map_err(|e| e.to_string())?;
+        if r.status() == reqwest::StatusCode::TOO_MANY_REQUESTS && attempts < 3 {
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            continue;
+        }
+        break r.error_for_status().map_err(|e| e.to_string())?;
+    };
 
     let total = resp.content_length().unwrap_or(0);
     let mut downloaded: u64 = 0;
