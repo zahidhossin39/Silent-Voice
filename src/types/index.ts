@@ -160,6 +160,7 @@ export interface Settings {
   language: string; // "auto" or ISO code
   use_gpu: boolean;
   high_performance: boolean;
+  performance_threads: number; // 0 = auto (all cores); only used when high_performance
   audio_device: string | null;
   auto_start: boolean;
   theme: "dark" | "light";

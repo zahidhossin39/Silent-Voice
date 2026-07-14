@@ -287,21 +287,13 @@ fn synth_and_play(
     text: &str,
     rx: &Receiver<()>,
 ) -> Result<(), String> {
-    let high_performance = app
+    let (high_performance, performance_threads) = app
         .state::<AppState>()
         .config
         .lock()
-        .map(|c| c.high_performance)
-        .unwrap_or(false);
-
-    let cores = std::thread::available_parallelism()
-        .map(|n| n.get() as i32)
-        .unwrap_or(4);
-    let threads = if high_performance {
-        cores
-    } else {
-        std::cmp::max(2, cores / 2)
-    };
+        .map(|c| (c.high_performance, c.performance_threads))
+        .unwrap_or((false, 0));
+    let threads = super::hotkey::resolve_thread_count(high_performance, performance_threads) as i32;
 
     let wav = registry::audio_dir().join("tts.wav");
 

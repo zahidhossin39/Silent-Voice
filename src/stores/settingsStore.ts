@@ -42,6 +42,7 @@ const DEFAULT_SETTINGS: Settings = {
   language: "auto",
   use_gpu: false,
   high_performance: false,
+  performance_threads: 0,
   audio_device: null,
   auto_start: false,
   theme: "dark",

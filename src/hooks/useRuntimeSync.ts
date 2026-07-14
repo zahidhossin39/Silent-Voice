@@ -59,6 +59,7 @@ export function useRuntimeSync() {
   const inputSensitivity = useSettingsStore((s) => s.settings.input_sensitivity);
   const inlineProofread = useSettingsStore((s) => s.settings.inline_proofread);
   const highPerformance = useSettingsStore((s) => s.settings.high_performance);
+  const performanceThreads = useSettingsStore((s) => s.settings.performance_threads);
   const ttsVoice = useSettingsStore((s) => s.settings.active_tts_voice);
   const ttsHotkey = useSettingsStore((s) => s.settings.tts_hotkey);
   const autoStart = useSettingsStore((s) => s.settings.auto_start);
@@ -122,8 +123,8 @@ export function useRuntimeSync() {
   }, [snippets]);
 
   useEffect(() => {
-    setBehavior(toggleMode, inputSensitivity, inlineProofread, highPerformance);
-  }, [toggleMode, inputSensitivity, inlineProofread, highPerformance]);
+    setBehavior(toggleMode, inputSensitivity, inlineProofread, highPerformance, performanceThreads);
+  }, [toggleMode, inputSensitivity, inlineProofread, highPerformance, performanceThreads]);
 
   useEffect(() => {
     setAutostart(autoStart);

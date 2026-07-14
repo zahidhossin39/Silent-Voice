@@ -58,6 +58,9 @@ pub struct RuntimeConfig {
     // app's focused text field (system/inline_check.rs). English-only.
     pub inline_proofread: bool,
     pub high_performance: bool,
+    // Thread count when high_performance is on. 0 = auto (all cores). Otherwise
+    // the user's chosen count, clamped to [default, all cores] in hotkey.rs.
+    pub performance_threads: u32,
     // Read-aloud (TTS): active Piper voice id + the hotkey that reads the
     // current text selection. See system/tts.rs.
     pub tts_voice_id: String,
@@ -103,6 +106,7 @@ impl Default for RuntimeConfig {
             input_sensitivity: 50,
             inline_proofread: true,
             high_performance: false,
+            performance_threads: 0,
             tts_voice_id: String::new(),
             tts_hotkey: "Ctrl+Alt+S".into(),
             app_profiles: Vec::new(),
@@ -237,12 +241,14 @@ fn set_behavior(
     input_sensitivity: u32,
     inline_proofread: bool,
     high_performance: bool,
+    performance_threads: u32,
 ) -> Result<(), String> {
     let mut cfg = state.config.lock().map_err(|e| e.to_string())?;
     cfg.toggle_mode = toggle_mode;
     cfg.input_sensitivity = input_sensitivity.min(100);
     cfg.inline_proofread = inline_proofread;
     cfg.high_performance = high_performance;
+    cfg.performance_threads = performance_threads;
     Ok(())
 }
 

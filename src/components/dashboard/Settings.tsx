@@ -427,13 +427,58 @@ export default function Settings() {
           </Row>
           <Row
             label="High performance mode"
-            hint="Uses all CPU cores for faster transcription (may slow other apps)"
+            hint="Uses more CPU threads for faster transcription (may slow other apps)"
           >
             <Toggle
               checked={settings.high_performance}
               onChange={(v) => setSettings({ high_performance: v })}
             />
           </Row>
+          {settings.high_performance &&
+            (() => {
+              const cores = hardware?.logical_cores ?? 4;
+              const def = Math.max(2, Math.floor(cores / 2));
+              // 0 = auto (all cores). Show the effective value on the slider.
+              const value = Math.min(
+                cores,
+                Math.max(def, settings.performance_threads || cores)
+              );
+              const fill =
+                cores > def ? ((value - def) / (cores - def)) * 100 : 100;
+              return (
+                <div className="py-3.5">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm">CPU threads</div>
+                    <span className="text-xs tabular-nums text-sv-muted">
+                      {value} / {cores}
+                    </span>
+                  </div>
+                  <div className="mt-0.5 text-xs text-sv-muted">
+                    How many CPU threads transcription may use. Default (balanced)
+                    is {def} — you can't go below that. Higher = faster, but
+                    leaves less for other apps. Your CPU has {cores} threads.
+                  </div>
+                  <input
+                    type="range"
+                    min={def}
+                    max={cores}
+                    step={1}
+                    value={value}
+                    onChange={(e) =>
+                      setSettings({
+                        performance_threads: Number(e.target.value),
+                      })
+                    }
+                    className="sv-slider mt-3 w-full"
+                    style={
+                      {
+                        "--sv-slider-fill": `${fill}%`,
+                      } as React.CSSProperties
+                    }
+                  />
+                </div>
+              );
+            })()}
         </Section>
 
         <Section title="System">

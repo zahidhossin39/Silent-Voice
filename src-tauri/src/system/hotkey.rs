@@ -18,6 +18,27 @@ const TAP_MS: u64 = 300;
 /// A second press within this window after a tap locks recording on.
 const DOUBLE_TAP_WINDOW_MS: u64 = 450;
 
+/// Resolve how many CPU threads inference should use.
+/// - high_performance OFF → balanced default `max(2, cores/2)` (keeps the
+///   system responsive).
+/// - high_performance ON  → the user's chosen `performance_threads`, clamped to
+///   [default, all cores]; 0 means "auto" = all cores. Shared by STT (whisper)
+///   and sherpa TTS so both honor the Performance setting identically.
+pub fn resolve_thread_count(high_performance: bool, performance_threads: u32) -> u32 {
+    let cores = std::thread::available_parallelism()
+        .map(|n| n.get() as u32)
+        .unwrap_or(4);
+    let default = std::cmp::max(2, cores / 2);
+    if !high_performance {
+        return default;
+    }
+    if performance_threads == 0 {
+        cores
+    } else {
+        performance_threads.clamp(default, cores)
+    }
+}
+
 /// Log + surface a pipeline error in one step so failures always leave a trace
 /// in %APPDATA%/SilentVoice/logs even if the UI wasn't watching.
 fn report_error(app: &AppHandle, context: &str, msg: &str) {
@@ -438,6 +459,7 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
         stt_cloud_model,
         use_gpu,
         high_performance,
+        performance_threads,
         input_sensitivity,
         replacements,
         app_profiles,
@@ -460,6 +482,7 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
             cfg.stt_cloud_model.clone(),
             cfg.use_gpu,
             cfg.high_performance,
+            cfg.performance_threads,
             cfg.input_sensitivity,
             cfg.replacements.clone(),
             cfg.app_profiles.clone(),
@@ -516,15 +539,7 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
         return;
     }
 
-    // Thread count: when high_performance is true, use all cores; when false, use max(2, cores/2)
-    let cores = std::thread::available_parallelism()
-        .map(|n| n.get() as u32)
-        .unwrap_or(4);
-    let threads = if high_performance {
-        cores
-    } else {
-        std::cmp::max(2, cores / 2)
-    };
+    let threads = resolve_thread_count(high_performance, performance_threads);
 
     let raw_text = match whisper::transcribe_dispatch(
         &app,
