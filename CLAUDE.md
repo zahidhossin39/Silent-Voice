@@ -348,26 +348,55 @@ The `tidy_ai_output()` function in `hotkey.rs` strips common preamble lines ("He
 - Integration point: continuous mic loop in Rust → VAD → optional wake word check → trigger same pipeline as hotkey on_released
 - Requires `ort` crate (ONNX Runtime for Rust)
 
-### GPU-accelerated transcription (Not started — user-requested, next up)
-- **Problem confirmed by inspection:** the bundled whisper.cpp sidecar
-  (`sidecars/*.dll`) ships ONLY `ggml-cpu-*` backend DLLs — no CUDA, no
-  Vulkan, no OpenCL. The "Use GPU acceleration" toggle in Settings can't
-  actually accelerate anything right now; there's no GPU code path compiled
-  in at all. Confirmed on the user's machine AND on a friend's GPU machine —
-  both ran at identical CPU-only speed on the same model.
-- **Planned fix: bundle a Vulkan-enabled whisper.cpp build.** Vulkan was
-  chosen over CUDA because it works across Intel/AMD/NVIDIA GPUs (the user's
-  own machine is Intel UHD 620 — CUDA would exclude it entirely). This means
-  building/downloading a whisper.cpp binary compiled with
-  `-DGGML_VULKAN=ON`, plus its Vulkan ggml backend DLLs, replacing or
-  supplementing the current CPU-only sidecar. Need to verify the "Use GPU
-  acceleration" toggle's existing plumbing (`use_gpu` → `RuntimeConfig` →
-  `whisper.rs`'s `-ng` flag, see §16) correctly selects the Vulkan backend
-  when present and falls back to CPU cleanly when it isn't (e.g. machines
-  with no compatible GPU/driver).
-- **Interim mitigations already shipped (not a substitute for real GPU
-  support):** distil-whisper models (2-4x faster on CPU) and the
-  high-performance thread toggle — see §16.
+### GPU-accelerated transcription (DONE — Vulkan sidecar bundled, committed not yet released)
+- **Original problem:** the old whisper.cpp sidecar shipped ONLY `ggml-cpu-*`
+  backend DLLs — no GPU backend compiled in at all, so the "Use GPU
+  acceleration" toggle had nothing to switch to. Confirmed CPU-only speed on
+  both the user's Intel UHD 620 and a friend's discrete-GPU machine.
+- **Fix shipped: bundled a Vulkan-enabled whisper.cpp v1.9.1 build.** Vulkan
+  over CUDA so it works across Intel/AMD/NVIDIA (the user's iGPU is Intel UHD
+  620 — CUDA would exclude it). Built from source (no official Vulkan
+  prebuilt exists) with the LunarG Vulkan SDK 1.4.350.0 + VS2022 C++ +
+  CMake. **Exact CMake flags (all four matter):**
+  `-DGGML_VULKAN=ON -DBUILD_SHARED_LIBS=ON -DGGML_BACKEND_DL=ON
+  -DGGML_CPU_ALL_VARIANTS=ON -DGGML_NATIVE=OFF` (+ `-DWHISPER_BUILD_TESTS=OFF
+  -DWHISPER_BUILD_EXAMPLES=ON -DCMAKE_BUILD_TYPE=Release`).
+- **CRITICAL — `GGML_BACKEND_DL=ON` is mandatory, do not drop it.** Without
+  it, backends are hard-imported into the exe's import table, so
+  `ggml-vulkan.dll` (which transitively imports `vulkan-1.dll`) becomes a
+  load-time dependency: on any machine WITHOUT Vulkan drivers (`vulkan-1.dll`
+  absent — e.g. Microsoft Basic Display Adapter), the sidecar crashes on
+  startup with `0xC0000135 STATUS_DLL_NOT_FOUND` and transcription fails
+  entirely. This was verified the hard way (a first build with BACKEND_DL off
+  crashed when `ggml-vulkan.dll` was renamed away). With `GGML_BACKEND_DL=ON`,
+  backends are loaded dynamically via `ggml_backend_load_all()` (LoadLibrary,
+  scans exe dir for `ggml-*.dll`) and any that fail to load are silently
+  skipped → clean CPU fallback. `GGML_CPU_ALL_VARIANTS=ON` (needs
+  `GGML_NATIVE=OFF`) restores the portable multi-microarch CPU DLL set
+  (x64/sse42/sandybridge/haswell/skylakex/cannonlake/cascadelake/icelake/
+  alderlake), matching the original sidecar.
+- **Bundled files** (in `sidecars/` AND copied to `target/debug/` per §14):
+  the exe renamed to `whisper-cpp-x86_64-pc-windows-msvc.exe`, plus `ggml.dll`,
+  `ggml-base.dll`, `whisper.dll`, `parakeet.dll`, the 9 `ggml-cpu-*.dll`
+  variants, and **`ggml-vulkan.dll` (~70 MB — embedded SPIR-V shaders; this
+  is a big installer size bump but inherent to bundled Vulkan)**.
+  `tauri.conf.json`'s `"sidecars/*.dll": "./"` glob picks up the new DLLs with
+  no config change.
+- **Toggle plumbing needed NO code changes** — it already flows
+  `use_gpu` (settingsStore → useRuntimeSync → `update_runtime_config` sets
+  `cfg.use_gpu` in lib.rs) → hotkey.rs → `whisper.rs`, which passes `-ng`
+  (force CPU) when OFF and nothing when ON. Whisper then auto-selects Vulkan
+  when ON if the backend loaded.
+- **Verified on the Intel UHD 620:** toggle ON → `ggml_vulkan: Found 1 Vulkan
+  devices: Intel(R) UHD Graphics 620` → `using Vulkan0 backend`, correct
+  transcript; toggle OFF (`-ng`) → CPU backend, correct transcript; and
+  `ggml-vulkan.dll` renamed away → exit 0, loads `ggml-cpu-haswell.dll`, "no
+  GPU found", correct transcript (no crash). App launches clean with the new
+  DLL set. NOTE: an iGPU like UHD 620 shares system RAM and is weak — Vulkan
+  may be only marginally faster (or not) there; the real speedup is for
+  discrete GPUs, so speed testing belongs on a discrete-GPU machine.
+- Source build tree lives OUTSIDE the repo at
+  `D:/Vibe-coding/whisper-vulkan-build/` (not committed).
 
 ### Phase 7 — Polish + Installer (v0.1.4 — complete)
 
@@ -539,11 +568,13 @@ All toggles live in Settings and are pushed to Rust via `set_behavior` /
   including 0–9** ("one"→"1", "one two three"→"1 2 3"). Also: "five percent"→
   "5%", years ("twenty twenty six"→2026), decimals ("three point five"→3.5).
   Known accepted trade-off: "no one knows"→"no 1 knows". Unit tests in module.
-- **GPU toggle (Settings → Performance) is wired:** `use_gpu` flows
-  settingsStore → updateRuntimeConfig → RuntimeConfig → whisper.rs, which
-  passes `-ng` (force CPU) when OFF. When ON, the sidecar uses its GPU backend
-  only if the bundled whisper binary was built with one — the toggle can't
-  create GPU support that isn't compiled in.
+- **GPU toggle (Settings → Performance) is wired AND now has a real GPU
+  backend behind it:** `use_gpu` flows settingsStore → updateRuntimeConfig →
+  RuntimeConfig → whisper.rs, which passes `-ng` (force CPU) when OFF. The
+  bundled sidecar is now a **Vulkan-enabled** whisper.cpp v1.9.1 build (see
+  §11 "GPU-accelerated transcription" for the full build recipe and the
+  mandatory `GGML_BACKEND_DL=ON` fallback guarantee), so ON actually uses the
+  GPU when a compatible one is present and falls back to CPU cleanly otherwise.
 - **First-launch onboarding** (`src/components/onboarding/Onboarding.tsx`):
   shows until `settings.onboarded` is true (skippable). Step 2 offers 5 curated
   starter models with a hardware-based recommendation. IMPORTANT lesson from
