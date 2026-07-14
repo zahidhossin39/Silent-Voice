@@ -15,7 +15,7 @@ import { useSettingsStore } from "./stores/settingsStore";
 import { useHistoryStore } from "./stores/historyStore";
 import { usePipeline } from "./hooks/usePipeline";
 import { useRuntimeSync } from "./hooks/useRuntimeSync";
-import { checkForUpdates } from "./services/updater";
+import { useUpdateStore } from "./stores/updateStore";
 import { isTauri } from "./services/tauriBridge";
 import {
   HomeIcon,
@@ -73,6 +73,11 @@ export default function App() {
 function Dashboard() {
   const refresh = useModelStore((s) => s.refresh);
   const hydrate = useHistoryStore((s) => s.hydrate);
+  const checkSilently = useUpdateStore((s) => s.checkSilently);
+  const updateAvailable = useUpdateStore((s) => s.available);
+  const updateVersion = useUpdateStore((s) => s.version);
+  const installing = useUpdateStore((s) => s.installing);
+  const installNow = useUpdateStore((s) => s.installNow);
   const [version, setVersion] = useState("");
   const mainRef = useRef<HTMLElement>(null);
   const { pathname } = useLocation();
@@ -85,9 +90,9 @@ function Dashboard() {
     refresh();
     hydrate();
     if (isTauri()) getVersion().then(setVersion);
-    const t = setTimeout(() => checkForUpdates(), 5000);
+    const t = setTimeout(() => checkSilently(), 5000);
     return () => clearTimeout(t);
-  }, [refresh, hydrate]);
+  }, [refresh, hydrate, checkSilently]);
 
   // <main> is a single persistent scroll container across routes (Routes
   // swaps only its children) — without this, switching pages keeps whatever
@@ -136,6 +141,15 @@ function Dashboard() {
           ))}
         </nav>
 
+        {updateAvailable && (
+          <button
+            onClick={installNow}
+            disabled={installing}
+            className="mx-3 mb-2 flex items-center justify-center gap-1.5 rounded-lg bg-sv-accent px-3 py-2 text-xs font-medium text-white transition hover:bg-sv-accent/90 disabled:opacity-60"
+          >
+            {installing ? "Updating…" : `Update available${updateVersion ? ` (v${updateVersion})` : ""}`}
+          </button>
+        )}
         <div className="px-5 py-4 text-[11px] text-sv-muted">
           {version ? `v${version}` : "Silent Voice"} · offline-ready
         </div>

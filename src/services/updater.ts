@@ -2,19 +2,19 @@ import { check } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { isTauri } from "./tauriBridge";
 
-export async function checkForUpdates(): Promise<void> {
-  if (!isTauri()) return;
+export async function checkForUpdates(): Promise<{ available: boolean; version: string | null }> {
+  if (!isTauri()) return { available: false, version: null };
 
   try {
     const update = await check();
     if (update) {
       console.log("Update available:", update.version);
-      await update.downloadAndInstall();
-      await relaunch();
+      return { available: true, version: update.version };
     }
   } catch (error) {
     console.error("Updater error:", error);
   }
+  return { available: false, version: null };
 }
 
 export type UpdateCheckResult =

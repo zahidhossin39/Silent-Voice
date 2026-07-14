@@ -104,8 +104,8 @@ export default function ModelCard({
           <Chevron open={open} />
         </button>
 
-        <div className="flex shrink-0 items-center gap-2">
-          <button onClick={onTogglePin} title={pinned ? "Unpin" : "Pin to top"} className={pinned ? "rounded-lg p-1.5 transition text-sv-accent" : "rounded-lg p-1.5 transition text-sv-muted hover:text-sv-accent"}><StarIcon filled={pinned} /></button>
+        <div className="flex shrink-0 items-center justify-end gap-2 min-w-[168px]">
+          <button onClick={onTogglePin} title={pinned ? "Unpin" : "Pin to top"} className={pinned ? "mr-auto rounded-lg p-1.5 transition text-sv-accent" : "mr-auto rounded-lg p-1.5 transition text-sv-muted hover:text-sv-accent"}><StarIcon filled={pinned} /></button>
           {isDownloading ? (
             <div className="flex items-center gap-2">
               <div className="h-1.5 w-20 overflow-hidden rounded-full bg-sv-surface-2">
@@ -121,11 +121,11 @@ export default function ModelCard({
           ) : downloaded ? (
             <>
               {active ? (
-                <span className="text-[11px] text-sv-good">In use</span>
+                <span className="w-[84px] text-right text-[11px] text-sv-good">In use</span>
               ) : (
                 <button
                   onClick={onSelect}
-                  className="rounded-lg bg-sv-surface-2 px-3 py-1.5 text-xs font-medium hover:bg-sv-accent hover:text-white"
+                  className="w-[84px] text-center rounded-lg bg-sv-surface-2 px-3 py-1.5 text-xs font-medium hover:bg-sv-accent hover:text-white"
                 >
                   Select
                 </button>
@@ -141,7 +141,7 @@ export default function ModelCard({
           ) : (
             <button
               onClick={() => download(model.id)}
-              className="rounded-lg border border-sv-border px-3 py-1.5 text-xs font-medium text-sv-text hover:border-sv-accent hover:text-sv-accent"
+              className="w-[84px] text-center rounded-lg border border-sv-border px-3 py-1.5 text-xs font-medium text-sv-text hover:border-sv-accent hover:text-sv-accent"
             >
               Download
             </button>
