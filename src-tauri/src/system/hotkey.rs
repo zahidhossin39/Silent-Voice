@@ -9,6 +9,9 @@ use crate::AppState;
 use serde::Serialize;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager};
+use tauri_plugin_global_shortcut::Shortcut;
+#[cfg(windows)]
+use tauri_plugin_global_shortcut::Code;
 
 /// A press-release shorter than this counts as a "tap" (vs. push-to-talk hold).
 const TAP_MS: u64 = 300;
@@ -277,10 +280,67 @@ pub fn stop_capture(app: &AppHandle) {
     finalize_recording(app.clone());
 }
 
+/// Map a shortcut's MAIN key to its Windows Virtual-Key code, so we can poll
+/// its physical state. Returns None for keys we don't map (guard then skipped).
+#[cfg(windows)]
+fn main_key_vk(shortcut: &Shortcut) -> Option<i32> {
+    let vk: i32 = match shortcut.key {
+        Code::Space => 0x20,
+        Code::Enter => 0x0D,
+        Code::Tab => 0x09,
+        Code::Backspace => 0x08,
+        Code::Escape => 0x1B,
+        Code::ArrowLeft => 0x25,
+        Code::ArrowUp => 0x26,
+        Code::ArrowRight => 0x27,
+        Code::ArrowDown => 0x28,
+        Code::KeyA => 0x41, Code::KeyB => 0x42, Code::KeyC => 0x43, Code::KeyD => 0x44,
+        Code::KeyE => 0x45, Code::KeyF => 0x46, Code::KeyG => 0x47, Code::KeyH => 0x48,
+        Code::KeyI => 0x49, Code::KeyJ => 0x4A, Code::KeyK => 0x4B, Code::KeyL => 0x4C,
+        Code::KeyM => 0x4D, Code::KeyN => 0x4E, Code::KeyO => 0x4F, Code::KeyP => 0x50,
+        Code::KeyQ => 0x51, Code::KeyR => 0x52, Code::KeyS => 0x53, Code::KeyT => 0x54,
+        Code::KeyU => 0x55, Code::KeyV => 0x56, Code::KeyW => 0x57, Code::KeyX => 0x58,
+        Code::KeyY => 0x59, Code::KeyZ => 0x5A,
+        Code::Digit0 => 0x30, Code::Digit1 => 0x31, Code::Digit2 => 0x32, Code::Digit3 => 0x33,
+        Code::Digit4 => 0x34, Code::Digit5 => 0x35, Code::Digit6 => 0x36, Code::Digit7 => 0x37,
+        Code::Digit8 => 0x38, Code::Digit9 => 0x39,
+        Code::F1 => 0x70, Code::F2 => 0x71, Code::F3 => 0x72, Code::F4 => 0x73,
+        Code::F5 => 0x74, Code::F6 => 0x75, Code::F7 => 0x76, Code::F8 => 0x77,
+        Code::F9 => 0x78, Code::F10 => 0x79, Code::F11 => 0x7A, Code::F12 => 0x7B,
+        _ => return None,
+    };
+    Some(vk)
+}
+
+/// True if the shortcut's main key is still physically held. global-hotkey
+/// synthesizes release events by polling on Windows, so during a held key with
+/// OS auto-repeat it can fire a SPURIOUS Released while the key is still down —
+/// we must ignore those or recording stops mid-hold.
+#[cfg(windows)]
+fn key_still_down(shortcut: &Shortcut) -> bool {
+    use windows::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState;
+    match main_key_vk(shortcut) {
+        Some(vk) => (unsafe { GetAsyncKeyState(vk) } as u16) & 0x8000 != 0,
+        None => false,
+    }
+}
+
+#[cfg(not(windows))]
+fn key_still_down(_shortcut: &Shortcut) -> bool {
+    false
+}
+
 /// Hotkey released. A long hold releases normally (classic push-to-talk).
 /// A quick tap defers the stop briefly: if a second tap arrives in time the
 /// recording locks on instead of stopping.
-pub fn on_released(app: &AppHandle) {
+pub fn on_released(app: &AppHandle, shortcut: &Shortcut) {
+    // Ignore spurious releases fired while the key is still physically held
+    // (global-hotkey polling artifact) — otherwise recording stops mid-hold.
+    // Touch no state here so the still-true key_down keeps filtering auto-repeat.
+    if key_still_down(shortcut) {
+        return;
+    }
+
     let state = app.state::<AppState>();
     let toggle_mode = state
         .config

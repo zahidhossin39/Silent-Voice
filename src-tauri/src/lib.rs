@@ -739,7 +739,7 @@ pub fn run() {
                     } else {
                         match event.state() {
                             ShortcutState::Pressed => hotkey::on_pressed(app),
-                            ShortcutState::Released => hotkey::on_released(app),
+                            ShortcutState::Released => hotkey::on_released(app, shortcut),
                         }
                     }
                 })
