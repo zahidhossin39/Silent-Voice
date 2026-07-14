@@ -235,7 +235,7 @@ pub fn stop(app: &AppHandle) {
     }
 }
 
-fn synthesize(voice: &Voice, text: &str, wav: &std::path::Path) -> Result<(), String> {
+fn synthesize(voice: &Voice, text: &str, wav: &std::path::Path, num_threads: i32) -> Result<(), String> {
     // Both engines get the text flattened to one line so the whole selection
     // is spoken as one passage.
     let one_line = text.replace(['\r', '\n'], " ");
@@ -244,7 +244,7 @@ fn synthesize(voice: &Voice, text: &str, wav: &std::path::Path) -> Result<(), St
     // CLI mangles non-Latin text on Windows (narrow argv → ANSI codepage).
     let Voice::Piper(model) = voice else {
         let Voice::Sherpa { dir, model } = voice else { unreachable!() };
-        return super::sherpa::synthesize(dir, model, &one_line, wav);
+        return super::sherpa::synthesize(dir, model, &one_line, wav, num_threads);
     };
 
     let exe = piper_exe();
@@ -287,11 +287,27 @@ fn synth_and_play(
     text: &str,
     rx: &Receiver<()>,
 ) -> Result<(), String> {
+    let high_performance = app
+        .state::<AppState>()
+        .config
+        .lock()
+        .map(|c| c.high_performance)
+        .unwrap_or(false);
+
+    let cores = std::thread::available_parallelism()
+        .map(|n| n.get() as i32)
+        .unwrap_or(4);
+    let threads = if high_performance {
+        cores
+    } else {
+        std::cmp::max(2, cores / 2)
+    };
+
     let wav = registry::audio_dir().join("tts.wav");
 
     let _ = app.emit("tts://state", "synthesizing");
 
-    synthesize(voice, text, &wav)?;
+    synthesize(voice, text, &wav, threads)?;
 
     // Cancelled while synthesizing?
     if matches!(rx.try_recv(), Ok(()) | Err(TryRecvError::Disconnected)) {

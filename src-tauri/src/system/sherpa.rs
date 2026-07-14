@@ -183,6 +183,7 @@ pub fn synthesize(
     model: &Path,
     text: &str,
     out_wav: &Path,
+    num_threads: i32,
 ) -> Result<(), String> {
     let lib = lib()?;
 
@@ -220,7 +221,7 @@ pub fn synthesize(
         length_scale: 1.0,
         dict_dir: empty.as_ptr(),
     };
-    cfg.model.num_threads = 2;
+    cfg.model.num_threads = num_threads;
     cfg.model.provider = provider_c.as_ptr();
     cfg.max_num_sentences = 1;
     cfg.rule_fsts = empty.as_ptr();
@@ -279,7 +280,7 @@ mod tests {
         };
         let out = std::env::temp_dir().join(format!("sv_sherpa_{voice_id}.wav"));
         let _ = std::fs::remove_file(&out);
-        synthesize(&dir, &model, "আমার সোনার বাংলা, আমি তোমায় ভালোবাসি।", &out).unwrap();
+        synthesize(&dir, &model, "আমার সোনার বাংলা, আমি তোমায় ভালোবাসি।", &out, 2).unwrap();
         let len = std::fs::metadata(&out).unwrap().len();
         // Real speech for this sentence is several seconds of audio; the
         // mangled-text failure mode produced a sub-second (~11 KB) blip.
