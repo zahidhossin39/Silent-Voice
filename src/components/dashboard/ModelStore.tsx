@@ -58,6 +58,17 @@ export default function ModelStore() {
   const activeTts = useSettingsStore((s) => s.settings.active_tts_voice);
   const setSettings = useSettingsStore((s) => s.setSettings);
 
+  const pinnedSttArr = useSettingsStore((s) => s.settings.pinned_stt);
+  const pinnedLlmArr = useSettingsStore((s) => s.settings.pinned_llm);
+  const pinnedTtsArr = useSettingsStore((s) => s.settings.pinned_tts);
+  const togglePinnedStt = useSettingsStore((s) => s.togglePinnedStt);
+  const togglePinnedLlm = useSettingsStore((s) => s.togglePinnedLlm);
+  const togglePinnedTts = useSettingsStore((s) => s.togglePinnedTts);
+
+  const pinnedStt = useMemo(() => new Set(pinnedSttArr || []), [pinnedSttArr]);
+  const pinnedLlm = useMemo(() => new Set(pinnedLlmArr || []), [pinnedLlmArr]);
+  const pinnedTts = useMemo(() => new Set(pinnedTtsArr || []), [pinnedTtsArr]);
+
   // Selecting a local model also switches the STT source back to local so it
   // actually takes effect (a cloud provider would otherwise override it).
   const selectStt = (id: string) =>
@@ -75,6 +86,12 @@ export default function ModelStore() {
     if (language !== "all")
       list = list.filter((m) => sttLanguage(m) === language);
     return list.sort((a, b) => {
+      const aActive = a.id === activeStt && !usingCloudStt ? 0 : 1;
+      const bActive = b.id === activeStt && !usingCloudStt ? 0 : 1;
+      if (aActive !== bActive) return aActive - bActive;
+      const aPinned = pinnedStt.has(a.id) ? 0 : 1;
+      const bPinned = pinnedStt.has(b.id) ? 0 : 1;
+      if (aPinned !== bPinned) return aPinned - bPinned;
       const aDown = downloadedStt.has(a.id) ? 0 : 1;
       const bDown = downloadedStt.has(b.id) ? 0 : 1;
       if (aDown !== bDown) return aDown - bDown;
@@ -83,11 +100,14 @@ export default function ModelStore() {
       if (aRank !== bRank) return aRank - bRank;
       return a.size_mb - b.size_mb;
     });
-  }, [category, language, downloadedStt, hardware]);
+  }, [category, language, downloadedStt, hardware, activeStt, usingCloudStt, pinnedStt]);
 
   const sortedLlm = useMemo(
     () =>
       [...LLM_MODELS].sort((a, b) => {
+        const aPinned = pinnedLlm.has(a.id) ? 0 : 1;
+        const bPinned = pinnedLlm.has(b.id) ? 0 : 1;
+        if (aPinned !== bPinned) return aPinned - bPinned;
         const aDown = downloadedLlm.has(a.id) ? 0 : 1;
         const bDown = downloadedLlm.has(b.id) ? 0 : 1;
         if (aDown !== bDown) return aDown - bDown;
@@ -96,7 +116,7 @@ export default function ModelStore() {
         if (aRank !== bRank) return aRank - bRank;
         return a.size_mb - b.size_mb;
       }),
-    [downloadedLlm, hardware]
+    [downloadedLlm, hardware, pinnedLlm]
   );
 
   // TTS search + language filter.
@@ -124,13 +144,16 @@ export default function ModelStore() {
       const aActive = a.id === activeTts ? 0 : 1;
       const bActive = b.id === activeTts ? 0 : 1;
       if (aActive !== bActive) return aActive - bActive;
+      const aPinned = pinnedTts.has(a.id) ? 0 : 1;
+      const bPinned = pinnedTts.has(b.id) ? 0 : 1;
+      if (aPinned !== bPinned) return aPinned - bPinned;
       const aDown = downloadedTts.has(a.id) ? 0 : 1;
       const bDown = downloadedTts.has(b.id) ? 0 : 1;
       if (aDown !== bDown) return aDown - bDown;
       return QUALITY_RANK[a.quality] - QUALITY_RANK[b.quality];
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [downloadedTts, activeTts, ttsSearch, ttsLanguage]);
+  }, [downloadedTts, activeTts, ttsSearch, ttsLanguage, pinnedTts]);
 
   return (
     <Page
@@ -206,6 +229,8 @@ export default function ModelStore() {
                 voice={v}
                 active={activeTts === v.id}
                 onSelect={() => setSettings({ active_tts_voice: v.id })}
+                pinned={pinnedTts.has(v.id)}
+                onTogglePin={() => togglePinnedTts(v.id)}
               />
             ))}
           </div>
@@ -240,6 +265,8 @@ export default function ModelStore() {
                 hardware={hardware}
                 active={!usingCloudStt && activeStt === m.id}
                 onSelect={() => selectStt(m.id)}
+                pinned={pinnedStt.has(m.id)}
+                onTogglePin={() => togglePinnedStt(m.id)}
               />
             ))}
             {sttModels.length === 0 && (
@@ -258,7 +285,7 @@ export default function ModelStore() {
           </p>
           <div className="grid grid-cols-1 items-start gap-2 lg:grid-cols-2">
             {sortedLlm.map((m) => (
-              <LlmCard key={m.id} model={m} hardware={hardware} />
+              <LlmCard key={m.id} model={m} hardware={hardware} pinned={pinnedLlm.has(m.id)} onTogglePin={() => togglePinnedLlm(m.id)} />
             ))}
           </div>
         </>
@@ -312,10 +339,14 @@ function TtsCard({
   voice,
   active,
   onSelect,
+  pinned,
+  onTogglePin,
 }: {
   voice: TtsModel;
   active: boolean;
   onSelect: () => void;
+  pinned: boolean;
+  onTogglePin: () => void;
 }) {
   const downloaded = useModelStore((s) => s.downloadedTts.has(voice.id));
   const progress = useModelStore((s) => s.progress[voice.id]);
@@ -366,6 +397,7 @@ function TtsCard({
       </div>
 
       <div className="flex shrink-0 items-center gap-2">
+        <button onClick={onTogglePin} title={pinned ? "Unpin" : "Pin to top"} className={pinned ? "rounded-lg p-1.5 transition text-sv-accent" : "rounded-lg p-1.5 transition text-sv-muted hover:text-sv-accent"}><StarIcon filled={pinned} /></button>
         {isDownloading ? (
           <div className="flex items-center gap-2">
             <div className="h-1.5 w-20 overflow-hidden rounded-full bg-sv-surface-2">
@@ -439,9 +471,13 @@ function TabButton({
 function LlmCard({
   model,
   hardware,
+  pinned,
+  onTogglePin,
 }: {
   model: LlmModel;
   hardware: HardwareInfo | null;
+  pinned: boolean;
+  onTogglePin: () => void;
 }) {
   const downloaded = useModelStore((s) => s.downloadedLlm.has(model.id));
   const progress = useModelStore((s) => s.progress[model.id]);
@@ -479,6 +515,7 @@ function LlmCard({
           <Chevron open={open} />
         </button>
         <div className="flex shrink-0 items-center gap-2">
+          <button onClick={onTogglePin} title={pinned ? "Unpin" : "Pin to top"} className={pinned ? "rounded-lg p-1.5 transition text-sv-accent" : "rounded-lg p-1.5 transition text-sv-muted hover:text-sv-accent"}><StarIcon filled={pinned} /></button>
           {isDownloading ? (
             <div className="flex items-center gap-2">
               <div className="h-1.5 w-20 overflow-hidden rounded-full bg-sv-surface-2">
@@ -578,6 +615,23 @@ function TrashIcon() {
       strokeLinejoin="round"
     >
       <path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-12" />
+    </svg>
+  );
+}
+
+function StarIcon({ filled }: { filled: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="15"
+      height="15"
+      fill={filled ? "currentColor" : "none"}
+      stroke={filled ? "none" : "currentColor"}
+      strokeWidth={filled ? undefined : "1.75"}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M12 2.5l2.9 6.2 6.6.6-5 4.6 1.4 6.6L12 17l-5.9 3.5L7.5 14l-5-4.6 6.6-.6L12 2.5z" />
     </svg>
   );
 }

@@ -55,6 +55,9 @@ const DEFAULT_SETTINGS: Settings = {
   active_tts_voice: null,
   tts_hotkey: "Ctrl+Alt+S",
   onboarded: false,
+  pinned_stt: [],
+  pinned_llm: [],
+  pinned_tts: [],
 };
 
 interface SettingsState {
@@ -64,6 +67,9 @@ interface SettingsState {
   snippets: TextReplacement[];
   appProfiles: AppProfileRule[];
   setSettings: (patch: Partial<Settings>) => void;
+  togglePinnedStt: (id: string) => void;
+  togglePinnedLlm: (id: string) => void;
+  togglePinnedTts: (id: string) => void;
   setActiveMode: (id: string) => void;
   addMode: (mode: Mode) => void;
   updateMode: (id: string, patch: Partial<Mode>) => void;
@@ -157,6 +163,42 @@ export const useSettingsStore = create<SettingsState>()(
       appProfiles: [],
       setSettings: (patch) =>
         set((s) => ({ settings: { ...s.settings, ...patch } })),
+      togglePinnedStt: (id) =>
+        set((s) => {
+          const current = s.settings.pinned_stt || [];
+          return {
+            settings: {
+              ...s.settings,
+              pinned_stt: current.includes(id)
+                ? current.filter((x) => x !== id)
+                : [...current, id],
+            },
+          };
+        }),
+      togglePinnedLlm: (id) =>
+        set((s) => {
+          const current = s.settings.pinned_llm || [];
+          return {
+            settings: {
+              ...s.settings,
+              pinned_llm: current.includes(id)
+                ? current.filter((x) => x !== id)
+                : [...current, id],
+            },
+          };
+        }),
+      togglePinnedTts: (id) =>
+        set((s) => {
+          const current = s.settings.pinned_tts || [];
+          return {
+            settings: {
+              ...s.settings,
+              pinned_tts: current.includes(id)
+                ? current.filter((x) => x !== id)
+                : [...current, id],
+            },
+          };
+        }),
       setActiveMode: (id) =>
         set((s) => ({ settings: { ...s.settings, active_mode_id: id } })),
       addMode: (mode) => set((s) => ({ modes: [...s.modes, mode] })),

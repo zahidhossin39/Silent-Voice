@@ -1,5 +1,5 @@
-import { NavLink, Navigate, Route, Routes } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import Home from "./components/dashboard/Home";
 import ModelStore from "./components/dashboard/ModelStore";
@@ -74,6 +74,8 @@ function Dashboard() {
   const refresh = useModelStore((s) => s.refresh);
   const hydrate = useHistoryStore((s) => s.hydrate);
   const [version, setVersion] = useState("");
+  const mainRef = useRef<HTMLElement>(null);
+  const { pathname } = useLocation();
 
   // Subscribe to backend pipeline + download events and keep Rust in sync.
   usePipeline();
@@ -86,6 +88,13 @@ function Dashboard() {
     const t = setTimeout(() => checkForUpdates(), 5000);
     return () => clearTimeout(t);
   }, [refresh, hydrate]);
+
+  // <main> is a single persistent scroll container across routes (Routes
+  // swaps only its children) — without this, switching pages keeps whatever
+  // scroll position the previous page was left at.
+  useEffect(() => {
+    mainRef.current?.scrollTo({ top: 0 });
+  }, [pathname]);
 
   return (
     <div className="flex h-full text-sv-text">
@@ -133,7 +142,7 @@ function Dashboard() {
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 overflow-y-auto">
+      <main ref={mainRef} className="flex-1 overflow-y-auto">
         <Routes>
           <Route path="/" element={<Navigate to="/home" replace />} />
           <Route path="/home" element={<Home />} />

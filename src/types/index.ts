@@ -173,4 +173,7 @@ export interface Settings {
   active_tts_voice: string | null; // Piper voice id for read-aloud; null = none selected
   tts_hotkey: string; // global hotkey that reads the current text selection aloud
   onboarded: boolean; // true once the first-launch setup wizard has been completed/skipped
+  pinned_stt: string[];
+  pinned_llm: string[];
+  pinned_tts: string[];
 }

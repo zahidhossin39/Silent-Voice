@@ -31,7 +31,9 @@ export default function Home() {
   const settings = useSettingsStore((s) => s.settings);
   const modes = useSettingsStore((s) => s.modes);
   const entries = useHistoryStore((s) => s.entries);
-  const downloadedCount = useModelStore((s) => s.downloaded.size);
+  const downloadedCount = useModelStore(
+    (s) => s.downloaded.size + s.downloadedLlm.size + s.downloadedTts.size
+  );
   const recordingState = useUiStore((s) => s.recordingState);
   const lastError = useUiStore((s) => s.lastError);
 

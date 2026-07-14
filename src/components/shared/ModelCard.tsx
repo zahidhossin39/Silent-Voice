@@ -47,11 +47,15 @@ export default function ModelCard({
   hardware,
   active,
   onSelect,
+  pinned,
+  onTogglePin,
 }: {
   model: SttModel;
   hardware: HardwareInfo | null;
   active: boolean;
   onSelect: () => void;
+  pinned: boolean;
+  onTogglePin: () => void;
 }) {
   const downloaded = useModelStore((s) => s.downloaded.has(model.id));
   const progress = useModelStore((s) => s.progress[model.id]);
@@ -101,6 +105,7 @@ export default function ModelCard({
         </button>
 
         <div className="flex shrink-0 items-center gap-2">
+          <button onClick={onTogglePin} title={pinned ? "Unpin" : "Pin to top"} className={pinned ? "rounded-lg p-1.5 transition text-sv-accent" : "rounded-lg p-1.5 transition text-sv-muted hover:text-sv-accent"}><StarIcon filled={pinned} /></button>
           {isDownloading ? (
             <div className="flex items-center gap-2">
               <div className="h-1.5 w-20 overflow-hidden rounded-full bg-sv-surface-2">
@@ -216,6 +221,23 @@ function TrashIcon() {
       strokeLinejoin="round"
     >
       <path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-12" />
+    </svg>
+  );
+}
+
+function StarIcon({ filled }: { filled: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="15"
+      height="15"
+      fill={filled ? "currentColor" : "none"}
+      stroke={filled ? "none" : "currentColor"}
+      strokeWidth={filled ? undefined : "1.75"}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M12 2.5l2.9 6.2 6.6.6-5 4.6 1.4 6.6L12 17l-5.9 3.5L7.5 14l-5-4.6 6.6-.6L12 2.5z" />
     </svg>
   );
 }
