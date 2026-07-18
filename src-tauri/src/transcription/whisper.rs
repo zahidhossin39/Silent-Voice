@@ -103,6 +103,19 @@ pub async fn transcribe(
 
     let lang = if language.is_empty() { "auto" } else { language };
 
+    // Fast path: persistent whisper-server keeps the model loaded between
+    // dictations. Any failure falls through to the one-shot CLI below.
+    match transcribe_via_server(
+        app, audio_path, &model_path, model_id, threads, lang, vocabulary, use_gpu,
+    )
+    .await
+    {
+        Ok(text) => return Ok(clean_output(&text)),
+        Err(e) => {
+            crate::logging::log_error("stt", &format!("whisper-server path failed, using CLI: {e}"));
+        }
+    }
+
     let mut args: Vec<String> = vec![
         "-m".into(),
         model_path.to_string_lossy().into_owned(),
@@ -147,6 +160,41 @@ pub async fn transcribe(
 
     let text = String::from_utf8_lossy(&output.stdout);
     Ok(clean_output(&text))
+}
+
+/// Ensure the persistent whisper-server is running with the current settings
+/// (restarting it if any of them changed) and run one inference against it.
+#[allow(clippy::too_many_arguments)]
+async fn transcribe_via_server(
+    app: &AppHandle,
+    audio_path: &str,
+    model_path: &std::path::Path,
+    model_id: &str,
+    threads: u32,
+    lang: &str,
+    vocabulary: &str,
+    use_gpu: bool,
+) -> Result<String, String> {
+    use tauri::Manager;
+    let key = format!("{model_id}|{lang}|{}|{use_gpu}|{threads}", vocabulary.trim());
+    let started = {
+        let state = app.state::<crate::AppState>();
+        let mut server = state.whisper_server.lock().map_err(|e| e.to_string())?;
+        if server.is_running(&key) {
+            false
+        } else {
+            server.start(model_path, &key, threads, lang, vocabulary, use_gpu)?;
+            true
+        }
+    };
+    // First load of a big model takes a while; a warm server answers instantly.
+    let timeout = if started {
+        std::time::Duration::from_secs(120)
+    } else {
+        std::time::Duration::from_secs(5)
+    };
+    super::server::wait_ready(timeout).await?;
+    super::server::transcribe(std::path::Path::new(audio_path)).await
 }
 
 /// whisper.cpp prints transcription lines; strip stray blank lines / markers.

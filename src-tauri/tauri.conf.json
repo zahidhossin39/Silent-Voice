@@ -41,6 +41,7 @@
     ],
     "resources": {
       "sidecars/*.dll": "./",
+      "sidecars/whisper-server.exe": "./",
       "sidecars/llama/": "llama/",
       "sidecars/piper/": "piper/",
       "sidecars/sherpa/": "sherpa/"
