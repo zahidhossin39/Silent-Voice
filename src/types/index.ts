@@ -170,6 +170,8 @@ export interface Settings {
   toggle_mode: boolean; // double-tap the hotkey to lock recording on; single press stops
   input_sensitivity: number; // 0-100 (Discord-style): how loud a sound must be to count as speech
   inline_proofread: boolean; // squiggles under spelling/grammar errors in any app's text field (English)
+  proofread_disabled_rules: string[]; // Harper rule ids the user turned off (plus our "Filler" pseudo-rule)
+  proofread_ignore_apps: string; // comma-separated exe-name substrings where squiggles are suppressed
   active_tts_voice: string | null; // Piper voice id for read-aloud; null = none selected
   tts_hotkey: string; // global hotkey that reads the current text selection aloud
   onboarded: boolean; // true once the first-launch setup wizard has been completed/skipped

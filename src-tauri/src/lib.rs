@@ -61,6 +61,10 @@ pub struct RuntimeConfig {
     // Thread count when high_performance is on. 0 = auto (all cores). Otherwise
     // the user's chosen count, clamped to [default, all cores] in hotkey.rs.
     pub performance_threads: u32,
+    // Harper rule ids the user turned off (Settings → Inline proofreading).
+    pub proofread_disabled_rules: Vec<String>,
+    // Extra exe-name substrings (lowercase) where squiggles are suppressed.
+    pub proofread_ignore_apps: Vec<String>,
     // Read-aloud (TTS): active Piper voice id + the hotkey that reads the
     // current text selection. See system/tts.rs.
     pub tts_voice_id: String,
@@ -107,6 +111,8 @@ impl Default for RuntimeConfig {
             inline_proofread: true,
             high_performance: false,
             performance_threads: 0,
+            proofread_disabled_rules: Vec::new(),
+            proofread_ignore_apps: Vec::new(),
             tts_voice_id: String::new(),
             tts_hotkey: "Ctrl+Alt+S".into(),
             app_profiles: Vec::new(),
@@ -138,6 +144,7 @@ pub struct AppState {
     pub recorder: Mutex<Option<Recorder>>,
     pub config: Mutex<RuntimeConfig>,
     pub llama: Mutex<llm::llama::LlamaServer>,
+    pub whisper_server: Mutex<transcription::server::WhisperServer>,
     /// True only when the user explicitly hid the overlay (menu/tray). The
     /// keep-alive loop respects this and won't force it back.
     pub overlay_hidden: AtomicBool,
@@ -242,6 +249,8 @@ fn set_behavior(
     inline_proofread: bool,
     high_performance: bool,
     performance_threads: u32,
+    proofread_disabled_rules: Vec<String>,
+    proofread_ignore_apps: Vec<String>,
 ) -> Result<(), String> {
     let mut cfg = state.config.lock().map_err(|e| e.to_string())?;
     cfg.toggle_mode = toggle_mode;
@@ -249,6 +258,12 @@ fn set_behavior(
     cfg.inline_proofread = inline_proofread;
     cfg.high_performance = high_performance;
     cfg.performance_threads = performance_threads;
+    cfg.proofread_disabled_rules = proofread_disabled_rules;
+    cfg.proofread_ignore_apps = proofread_ignore_apps
+        .into_iter()
+        .map(|a| a.trim().to_lowercase())
+        .filter(|a| !a.is_empty())
+        .collect();
     Ok(())
 }
 
@@ -357,12 +372,12 @@ fn list_downloaded_tts() -> Vec<String> {
 /// words are never flagged (personal dictionary).
 #[tauri::command]
 async fn proofread_text(state: State<'_, AppState>, text: String) -> Result<Vec<proofread::ProofIssue>, String> {
-    let vocabulary = state
+    let (vocabulary, disabled_rules) = state
         .config
         .lock()
-        .map(|c| c.vocabulary.clone())
+        .map(|c| (c.vocabulary.clone(), c.proofread_disabled_rules.clone()))
         .unwrap_or_default();
-    tokio::task::spawn_blocking(move || proofread::check(&text, &vocabulary))
+    tokio::task::spawn_blocking(move || proofread::check(&text, &vocabulary, &disabled_rules))
         .await
         .map_err(|e| e.to_string())
 }
@@ -852,6 +867,9 @@ pub fn run() {
             if let tauri::RunEvent::Exit = event {
                 if let Some(state) = app_handle.try_state::<AppState>() {
                     if let Ok(mut server) = state.llama.lock() {
+                        server.stop();
+                    }
+                    if let Ok(mut server) = state.whisper_server.lock() {
                         server.stop();
                     }
                 }

@@ -60,6 +60,8 @@ export function useRuntimeSync() {
   const inlineProofread = useSettingsStore((s) => s.settings.inline_proofread);
   const highPerformance = useSettingsStore((s) => s.settings.high_performance);
   const performanceThreads = useSettingsStore((s) => s.settings.performance_threads);
+  const proofreadDisabledRules = useSettingsStore((s) => s.settings.proofread_disabled_rules);
+  const proofreadIgnoreApps = useSettingsStore((s) => s.settings.proofread_ignore_apps);
   const ttsVoice = useSettingsStore((s) => s.settings.active_tts_voice);
   const ttsHotkey = useSettingsStore((s) => s.settings.tts_hotkey);
   const autoStart = useSettingsStore((s) => s.settings.auto_start);
@@ -123,8 +125,16 @@ export function useRuntimeSync() {
   }, [snippets]);
 
   useEffect(() => {
-    setBehavior(toggleMode, inputSensitivity, inlineProofread, highPerformance, performanceThreads);
-  }, [toggleMode, inputSensitivity, inlineProofread, highPerformance, performanceThreads]);
+    setBehavior(
+      toggleMode,
+      inputSensitivity,
+      inlineProofread,
+      highPerformance,
+      performanceThreads,
+      proofreadDisabledRules,
+      proofreadIgnoreApps.split(",").map((a) => a.trim()).filter(Boolean)
+    );
+  }, [toggleMode, inputSensitivity, inlineProofread, highPerformance, performanceThreads, proofreadDisabledRules, proofreadIgnoreApps]);
 
   useEffect(() => {
     setAutostart(autoStart);

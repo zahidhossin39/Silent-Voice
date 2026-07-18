@@ -52,6 +52,8 @@ const DEFAULT_SETTINGS: Settings = {
   toggle_mode: true,
   input_sensitivity: 50,
   inline_proofread: true,
+  proofread_disabled_rules: [],
+  proofread_ignore_apps: "",
   active_tts_voice: null,
   tts_hotkey: "Ctrl+Alt+S",
   onboarded: false,

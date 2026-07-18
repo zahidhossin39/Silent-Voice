@@ -25,6 +25,11 @@ const PRESET_MODEL: Record<SttPreset, string> = {
 export default function Settings() {
   const settings = useSettingsStore((s) => s.settings);
   const setSettings = useSettingsStore((s) => s.setSettings);
+  // Toggle ON = rule active = NOT in the disabled list.
+  const toggleProofreadRule = (rule: string, enabled: boolean) => {
+    const rest = settings.proofread_disabled_rules.filter((r) => r !== rule);
+    setSettings({ proofread_disabled_rules: enabled ? rest : [...rest, rule] });
+  };
   const providers = useSettingsStore((s) => s.providers);
   const sttProviders = providers.filter((p) => p.uses.includes("stt"));
   const snippets = useSettingsStore((s) => s.snippets);
@@ -208,6 +213,43 @@ export default function Settings() {
               onChange={(v) => setSettings({ inline_proofread: v })}
             />
           </Row>
+          {settings.inline_proofread && (
+            <div className="ml-4 border-l border-sv-border pl-4">
+              <Row
+                label="Oxford comma suggestions"
+                hint='Suggest a comma before "and" in lists ("apples, oranges, and bananas")'
+              >
+                <Toggle
+                  checked={!settings.proofread_disabled_rules.includes("OxfordComma")}
+                  onChange={(v) => toggleProofreadRule("OxfordComma", v)}
+                />
+              </Row>
+              <Row
+                label="Flag filler words"
+                hint='Underline spoken fillers like "um" and "uh" that slip into dictation'
+              >
+                <Toggle
+                  checked={!settings.proofread_disabled_rules.includes("Filler")}
+                  onChange={(v) => toggleProofreadRule("Filler", v)}
+                />
+              </Row>
+              <div className="py-3.5">
+                <div className="text-sm">Don't check in these apps</div>
+                <div className="mt-0.5 text-xs text-sv-muted">
+                  Comma-separated app names, e.g. "code, photoshop" — squiggles
+                  are never shown there
+                </div>
+                <input
+                  value={settings.proofread_ignore_apps}
+                  onChange={(e) =>
+                    setSettings({ proofread_ignore_apps: e.target.value })
+                  }
+                  placeholder="code, photoshop"
+                  className="mt-2 w-full rounded-lg border border-sv-border bg-sv-bg px-3 py-2 text-sm"
+                />
+              </div>
+            </div>
+          )}
           <div className="py-3.5">
             <div className="flex items-center justify-between">
               <div className="text-sm">Input sensitivity</div>

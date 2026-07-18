@@ -183,11 +183,21 @@ export async function setBehavior(
   inputSensitivity: number,
   inlineProofread: boolean,
   highPerformance: boolean,
-  performanceThreads: number
+  performanceThreads: number,
+  proofreadDisabledRules: string[],
+  proofreadIgnoreApps: string[]
 ): Promise<void> {
   if (!isTauri()) return;
   try {
-    await invoke<void>("set_behavior", { toggleMode, inputSensitivity, inlineProofread, highPerformance, performanceThreads });
+    await invoke<void>("set_behavior", {
+      toggleMode,
+      inputSensitivity,
+      inlineProofread,
+      highPerformance,
+      performanceThreads,
+      proofreadDisabledRules,
+      proofreadIgnoreApps,
+    });
   } catch (e) {
     console.warn("set_behavior failed", e);
   }

@@ -56,6 +56,11 @@ const IGNORE_EXES: &[&str] = &[
 ];
 const MAX_TEXT: i32 = 6000;
 const POLL_MS: u64 = 400;
+// Backoff when nothing has changed for IDLE_AFTER_POLLS cycles (~2s):
+// squiggle positions and text are stable, so poll gently until the focused
+// window changes or something moves again.
+const IDLE_POLL_MS: u64 = 1200;
+const IDLE_AFTER_POLLS: u32 = 5;
 
 pub fn start(app: AppHandle) {
     std::thread::spawn(move || watcher(app));
@@ -93,7 +98,13 @@ fn watcher(app: AppHandle) {
         let mut dismissed_words = HashSet::<String>::new();
         let mut last_text = String::new();
         let mut last_chars: Vec<char> = Vec::new();
+        let mut last_rules: Vec<String> = Vec::new();
         let mut issues: Vec<proofread::ProofIssue> = Vec::new();
+        // Adaptive backoff: after several polls with nothing changing, slow
+        // down to save CPU; snap back to fast on any change or focus switch.
+        let mut idle_polls: u32 = 0;
+        let mut last_squiggles: Vec<SquiggleInfo> = Vec::new();
+        let mut last_fg: isize = 0;
         let mut was_active = false;
         // The screen-reader flag + focus handler make every Chromium/Electron
         // app build accessibility trees (needed for WebView2 apps like
@@ -101,7 +112,18 @@ fn watcher(app: AppHandle) {
         // engaged while the user's toggle is actually ON.
         let mut a11y_engaged = false;
         loop {
-            std::thread::sleep(Duration::from_millis(POLL_MS));
+            std::thread::sleep(Duration::from_millis(if idle_polls >= IDLE_AFTER_POLLS {
+                IDLE_POLL_MS
+            } else {
+                POLL_MS
+            }));
+
+            // Focus moved to another window → wake up immediately.
+            let fg_now = GetForegroundWindow().0 as isize;
+            if fg_now != last_fg {
+                last_fg = fg_now;
+                idle_polls = 0;
+            }
 
             // Process any incoming overlay actions.
             let mut check_needed = false;
@@ -144,14 +166,24 @@ fn watcher(app: AppHandle) {
                 issues.clear();
             }
 
-            let (enabled, vocabulary) = {
+            let (enabled, vocabulary, disabled_rules, ignore_apps) = {
                 let state = app.state::<AppState>();
                 let cfg = match state.config.lock() {
                     Ok(c) => c,
                     Err(_) => continue,
                 };
-                (cfg.inline_proofread, cfg.vocabulary.clone())
+                (
+                    cfg.inline_proofread,
+                    cfg.vocabulary.clone(),
+                    cfg.proofread_disabled_rules.clone(),
+                    cfg.proofread_ignore_apps.clone(),
+                )
             };
+            // Rule toggles changed → force a re-lint of the unchanged text.
+            if disabled_rules != last_rules {
+                last_rules = disabled_rules.clone();
+                last_text.clear();
+            }
             if !enabled {
                 if was_active {
                     let _ = overlay_tx.send(Vec::new());
@@ -177,11 +209,19 @@ fn watcher(app: AppHandle) {
                 &automation,
                 my_pid,
                 &vocabulary,
+                &disabled_rules,
+                &ignore_apps,
                 &dismissed_words,
                 &mut last_text,
                 &mut last_chars,
                 &mut issues,
             );
+            idle_polls = if squiggles == last_squiggles && !check_needed {
+                idle_polls.saturating_add(1)
+            } else {
+                0
+            };
+            last_squiggles = squiggles.clone();
             let active = !squiggles.is_empty();
             let _ = reason;
             if active || was_active {
@@ -196,6 +236,8 @@ fn poll_once(
     automation: &IUIAutomation,
     my_pid: u32,
     vocabulary: &str,
+    disabled_rules: &[String],
+    ignore_apps: &[String],
     dismissed_words: &HashSet<String>,
     last_text: &mut String,
     last_chars: &mut Vec<char>,
@@ -225,6 +267,10 @@ fn poll_once(
         let exe = process_name(pid);
         if IGNORE_EXES.contains(&exe.as_str()) {
             return (Vec::new(), "ignored exe");
+        }
+        // User's own "don't check in these apps" list (lowercase substrings).
+        if ignore_apps.iter().any(|a| exe.contains(a.as_str())) {
+            return (Vec::new(), "user-ignored exe");
         }
         let el = match resolve_text_element(automation, &el) {
             Some(e) => e,
@@ -276,7 +322,7 @@ fn poll_once(
         }
         // Re-lint only when the text actually changed; rects refresh every poll.
         if text != *last_text {
-            *issues = proofread::check(&text, vocabulary);
+            *issues = proofread::check(&text, vocabulary, disabled_rules);
             *last_chars = text.chars().collect();
             *last_text = text;
         }
