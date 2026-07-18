@@ -39,34 +39,60 @@ pub fn create_overlay(app: &AppHandle) -> tauri::Result<()> {
     .build()?;
 
     position_centered(&win, OVERLAY_W, OVERLAY_H);
-    round_corners(&win);
+    let scale = win.scale_factor().unwrap_or(1.0);
+    round_corners(
+        &win,
+        (OVERLAY_W * scale).round() as i32,
+        (OVERLAY_H * scale).round() as i32,
+    );
     let _ = win.show();
     Ok(())
 }
 
-/// Ask DWM to round the window corners (Windows 11). Harmless elsewhere.
+/// Round the window corners at the given PHYSICAL size. Windows 11 does it
+/// via DWM (which keeps rounding through resizes). On Windows 10 that
+/// attribute doesn't exist — DWM rejects it and the opaque pill shows square
+/// corners — so fall back to a classic rounded window region. The region is
+/// fixed to one size, so apply_size re-invokes this after every resize.
 #[cfg(windows)]
-fn round_corners(win: &tauri::WebviewWindow) {
+fn round_corners(win: &tauri::WebviewWindow, w: i32, h: i32) {
     use windows::Win32::Foundation::HWND;
     use windows::Win32::Graphics::Dwm::{
         DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND,
     };
-    if let Ok(handle) = win.hwnd() {
-        let hwnd = HWND(handle.0 as *mut core::ffi::c_void);
-        let pref = DWMWCP_ROUND;
-        unsafe {
-            let _ = DwmSetWindowAttribute(
-                hwnd,
-                DWMWA_WINDOW_CORNER_PREFERENCE,
-                &pref as *const _ as *const core::ffi::c_void,
-                std::mem::size_of_val(&pref) as u32,
-            );
-        }
+    use windows::Win32::Graphics::Gdi::{CreateRoundRectRgn, SetWindowRgn};
+
+    let Ok(handle) = win.hwnd() else { return };
+    let hwnd = HWND(handle.0 as *mut core::ffi::c_void);
+    // Attempt DWM every call (cheap, idempotent, and correct even if the
+    // window is ever recreated) — only fall back when it's unsupported.
+    let pref = DWMWCP_ROUND;
+    let dwm_ok = unsafe {
+        DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_WINDOW_CORNER_PREFERENCE,
+            &pref as *const _ as *const core::ffi::c_void,
+            std::mem::size_of_val(&pref) as u32,
+        )
+        .is_ok()
+    };
+    if dwm_ok {
+        return;
+    }
+    // ~8px logical corner radius, matching Win11's DWM rounding. Region edges
+    // are 1-bit (slightly jagged) but far better than square corners.
+    let scale = win.scale_factor().unwrap_or(1.0);
+    let d = ((16.0 * scale) as i32).min(h);
+    unsafe {
+        // Exclusive right/bottom bounds: (0,0,w,h) covers pixels 0..w-1 —
+        // exactly the window rect.
+        let rgn = CreateRoundRectRgn(0, 0, w, h, d, d);
+        let _ = SetWindowRgn(hwnd, rgn, true); // SetWindowRgn owns rgn
     }
 }
 
 #[cfg(not(windows))]
-fn round_corners(_win: &tauri::WebviewWindow) {}
+fn round_corners(_win: &tauri::WebviewWindow, _w: i32, _h: i32) {}
 
 /// Position the window at bottom-center of the primary monitor (bottom edge
 /// fixed, so growing for the menu extends upward).
@@ -108,6 +134,8 @@ fn apply_size(win: &tauri::WebviewWindow, width: f64, height: f64, center: (i32,
         center.0 - new_w / 2,
         center.1 - new_h / 2,
     ));
+    // Windows 10 rounds via a size-specific window region — refresh it.
+    round_corners(win, new_w, new_h);
 }
 
 /// Resize the overlay window, center-anchored, in ONE step. Window resizing
