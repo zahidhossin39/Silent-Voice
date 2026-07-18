@@ -40,7 +40,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 
 const SQUIGGLE_H: i32 = 4;
-const MAX_SQUIGGLES: usize = 24;
+pub(crate) const MAX_SQUIGGLES: usize = 24;
 const RED: u32 = 0xFFEF4444; // spelling (premultiplied BGRA as 0xAARRGGBB)
 const BLUE: u32 = 0xFF3B82F6; // grammar/style
 

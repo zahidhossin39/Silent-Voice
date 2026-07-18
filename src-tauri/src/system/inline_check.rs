@@ -92,6 +92,7 @@ fn watcher(app: AppHandle) {
 
         let mut dismissed_words = HashSet::<String>::new();
         let mut last_text = String::new();
+        let mut last_chars: Vec<char> = Vec::new();
         let mut issues: Vec<proofread::ProofIssue> = Vec::new();
         let mut was_active = false;
         // The screen-reader flag + focus handler make every Chromium/Electron
@@ -178,6 +179,7 @@ fn watcher(app: AppHandle) {
                 &vocabulary,
                 &dismissed_words,
                 &mut last_text,
+                &mut last_chars,
                 &mut issues,
             );
             let active = !squiggles.is_empty();
@@ -196,6 +198,7 @@ fn poll_once(
     vocabulary: &str,
     dismissed_words: &HashSet<String>,
     last_text: &mut String,
+    last_chars: &mut Vec<char>,
     issues: &mut Vec<proofread::ProofIssue>,
 ) -> (Vec<SquiggleInfo>, &'static str) {
     unsafe {
@@ -267,17 +270,24 @@ fn poll_once(
         };
         if text.trim().is_empty() {
             last_text.clear();
+            last_chars.clear();
             issues.clear();
             return (Vec::new(), "empty text");
         }
         // Re-lint only when the text actually changed; rects refresh every poll.
         if text != *last_text {
             *issues = proofread::check(&text, vocabulary);
+            *last_chars = text.chars().collect();
             *last_text = text;
         }
-        let chars: Vec<char> = last_text.chars().collect();
+        let chars: &Vec<char> = last_chars;
         let mut squiggles = Vec::new();
         for issue in issues.iter() {
+            // The overlay draws at most MAX_SQUIGGLES; fetching rects (COM
+            // calls) for more would also leave invisible squiggles hoverable.
+            if squiggles.len() >= super::squiggle::MAX_SQUIGGLES {
+                break;
+            }
             let expected: String = chars
                 .get(issue.start..issue.end)
                 .map(|c| c.iter().collect())
@@ -285,8 +295,11 @@ fn poll_once(
             if dismissed_words.contains(&expected.to_lowercase()) {
                 continue;
             }
-            if let Some(rects) = issue_rects(&doc, &chars, issue) {
+            if let Some(rects) = issue_rects(&doc, chars, issue) {
                 for (x, y, w, h) in rects {
+                    if squiggles.len() >= super::squiggle::MAX_SQUIGGLES {
+                        break;
+                    }
                     if w < 2.0 || h < 2.0 {
                         continue;
                     }
