@@ -507,77 +507,78 @@ fn run(rx: Receiver<Vec<SquiggleInfo>>, action_tx: Sender<OverlayAction>) {
                     }
                 }
                 infos = new_infos;
-                // Suggestion click?
-                let clicked = CLICKED_ROW.swap(-1, Ordering::Relaxed);
-                if clicked != -1 && popup.shown {
-                    if let Some(info) = infos.get(popup.info_idx) {
-                        let is_picker = PICKER.load(Ordering::Relaxed);
-                        if clicked < 100 {
-                            let rows = popup_rows().lock().map(|r| r.clone()).unwrap_or_default();
-                            if clicked < rows.len() as i32 {
-                                if is_picker {
-                                    if let Some(word) = rows.get(clicked as usize) {
-                                        let _ = action_tx.send(OverlayAction::AddToVocab {
-                                            word: word.clone(),
-                                        });
-                                        if word != &info.expected {
-                                            let _ = action_tx.send(OverlayAction::Fix {
-                                                start: info.start,
-                                                end: info.end,
-                                                expected: info.expected.clone(),
-                                                replacement: word.clone(),
-                                            });
-                                        }
-                                    }
-                                    hide_popup(&mut popup);
-                                    hover_since = None;
-                                } else {
-                                    if let Some(replacement) = info.suggestions.get(clicked as usize) {
+            }
+
+            // Suggestion click?
+            let clicked = CLICKED_ROW.swap(-1, Ordering::Relaxed);
+            if clicked != -1 && popup.shown {
+                if let Some(info) = infos.get(popup.info_idx) {
+                    let is_picker = PICKER.load(Ordering::Relaxed);
+                    if clicked < 100 {
+                        let rows = popup_rows().lock().map(|r| r.clone()).unwrap_or_default();
+                        if clicked < rows.len() as i32 {
+                            if is_picker {
+                                if let Some(word) = rows.get(clicked as usize) {
+                                    let _ = action_tx.send(OverlayAction::AddToVocab {
+                                        word: word.clone(),
+                                    });
+                                    if word != &info.expected {
                                         let _ = action_tx.send(OverlayAction::Fix {
                                             start: info.start,
                                             end: info.end,
                                             expected: info.expected.clone(),
-                                            replacement: replacement.clone(),
+                                            replacement: word.clone(),
                                         });
                                     }
-                                    hide_popup(&mut popup);
-                                    hover_since = None;
                                 }
+                                hide_popup(&mut popup);
+                                hover_since = None;
+                            } else {
+                                if let Some(replacement) = info.suggestions.get(clicked as usize) {
+                                    let _ = action_tx.send(OverlayAction::Fix {
+                                        start: info.start,
+                                        end: info.end,
+                                        expected: info.expected.clone(),
+                                        replacement: replacement.clone(),
+                                    });
+                                }
+                                hide_popup(&mut popup);
+                                hover_since = None;
                             }
-                        } else if clicked == 100 {
-                            // Enter picker mode
-                            PICKER.store(true, Ordering::Relaxed);
-                            let mut picker_rows = vec![info.expected.clone()];
-                            picker_rows.extend(info.suggestions.iter().take(3).cloned());
-                            if let Ok(mut r) = popup_rows().lock() {
-                                *r = picker_rows.clone();
-                            }
-                            if let Ok(mut m) = popup_msg().lock() {
-                                *m = "Choose the word to add".to_string();
-                            }
-                            HOVER_ROW.store(-1, Ordering::Relaxed);
-
-                            let n_rows = picker_rows.len() as i32;
-                            let height = get_popup_height(n_rows, true);
-                            let x = info.x;
-                            let mut y = info.y - height - 6;
-                            if y < 0 {
-                                y = info.y + info.h + SQUIGGLE_H + 2;
-                            }
-                            POPUP_POS_X.store(x, Ordering::Relaxed);
-                            POPUP_POS_Y.store(y, Ordering::Relaxed);
-
-                            render_popup(popup.hwnd, x, y);
-
-                            popup.rect = RECT { left: x, top: y, right: x + POPUP_W, bottom: y + height };
-                        } else if clicked == 101 {
-                            // Dismiss
-                            let _ = action_tx.send(OverlayAction::Dismiss {
-                                word: info.expected.clone(),
-                            });
-                            hide_popup(&mut popup);
-                            hover_since = None;
                         }
+                    } else if clicked == 100 {
+                        // Enter picker mode
+                        PICKER.store(true, Ordering::Relaxed);
+                        let mut picker_rows = vec![info.expected.clone()];
+                        picker_rows.extend(info.suggestions.iter().filter(|s| !s.trim().is_empty()).take(3).cloned());
+                        if let Ok(mut r) = popup_rows().lock() {
+                            *r = picker_rows.clone();
+                        }
+                        if let Ok(mut m) = popup_msg().lock() {
+                            *m = "Choose the word to add".to_string();
+                        }
+                        HOVER_ROW.store(-1, Ordering::Relaxed);
+
+                        let n_rows = picker_rows.len() as i32;
+                        let height = get_popup_height(n_rows, true);
+                        let x = info.x;
+                        let mut y = info.y - height - 6;
+                        if y < 0 {
+                            y = info.y + info.h + SQUIGGLE_H + 2;
+                        }
+                        POPUP_POS_X.store(x, Ordering::Relaxed);
+                        POPUP_POS_Y.store(y, Ordering::Relaxed);
+
+                        render_popup(popup.hwnd, x, y);
+
+                        popup.rect = RECT { left: x, top: y, right: x + POPUP_W, bottom: y + height };
+                    } else if clicked == 101 {
+                        // Dismiss
+                        let _ = action_tx.send(OverlayAction::Dismiss {
+                            word: info.expected.clone(),
+                        });
+                        hide_popup(&mut popup);
+                        hover_since = None;
                     }
                 }
             }
@@ -646,7 +647,13 @@ fn popup_still_valid(popup: &Popup, new_infos: &[SquiggleInfo], old_infos: &[Squ
 unsafe fn show_popup(popup: &mut Popup, infos: &[SquiggleInfo], idx: usize) {
     let Some(info) = infos.get(idx) else { return };
     // No suggestions → still show the message so the user knows what's wrong.
-    let rows: Vec<String> = info.suggestions.iter().take(3).cloned().collect();
+    let rows: Vec<String> = info.suggestions.iter().take(3).map(|s| {
+        if s.trim().is_empty() {
+            "Remove".to_string()
+        } else {
+            s.clone()
+        }
+    }).collect();
     let mut message = info.message.clone();
     if message.chars().count() > 40 {
         message = message.chars().take(39).collect::<String>() + "…";

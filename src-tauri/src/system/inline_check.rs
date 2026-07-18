@@ -112,11 +112,19 @@ fn watcher(app: AppHandle) {
         // engaged while the user's toggle is actually ON.
         let mut a11y_engaged = false;
         loop {
-            std::thread::sleep(Duration::from_millis(if idle_polls >= IDLE_AFTER_POLLS {
+            let timeout = Duration::from_millis(if idle_polls >= IDLE_AFTER_POLLS {
                 IDLE_POLL_MS
             } else {
                 POLL_MS
-            }));
+            });
+
+            let mut actions = Vec::new();
+            if let Ok(action) = action_rx.recv_timeout(timeout) {
+                actions.push(action);
+                while let Ok(a) = action_rx.try_recv() {
+                    actions.push(a);
+                }
+            }
 
             // Focus moved to another window → wake up immediately.
             let fg_now = GetForegroundWindow().0 as isize;
@@ -127,7 +135,7 @@ fn watcher(app: AppHandle) {
 
             // Process any incoming overlay actions.
             let mut check_needed = false;
-            while let Ok(action) = action_rx.try_recv() {
+            for action in actions {
                 match action {
                     OverlayAction::Fix { start, end, expected, replacement } => {
                         crate::logging::log_info(
