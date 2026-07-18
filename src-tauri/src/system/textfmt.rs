@@ -198,13 +198,22 @@ pub fn format_numbers(text: &str) -> String {
     }
 
     // Flatten into word list, remembering which raw token each word came from.
-    // (Hyphenated number words expand: "twenty-five" → two words, one token.)
+    // A hyphenated token only expands when every part is a number word
+    // ("twenty-five" → ["twenty","five"]); otherwise it stays one word — the
+    // non-number fallback below emits the whole token once per word, so
+    // expanding "post-writing" would paste it twice.
     let toks: Vec<Tok> = raw_tokens.iter().map(|r| split_token(r)).collect();
     let mut words: Vec<String> = Vec::new();
     let mut word_tok: Vec<usize> = Vec::new(); // word index → token index
     for (ti, t) in toks.iter().enumerate() {
-        for p in number_parts(&t.core) {
-            words.push(p);
+        let parts = number_parts(&t.core);
+        if parts.len() > 1 && parts.iter().all(|p| is_number_word(p, &units, &tens)) {
+            for p in parts {
+                words.push(p);
+                word_tok.push(ti);
+            }
+        } else {
+            words.push(t.core.to_lowercase());
             word_tok.push(ti);
         }
     }
@@ -469,6 +478,16 @@ mod tests {
     #[test]
     fn hyphenated_numbers() {
         assert_eq!(format_numbers("twenty-five people"), "25 people");
+    }
+
+    #[test]
+    fn hyphenated_words_not_duplicated() {
+        // Regression: expanding hyphen parts made the non-number fallback
+        // emit the whole token once per part ("post-writing post-writing").
+        assert_eq!(format_numbers("the follow-up message"), "the follow-up message");
+        assert_eq!(format_numbers("post-writing AI agent"), "post-writing AI agent");
+        assert_eq!(format_numbers("a well-known long-term plan"), "a well-known long-term plan");
+        assert_eq!(format_numbers("forty-ish people showed"), "forty-ish people showed");
     }
 
     #[test]
