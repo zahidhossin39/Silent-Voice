@@ -23,6 +23,10 @@ src-tauri/gen/
 # OS
 .DS_Store
 Thumbs.db
+desktop.ini
+
+# Generated knowledge graph
+graphify-out/
 
 # Logs
 *.log
