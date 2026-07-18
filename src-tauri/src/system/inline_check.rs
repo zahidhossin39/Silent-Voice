@@ -84,10 +84,7 @@ fn watcher(app: AppHandle) {
                     return;
                 }
             };
-        let _ = SystemParametersInfoW(SPI_SETSCREENREADER, 1, None, SPIF_SENDCHANGE);
         let handler: IUIAutomationFocusChangedEventHandler = FocusHandler.into();
-        let _ = automation.AddFocusChangedEventHandler(None, &handler);
-        let _focus_handler = handler;
 
         let (action_tx, action_rx) = channel::<OverlayAction>();
         let overlay_tx = super::squiggle::spawn(action_tx);
@@ -97,6 +94,11 @@ fn watcher(app: AppHandle) {
         let mut last_text = String::new();
         let mut issues: Vec<proofread::ProofIssue> = Vec::new();
         let mut was_active = false;
+        // The screen-reader flag + focus handler make every Chromium/Electron
+        // app build accessibility trees (needed for WebView2 apps like
+        // WhatsApp, but a system-wide CPU/memory cost) — so they're only
+        // engaged while the user's toggle is actually ON.
+        let mut a11y_engaged = false;
         loop {
             std::thread::sleep(Duration::from_millis(POLL_MS));
 
@@ -156,8 +158,18 @@ fn watcher(app: AppHandle) {
                     last_text.clear();
                     issues.clear();
                 }
+                if a11y_engaged {
+                    let _ = automation.RemoveFocusChangedEventHandler(&handler);
+                    reset_screen_reader();
+                    a11y_engaged = false;
+                }
                 std::thread::sleep(Duration::from_millis(600));
                 continue;
+            }
+            if !a11y_engaged {
+                let _ = SystemParametersInfoW(SPI_SETSCREENREADER, 1, None, SPIF_SENDCHANGE);
+                let _ = automation.AddFocusChangedEventHandler(None, &handler);
+                a11y_engaged = true;
             }
 
             let (squiggles, reason) = poll_once(
