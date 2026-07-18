@@ -1,0 +1,459 @@
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::OnceLock;
+use ort::init_from;
+use ort::session::Session;
+use ort::value::Tensor;
+use tokenizers::Tokenizer;
+
+struct Gector {
+    session: std::sync::Mutex<Session>,
+    tokenizer: Tokenizer,
+    labels: Vec<String>,
+    verb_map: HashMap<(String, String), String>,
+}
+
+static GECTOR: OnceLock<Option<Gector>> = OnceLock::new();
+
+fn parse_verb_vocab(text: &str) -> HashMap<(String, String), String> {
+    let mut verb_map = HashMap::new();
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        if let Some((words, tags)) = line.split_once(':') {
+            if let Some((source, target)) = words.split_once('_') {
+                verb_map.insert((source.to_string(), tags.to_string()), target.to_string());
+            }
+        }
+    }
+    verb_map
+}
+
+fn init_gector() -> Option<Gector> {
+    let base_dir = dirs::config_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("SilentVoice")
+        .join("models")
+        .join("gector");
+
+    let model_path = base_dir.join("gector-int8.onnx");
+    let tokenizer_path = base_dir.join("tokenizer.json");
+    let labels_path = base_dir.join("labels.txt");
+    let verbs_path = base_dir.join("verb-form-vocab.txt");
+
+    if !model_path.exists() || !tokenizer_path.exists() || !labels_path.exists() || !verbs_path.exists() {
+        return None;
+    }
+
+    // Reuse sherpa's onnxruntime.dll (see sherpa.rs on why absolute paths).
+    // ort PANICS if the dylib can't be loaded, so verify existence first —
+    // a panic here would kill the inline-check watcher thread.
+    // Test exes live in target\debug\deps\, one level below the DLL dir.
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.to_path_buf()))?;
+    let dll_path = [Some(exe_dir.as_path()), exe_dir.parent()]
+        .into_iter()
+        .flatten()
+        .map(|d| d.join("sherpa").join("onnxruntime.dll"))
+        .find(|p| p.exists())?;
+    let _ = init_from(dll_path.display().to_string()).commit();
+
+    let session = match Session::builder()
+        .and_then(|b| b.with_intra_threads(1))
+        .and_then(|b| b.commit_from_file(&model_path))
+    {
+        Ok(s) => s,
+        Err(e) => {
+            crate::logging::log_error("gector", &format!("Failed to load ONNX session: {}", e));
+            return None;
+        }
+    };
+
+    let tokenizer = match Tokenizer::from_file(&tokenizer_path) {
+        Ok(t) => t,
+        Err(e) => {
+            crate::logging::log_error("gector", &format!("Failed to load tokenizer: {}", e));
+            return None;
+        }
+    };
+
+    let labels_text = match std::fs::read_to_string(&labels_path) {
+        Ok(t) => t,
+        Err(e) => {
+            crate::logging::log_error("gector", &format!("Failed to read labels: {}", e));
+            return None;
+        }
+    };
+    let labels: Vec<String> = labels_text.lines().map(|s| s.trim().to_string()).collect();
+
+    let verbs_text = match std::fs::read_to_string(&verbs_path) {
+        Ok(t) => t,
+        Err(e) => {
+            crate::logging::log_error("gector", &format!("Failed to read verbs: {}", e));
+            return None;
+        }
+    };
+
+    let verb_map = parse_verb_vocab(&verbs_text);
+
+    Some(Gector {
+        session: std::sync::Mutex::new(session),
+        tokenizer,
+        labels,
+        verb_map,
+    })
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct GectorEdit {
+    pub start: usize,
+    pub end: usize,
+    pub replacement: String,
+    pub tag: String,
+    pub message: String,
+}
+
+struct WordSpan {
+    text: String,
+    start: usize,
+    end: usize,
+}
+
+pub fn check(text: &str) -> Vec<GectorEdit> {
+    let mut edits = Vec::new();
+    let gector = GECTOR.get_or_init(init_gector);
+
+    let Some(g) = gector else {
+        return edits;
+    };
+
+    let keep_idx = g.labels.iter().position(|l| l == "$KEEP").unwrap_or(0);
+
+    let mut sentence_start = 0;
+    let chars: Vec<char> = text.chars().collect();
+    let mut sentences = Vec::new();
+
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] == '.' || chars[i] == '!' || chars[i] == '?' {
+            let mut end = i + 1;
+            while end < chars.len() && chars[end].is_whitespace() {
+                end += 1;
+            }
+            sentences.push((sentence_start, end));
+            sentence_start = end;
+            i = end;
+        } else {
+            i += 1;
+        }
+    }
+    if sentence_start < chars.len() {
+        sentences.push((sentence_start, chars.len()));
+    }
+
+    for (s_start, s_end) in sentences {
+        if s_end - s_start > 350 {
+            continue;
+        }
+
+        let sentence_chars = &chars[s_start..s_end];
+        let mut words = Vec::new();
+        let mut in_word = false;
+        let mut w_start = 0;
+
+        for (idx, &c) in sentence_chars.iter().enumerate() {
+            if !c.is_whitespace() {
+                if !in_word {
+                    w_start = idx;
+                    in_word = true;
+                }
+            } else {
+                if in_word {
+                    let w_text: String = sentence_chars[w_start..idx].iter().collect();
+                    words.push(WordSpan {
+                        text: w_text,
+                        start: s_start + w_start,
+                        end: s_start + idx,
+                    });
+                    in_word = false;
+                }
+            }
+        }
+        if in_word {
+            let w_text: String = sentence_chars[w_start..sentence_chars.len()].iter().collect();
+            words.push(WordSpan {
+                text: w_text,
+                start: s_start + w_start,
+                end: s_end,
+            });
+        }
+
+        if words.is_empty() || words.len() > 60 {
+            continue;
+        }
+
+        let sentence_text = words.iter().map(|w| w.text.as_str()).collect::<Vec<_>>().join(" ");
+        let encoded_text = format!("$START {}", sentence_text);
+
+        let encoding = match g.tokenizer.encode(encoded_text, true) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+
+        let word_ids = encoding.get_word_ids();
+        let mut first_subtokens = vec![None; words.len() + 1];
+        for (tok_idx, &word_id_opt) in word_ids.iter().enumerate() {
+            if let Some(w_id) = word_id_opt {
+                let w_id = w_id as usize;
+                if w_id < first_subtokens.len() && first_subtokens[w_id].is_none() {
+                    first_subtokens[w_id] = Some(tok_idx);
+                }
+            }
+        }
+
+        let input_ids = encoding.get_ids();
+        let attention_mask = encoding.get_attention_mask();
+        let seq_len = input_ids.len();
+
+        let input_ids_arr = match ndarray::Array2::from_shape_vec(
+            (1, seq_len),
+            input_ids.iter().map(|&x| x as i64).collect(),
+        ) {
+            Ok(a) => a,
+            Err(_) => continue,
+        };
+        let attention_mask_arr = match ndarray::Array2::from_shape_vec(
+            (1, seq_len),
+            attention_mask.iter().map(|&x| x as i64).collect(),
+        ) {
+            Ok(a) => a,
+            Err(_) => continue,
+        };
+
+        let (Ok(input_ids_t), Ok(attention_mask_t)) = (
+            Tensor::from_array(input_ids_arr),
+            Tensor::from_array(attention_mask_arr),
+        ) else {
+            continue;
+        };
+        let inputs = ort::inputs![
+            "input_ids" => input_ids_t,
+            "attention_mask" => attention_mask_t,
+        ];
+
+        let Ok(mut session) = g.session.lock() else {
+            continue;
+        };
+        let outputs = match session.run(inputs) {
+            Ok(o) => o,
+            Err(_) => continue,
+        };
+
+        // rc.10 returns (shape, flat data); batch is 1 so the layout is
+        // [seq][num_labels] row-major.
+        let (shape, logit_data) = match outputs["label_logits"].try_extract_tensor::<f32>() {
+            Ok(t) => t,
+            Err(_) => continue,
+        };
+        let num_labels = g.labels.len();
+        if shape.len() != 3 || shape[2] as usize != num_labels {
+            continue;
+        }
+
+        for w_id in 0..=words.len() {
+            if let Some(sub_idx) = first_subtokens[w_id] {
+                if sub_idx >= seq_len {
+                    continue;
+                }
+
+                let row = sub_idx * num_labels;
+                let Some(logits) = logit_data.get(row..row + num_labels) else {
+                    continue;
+                };
+                let logits: Vec<f32> = logits.to_vec();
+
+                let max_logit = logits.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+                let mut exp_sum = 0.0;
+                let mut probs: Vec<f32> = logits
+                    .iter()
+                    .map(|&l| {
+                        let e = (l - max_logit).exp();
+                        exp_sum += e;
+                        e
+                    })
+                    .collect();
+
+                for p in probs.iter_mut() {
+                    *p /= exp_sum;
+                }
+
+                let mut best_idx = 0;
+                let mut best_prob = -1.0;
+                for (idx, &p) in probs.iter().enumerate() {
+                    if p > best_prob {
+                        best_prob = p;
+                        best_idx = idx;
+                    }
+                }
+
+                let tag = &g.labels[best_idx];
+                // 0.45 threshold tuned against this checkpoint (README's 0.2
+                // bias + 0.5 was tuned for grammarly's own weights and
+                // rejects real errors like "go"->"goes" at 0.47).
+                if best_idx == keep_idx || tag == "<OOV>" || best_prob < 0.45 {
+                    continue;
+                }
+
+                if w_id == 0 {
+                    if let Some(t) = tag.strip_prefix("$APPEND_") {
+                        let first_word = &words[0];
+                        edits.push(GectorEdit {
+                            start: first_word.start,
+                            end: first_word.start,
+                            replacement: format!("{} ", t),
+                            tag: tag.clone(),
+                            message: "Possibly missing word".to_string(),
+                        });
+                    }
+                    continue;
+                }
+
+                let word_idx = w_id - 1;
+                let w = &words[word_idx];
+
+                let mut replacement = None;
+                let mut message = "Grammar or style suggestion".to_string();
+                let mut edit_start = w.start;
+                let mut edit_end = w.end;
+
+                if tag == "$DELETE" {
+                    replacement = Some("".to_string());
+                    message = "Possibly redundant word".to_string();
+                } else if let Some(t) = tag.strip_prefix("$APPEND_") {
+                    edit_start = w.end;
+                    edit_end = w.end;
+                    replacement = Some(format!(" {}", t));
+                    message = "Possibly missing word".to_string();
+                } else if let Some(t) = tag.strip_prefix("$REPLACE_") {
+                    replacement = Some(t.to_string());
+                    message = "Possible word confusion".to_string();
+                } else if tag == "$MERGE_SPACE" {
+                    if word_idx + 1 < words.len() {
+                        let next = &words[word_idx + 1];
+                        edit_start = w.end;
+                        edit_end = next.start;
+                        replacement = Some("".to_string());
+                        message = "Should be a single word".to_string();
+                    }
+                } else if tag == "$MERGE_HYPHEN" {
+                    if word_idx + 1 < words.len() {
+                        let next = &words[word_idx + 1];
+                        edit_start = w.end;
+                        edit_end = next.start;
+                        replacement = Some("-".to_string());
+                        message = "Should be hyphenated".to_string();
+                    }
+                } else if tag == "$TRANSFORM_SPLIT_HYPHEN" {
+                    replacement = Some(w.text.replace('-', " "));
+                    message = "Should be split".to_string();
+                } else if tag == "$TRANSFORM_CASE_CAPITAL" {
+                    let mut c = w.text.chars();
+                    if let Some(first) = c.next() {
+                        replacement = Some(format!("{}{}", first.to_uppercase(), c.as_str().to_lowercase()));
+                    }
+                    message = "Capitalization".to_string();
+                } else if tag == "$TRANSFORM_CASE_CAPITAL_1" {
+                    let mut c = w.text.chars();
+                    if let Some(first) = c.next() {
+                        replacement = Some(format!("{}{}", first.to_uppercase(), c.as_str()));
+                    }
+                    message = "Capitalization".to_string();
+                } else if tag == "$TRANSFORM_CASE_LOWER" {
+                    replacement = Some(w.text.to_lowercase());
+                    message = "Capitalization".to_string();
+                } else if tag == "$TRANSFORM_CASE_UPPER" {
+                    replacement = Some(w.text.to_uppercase());
+                    message = "Capitalization".to_string();
+                } else if tag == "$TRANSFORM_AGREEMENT_SINGULAR" {
+                    let lower = w.text.to_lowercase();
+                    if lower.ends_with("ies") {
+                        replacement = Some(format!("{}y", &w.text[..w.text.len() - 3]));
+                    } else if lower.ends_with('s') && !lower.ends_with("ss") {
+                        replacement = Some(w.text[..w.text.len() - 1].to_string());
+                    } else {
+                        replacement = Some(w.text.clone());
+                    }
+                    message = "Grammar: agreement".to_string();
+                } else if tag == "$TRANSFORM_AGREEMENT_PLURAL" {
+                    let lower = w.text.to_lowercase();
+                    if lower.ends_with('y') && !lower.ends_with("ay") && !lower.ends_with("ey") && !lower.ends_with("oy") && !lower.ends_with("uy") {
+                        replacement = Some(format!("{}ies", &w.text[..w.text.len() - 1]));
+                    } else if lower.ends_with('s') || lower.ends_with("sh") || lower.ends_with("ch") || lower.ends_with('x') || lower.ends_with('z') {
+                        replacement = Some(format!("{}es", w.text));
+                    } else {
+                        replacement = Some(format!("{}s", w.text));
+                    }
+                    message = "Grammar: agreement".to_string();
+                } else if let Some(t) = tag.strip_prefix("$TRANSFORM_VERB_") {
+                    let lower = w.text.to_lowercase();
+                    if let Some(target) = g.verb_map.get(&(lower, t.to_string())) {
+                        let mut c = w.text.chars();
+                        if let Some(first) = c.next() {
+                            if first.is_uppercase() {
+                                let mut tc = target.chars();
+                                if let Some(tfirst) = tc.next() {
+                                    replacement = Some(format!("{}{}", tfirst.to_uppercase(), tc.as_str()));
+                                }
+                            } else {
+                                replacement = Some(target.clone());
+                            }
+                        }
+                    }
+                    message = "Grammar: verb form".to_string();
+                }
+
+                if let Some(repl) = replacement {
+                    edits.push(GectorEdit {
+                        start: edit_start,
+                        end: edit_end,
+                        replacement: repl,
+                        tag: tag.clone(),
+                        message,
+                    });
+                }
+            }
+        }
+    }
+    edits
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_verb_vocab() {
+        let sample = "abandon_abandoned:VB_VBD\nabandon_abandons:VB_VBZ";
+        let map = parse_verb_vocab(sample);
+        assert_eq!(map.get(&("abandon".to_string(), "VB_VBD".to_string())), Some(&"abandoned".to_string()));
+        assert_eq!(map.get(&("abandon".to_string(), "VB_VBZ".to_string())), Some(&"abandons".to_string()));
+    }
+
+    #[test]
+    fn test_gector_inference() {
+        let edits = check("I have alot of work .");
+        if GECTOR.get().is_some() && GECTOR.get().unwrap().is_some() {
+            assert!(!edits.is_empty(), "expected some edit for alot");
+        } else {
+            println!("test_gector_inference skip: model missing");
+        }
+
+        let clean = check("This sentence is perfectly fine.");
+        if GECTOR.get().is_some() && GECTOR.get().unwrap().is_some() {
+            assert!(clean.is_empty(), "expected no edits for clean text");
+        }
+    }
+}

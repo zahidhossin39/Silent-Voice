@@ -1,6 +1,7 @@
 mod audio;
 mod history;
 mod proofread;
+mod gector;
 mod llm;
 mod logging;
 mod models;

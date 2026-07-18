@@ -156,6 +156,42 @@ pub fn check(text: &str, vocabulary: &str, disabled_rules: &[String]) -> Vec<Pro
         }
     }
 
+    // --- GECToR Integration ---
+    if !disabled_rules.iter().any(|r| r == "Gector") {
+        let gector_edits = crate::gector::check(text);
+        for edit in gector_edits {
+            let mut start = edit.start;
+            let end = edit.end;
+            let mut suggestion = edit.replacement.clone();
+            
+            if start == end && edit.tag.starts_with("$APPEND_") {
+                if let Some(prev_w) = words.iter().rev().find(|w| w.end <= start) {
+                    start = prev_w.start;
+                    suggestion = format!("{}{}", prev_w.text, suggestion);
+                }
+            }
+
+            let overlaps = issues.iter().any(|hi| hi.start < end && start < hi.end);
+            if !overlaps {
+                let formatted_message = if edit.tag.starts_with("$REPLACE_") || edit.tag.starts_with("$TRANSFORM_") {
+                    let original: String = chars[edit.start..edit.end].iter().collect();
+                    format!("{}: '{}' -> '{}'", edit.message, original, edit.replacement)
+                } else {
+                    edit.message.clone()
+                };
+
+                issues.push(ProofIssue {
+                    start,
+                    end,
+                    message: formatted_message,
+                    kind: "Context".to_string(),
+                    suggestions: vec![suggestion],
+                });
+            }
+        }
+    }
+    // -------------------------
+
     // "Filler" is our own pseudo-rule id, honoring the same Settings toggles
     // as Harper's rules.
     let filler_enabled = !disabled_rules.iter().any(|r| r == "Filler");
