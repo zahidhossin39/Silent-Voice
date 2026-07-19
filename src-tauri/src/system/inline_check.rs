@@ -99,6 +99,7 @@ fn watcher(app: AppHandle) {
         let mut last_text = String::new();
         let mut last_chars: Vec<char> = Vec::new();
         let mut last_rules: Vec<String> = Vec::new();
+        let mut last_sensitivity = String::new();
         let mut issues: Vec<proofread::ProofIssue> = Vec::new();
         // Adaptive backoff: after several polls with nothing changing, slow
         // down to save CPU; snap back to fast on any change or focus switch.
@@ -182,7 +183,7 @@ fn watcher(app: AppHandle) {
                 issues.clear();
             }
 
-            let (enabled, vocabulary, disabled_rules, ignore_apps) = {
+            let (enabled, vocabulary, disabled_rules, gector_sensitivity, ignore_apps) = {
                 let state = app.state::<AppState>();
                 let cfg = match state.config.lock() {
                     Ok(c) => c,
@@ -192,12 +193,14 @@ fn watcher(app: AppHandle) {
                     cfg.inline_proofread,
                     cfg.vocabulary.clone(),
                     cfg.proofread_disabled_rules.clone(),
+                    cfg.gector_sensitivity.clone(),
                     cfg.proofread_ignore_apps.clone(),
                 )
             };
             // Rule toggles changed → force a re-lint of the unchanged text.
-            if disabled_rules != last_rules {
+            if disabled_rules != last_rules || gector_sensitivity != last_sensitivity {
                 last_rules = disabled_rules.clone();
+                last_sensitivity = gector_sensitivity.clone();
                 last_text.clear();
             }
             if !enabled {
@@ -230,6 +233,7 @@ fn watcher(app: AppHandle) {
                     my_pid,
                     &vocabulary,
                     &disabled_rules,
+                    &gector_sensitivity,
                     &ignore_apps,
                     &dismissed_words,
                     &mut last_text,
@@ -269,6 +273,7 @@ fn poll_once(
     my_pid: u32,
     vocabulary: &str,
     disabled_rules: &[String],
+    gector_sensitivity: &str,
     ignore_apps: &[String],
     dismissed_words: &HashSet<String>,
     last_text: &mut String,
@@ -354,7 +359,7 @@ fn poll_once(
         }
         // Re-lint only when the text actually changed; rects refresh every poll.
         if text != *last_text {
-            *issues = proofread::check(&text, vocabulary, disabled_rules);
+            *issues = proofread::check(&text, vocabulary, disabled_rules, gector_sensitivity);
             *last_chars = text.chars().collect();
             *last_text = text;
         }

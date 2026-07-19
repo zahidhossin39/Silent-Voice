@@ -64,6 +64,7 @@ pub struct RuntimeConfig {
     pub performance_threads: u32,
     // Harper rule ids the user turned off (Settings → Inline proofreading).
     pub proofread_disabled_rules: Vec<String>,
+    pub gector_sensitivity: String,
     // Extra exe-name substrings (lowercase) where squiggles are suppressed.
     pub proofread_ignore_apps: Vec<String>,
     // Read-aloud (TTS): active Piper voice id + the hotkey that reads the
@@ -113,6 +114,7 @@ impl Default for RuntimeConfig {
             high_performance: false,
             performance_threads: 0,
             proofread_disabled_rules: Vec::new(),
+            gector_sensitivity: "balanced".into(),
             proofread_ignore_apps: Vec::new(),
             tts_voice_id: String::new(),
             tts_hotkey: "Ctrl+Alt+S".into(),
@@ -251,6 +253,7 @@ fn set_behavior(
     high_performance: bool,
     performance_threads: u32,
     proofread_disabled_rules: Vec<String>,
+    gector_sensitivity: String,
     proofread_ignore_apps: Vec<String>,
 ) -> Result<(), String> {
     let mut cfg = state.config.lock().map_err(|e| e.to_string())?;
@@ -260,6 +263,7 @@ fn set_behavior(
     cfg.high_performance = high_performance;
     cfg.performance_threads = performance_threads;
     cfg.proofread_disabled_rules = proofread_disabled_rules;
+    cfg.gector_sensitivity = gector_sensitivity;
     cfg.proofread_ignore_apps = proofread_ignore_apps
         .into_iter()
         .map(|a| a.trim().to_lowercase())
@@ -373,12 +377,12 @@ fn list_downloaded_tts() -> Vec<String> {
 /// words are never flagged (personal dictionary).
 #[tauri::command]
 async fn proofread_text(state: State<'_, AppState>, text: String) -> Result<Vec<proofread::ProofIssue>, String> {
-    let (vocabulary, disabled_rules) = state
+    let (vocabulary, disabled_rules, gector_sensitivity) = state
         .config
         .lock()
-        .map(|c| (c.vocabulary.clone(), c.proofread_disabled_rules.clone()))
+        .map(|c| (c.vocabulary.clone(), c.proofread_disabled_rules.clone(), c.gector_sensitivity.clone()))
         .unwrap_or_default();
-    tokio::task::spawn_blocking(move || proofread::check(&text, &vocabulary, &disabled_rules))
+    tokio::task::spawn_blocking(move || proofread::check(&text, &vocabulary, &disabled_rules, &gector_sensitivity))
         .await
         .map_err(|e| e.to_string())
 }

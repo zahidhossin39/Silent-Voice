@@ -33,7 +33,7 @@ pub struct ProofIssue {
 /// Check `text`, treating each word of `vocabulary` (comma/newline separated)
 /// as correctly spelled. `disabled_rules` holds Harper rule ids the user
 /// turned off in Settings (unknown ids are ignored by Harper).
-pub fn check(text: &str, vocabulary: &str, disabled_rules: &[String]) -> Vec<ProofIssue> {
+pub fn check(text: &str, vocabulary: &str, disabled_rules: &[String], gector_sensitivity: &str) -> Vec<ProofIssue> {
     let mut dict = MergedDictionary::new();
     dict.add_dictionary(FstDictionary::curated());
 
@@ -158,7 +158,7 @@ pub fn check(text: &str, vocabulary: &str, disabled_rules: &[String]) -> Vec<Pro
 
     // --- GECToR Integration ---
     if !disabled_rules.iter().any(|r| r == "Gector") {
-        let gector_edits = crate::gector::check(text);
+        let gector_edits = crate::gector::check(text, gector_sensitivity);
         for edit in gector_edits {
             let mut start = edit.start;
             let end = edit.end;
@@ -233,7 +233,7 @@ mod tests {
 
     #[test]
     fn flags_misspelling_and_respects_vocabulary() {
-        let issues = check("This is a mispelled word.", "", &[]);
+        let issues = check("This is a mispelled word.", "", &[], "balanced");
         assert!(
             issues.iter().any(|i| i.kind.contains("Spell")),
             "expected a spelling issue, got: {:?}",
@@ -241,7 +241,7 @@ mod tests {
         );
 
         // The same "word" whitelisted via vocabulary must not be flagged.
-        let issues = check("Tauri and whisper.cpp are neat.", "Tauri, whisper.cpp", &[]);
+        let issues = check("Tauri and whisper.cpp are neat.", "Tauri, whisper.cpp", &[], "balanced");
         assert!(
             !issues.iter().any(|i| i.kind.contains("Spell")),
             "vocabulary words were still flagged: {:?}",
@@ -251,14 +251,14 @@ mod tests {
 
     #[test]
     fn clean_text_has_no_issues() {
-        let issues = check("This sentence is perfectly fine.", "", &[]);
+        let issues = check("This sentence is perfectly fine.", "", &[], "balanced");
         assert!(issues.is_empty(), "unexpected issues: {:?}",
             issues.iter().map(|i| &i.message).collect::<Vec<_>>());
     }
 
     #[test]
     fn test_repeated_word_the_the() {
-        let issues = check("the the cat sat", "", &[]);
+        let issues = check("the the cat sat", "", &[], "balanced");
         let rep_issues: Vec<_> = issues.iter().filter(|i| i.kind == "Repetition").collect();
         assert_eq!(rep_issues.len(), 1);
         assert_eq!(rep_issues[0].start, 0);
@@ -268,7 +268,7 @@ mod tests {
 
     #[test]
     fn test_repeated_word_popup() {
-        let issues = check("my pop-up pop-up window", "", &[]);
+        let issues = check("my pop-up pop-up window", "", &[], "balanced");
         let rep_issues: Vec<_> = issues.iter().filter(|i| i.kind == "Repetition").collect();
         assert_eq!(rep_issues.len(), 1);
         assert_eq!(rep_issues[0].start, 3);
@@ -279,14 +279,14 @@ mod tests {
 
     #[test]
     fn test_repeated_word_clean() {
-        let issues = check("this sentence is clean", "", &[]);
+        let issues = check("this sentence is clean", "", &[], "balanced");
         let rep_issues: Vec<_> = issues.iter().filter(|i| i.kind == "Repetition").collect();
         assert!(rep_issues.is_empty());
     }
 
     #[test]
     fn test_repeated_word_case_insensitive() {
-        let issues = check("The the cat sat", "", &[]);
+        let issues = check("The the cat sat", "", &[], "balanced");
         let rep_issues: Vec<_> = issues.iter().filter(|i| i.kind == "Repetition").collect();
         assert_eq!(rep_issues.len(), 1);
         assert_eq!(rep_issues[0].start, 0);
@@ -301,7 +301,7 @@ mod tests {
     fn long_sentences_do_not_produce_lint() {
         // A sentence with more than 50 words should not produce a "sentence is X words long" lint.
         let long_sentence = "This is a very long sentence that has a lot of words to ensure that it exceeds the default long sentence threshold of fifty words which would normally trigger the long sentence style lint from harper core but since we disabled it there should be no issues at all in this text.";
-        let issues = check(long_sentence, "", &[]);
+        let issues = check(long_sentence, "", &[], "balanced");
         let long_sentence_issues: Vec<_> = issues
             .iter()
             .filter(|i| i.message.contains("words long"))
@@ -316,7 +316,7 @@ mod tests {
     #[test]
     fn test_insertion_suggestion() {
         // The Oxford comma lint uses InsertAfter.
-        let issues = check("I like apples, oranges and bananas.", "", &[]);
+        let issues = check("I like apples, oranges and bananas.", "", &[], "balanced");
         let comma_issues: Vec<_> = issues
             .iter()
             .filter(|i| i.message.contains("Oxford comma"))
@@ -337,6 +337,7 @@ mod tests {
             "I like apples, oranges and bananas.",
             "",
             &["OxfordComma".to_string()],
+            "balanced",
         );
         assert!(
             !issues.iter().any(|i| i.message.contains("Oxford comma")),
@@ -346,7 +347,7 @@ mod tests {
 
     #[test]
     fn test_filler_words_trailing_space() {
-        let issues = check("um I think we should go", "", &[]);
+        let issues = check("um I think we should go", "", &[], "balanced");
         let filler_issues: Vec<_> = issues.iter().filter(|i| i.kind == "Filler").collect();
         assert_eq!(filler_issues.len(), 1);
         assert_eq!(filler_issues[0].start, 0);
@@ -356,22 +357,22 @@ mod tests {
 
     #[test]
     fn test_filler_words_substring_safety() {
-        let issues = check("the drum is loud", "", &[]);
+        let issues = check("the drum is loud", "", &[], "balanced");
         assert!(!issues.iter().any(|i| i.kind == "Filler"));
         
-        let issues2 = check("give him a hug", "", &[]);
+        let issues2 = check("give him a hug", "", &[], "balanced");
         assert!(!issues2.iter().any(|i| i.kind == "Filler"));
     }
 
     #[test]
     fn test_filler_words_whitelisted() {
-        let issues = check("um", "um", &[]);
+        let issues = check("um", "um", &[], "balanced");
         assert!(!issues.iter().any(|i| i.kind == "Filler"));
     }
 
     #[test]
     fn test_filler_words_case_and_punctuation() {
-        let issues = check("Um, let me think", "", &[]);
+        let issues = check("Um, let me think", "", &[], "balanced");
         let filler_issues: Vec<_> = issues.iter().filter(|i| i.kind == "Filler").collect();
         assert_eq!(filler_issues.len(), 1);
         assert_eq!(filler_issues[0].start, 0);

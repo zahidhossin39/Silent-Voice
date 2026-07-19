@@ -185,6 +185,7 @@ export async function setBehavior(
   highPerformance: boolean,
   performanceThreads: number,
   proofreadDisabledRules: string[],
+  gectorSensitivity: string,
   proofreadIgnoreApps: string[]
 ): Promise<void> {
   if (!isTauri()) return;
@@ -196,6 +197,7 @@ export async function setBehavior(
       highPerformance,
       performanceThreads,
       proofreadDisabledRules,
+      gectorSensitivity,
       proofreadIgnoreApps,
     });
   } catch (e) {

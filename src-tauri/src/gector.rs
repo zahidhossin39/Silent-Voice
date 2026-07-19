@@ -158,7 +158,13 @@ fn is_agreement_blocked(word: &str) -> bool {
     word.chars().count() < 3 || BLOCK.contains(&word.to_lowercase().as_str())
 }
 
-pub fn check(text: &str) -> Vec<GectorEdit> {
+pub fn check(text: &str, sensitivity: &str) -> Vec<GectorEdit> {
+    let (label_thresh, gate_thresh) = match sensitivity {
+        "relaxed" => (0.60, 0.60),
+        "aggressive" => (0.30, 0.40),
+        _ => (0.45, 0.50), // "balanced" default
+    };
+
     let mut edits = Vec::new();
     let gector = GECTOR.get_or_init(init_gector);
 
@@ -351,7 +357,7 @@ pub fn check(text: &str) -> Vec<GectorEdit> {
                         max_incorrect = max_incorrect.max(e1 / (e0 + e1));
                     }
                 }
-                if max_incorrect < 0.5 {
+                if max_incorrect < gate_thresh {
                     get_cache().lock().map(|mut c| c.insert(sentence_text.clone(), Vec::new())).ok();
                     continue;
                 }
@@ -398,7 +404,7 @@ pub fn check(text: &str) -> Vec<GectorEdit> {
                 // 0.45 threshold tuned against this checkpoint (README's 0.2
                 // bias + 0.5 was tuned for grammarly's own weights and
                 // rejects real errors like "go"->"goes" at 0.47).
-                if best_idx == keep_idx || tag == "<OOV>" || best_prob < 0.45 {
+                if best_idx == keep_idx || tag == "<OOV>" || best_prob < label_thresh {
                     continue;
                 }
 
@@ -580,14 +586,14 @@ mod tests {
 
     #[test]
     fn test_gector_inference() {
-        let edits = check("I have alot of work .");
+        let edits = check("I have alot of work .", "balanced");
         if GECTOR.get().is_some() && GECTOR.get().unwrap().is_some() {
             assert!(!edits.is_empty(), "expected some edit for alot");
         } else {
             println!("test_gector_inference skip: model missing");
         }
 
-        let clean = check("This sentence is perfectly fine.");
+        let clean = check("This sentence is perfectly fine.", "balanced");
         if GECTOR.get().is_some() && GECTOR.get().unwrap().is_some() {
             assert!(clean.is_empty(), "expected no edits for clean text");
         }
@@ -599,7 +605,7 @@ mod tests {
         // wrong word ("is" -> "ises" garbage). With tokenizer-derived words,
         // the flagged range must exactly cover the offending word.
         let text = "I know, I have alot of work.";
-        let edits = check(text);
+        let edits = check(text, "balanced");
         if GECTOR.get().map(|g| g.is_some()) != Some(true) {
             println!("test_punctuation_alignment skip: model missing");
             return;
@@ -613,7 +619,7 @@ mod tests {
 
         // The user's real sentence that produced "is" -> "ises".
         let text2 = "the underlying is not appearing smoothly, I mean it should be smooth.";
-        let edits2 = check(text2);
+        let edits2 = check(text2, "balanced");
         assert!(
             !edits2.iter().any(|e| e.replacement.contains("ises")),
             "agreement garbage returned: {:?}",

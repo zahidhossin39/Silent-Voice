@@ -242,6 +242,26 @@ export default function Settings() {
                   onChange={(v) => toggleProofreadRule("Gector", v)}
                 />
               </Row>
+              {!settings.proofread_disabled_rules.includes("Gector") && (
+                <Row
+                  label="Sensitivity"
+                  hint="How eager the grammar AI is to flag mistakes. Aggressive finds more but makes more false alarms."
+                >
+                  <select
+                    value={settings.gector_sensitivity}
+                    onChange={(e) =>
+                      setSettings({
+                        gector_sensitivity: e.target.value as "relaxed" | "balanced" | "aggressive",
+                      })
+                    }
+                    className="w-56 rounded-lg border border-sv-border bg-sv-bg px-3 py-2 text-sm"
+                  >
+                    <option value="relaxed">Relaxed</option>
+                    <option value="balanced">Balanced</option>
+                    <option value="aggressive">Aggressive</option>
+                  </select>
+                </Row>
+              )}
               <div className="py-3.5">
                 <div className="text-sm">Don't check in these apps</div>
                 <div className="mt-0.5 text-xs text-sv-muted">
