@@ -55,12 +55,12 @@ const IGNORE_EXES: &[&str] = &[
     "bitwarden.exe",
 ];
 const MAX_TEXT: i32 = 6000;
-const POLL_MS: u64 = 400;
+const POLL_MS: u64 = 250;
 // Backoff when nothing has changed for IDLE_AFTER_POLLS cycles (~2s):
 // squiggle positions and text are stable, so poll gently until the focused
 // window changes or something moves again.
 const IDLE_POLL_MS: u64 = 1200;
-const IDLE_AFTER_POLLS: u32 = 5;
+const IDLE_AFTER_POLLS: u32 = 8;
 
 pub fn start(app: AppHandle) {
     std::thread::spawn(move || watcher(app));
@@ -467,11 +467,16 @@ fn apply_fix(
         for key in [Key::Control, Key::Shift, Key::Alt] {
             let _ = enigo.key(key, Release);
         }
-        // Type char-by-char with a small gap: web apps drop synthetic input
-        // that arrives faster than their event loop reconciles.
-        for ch in replacement.chars() {
-            enigo.text(&ch.to_string()).map_err(|e| e.to_string())?;
-            std::thread::sleep(Duration::from_millis(8));
+        
+        if replacement.is_empty() {
+            enigo.key(Key::Delete, enigo::Direction::Click).map_err(|e| e.to_string())?;
+        } else {
+            // Type char-by-char with a small gap: web apps drop synthetic input
+            // that arrives faster than their event loop reconciles.
+            for ch in replacement.chars() {
+                enigo.text(&ch.to_string()).map_err(|e| e.to_string())?;
+                std::thread::sleep(Duration::from_millis(8));
+            }
         }
         Ok(())
     }

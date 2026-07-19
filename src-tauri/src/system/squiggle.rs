@@ -436,6 +436,34 @@ unsafe fn render_popup(hwnd: HWND, x: i32, y: i32) {
 
 // ---------------------------- overlay thread ----------------------------
 
+struct StripState {
+    hwnd: HWND,
+    x: i32,
+    y: i32,
+    w: i32,
+    color: u32,
+    alpha: i32,
+    bmp_w: i32,
+    bmp_color: u32,
+    hbitmap: Option<HBITMAP>,
+}
+
+impl StripState {
+    fn new(hwnd: HWND) -> Self {
+        Self {
+            hwnd,
+            x: -1,
+            y: -1,
+            w: -1,
+            color: 0,
+            alpha: 0,
+            bmp_w: 0,
+            bmp_color: 0,
+            hbitmap: None,
+        }
+    }
+}
+
 struct Popup {
     hwnd: HWND,
     rect: RECT,
@@ -488,7 +516,7 @@ fn run(rx: &Receiver<Vec<SquiggleInfo>>, action_tx: &Sender<OverlayAction>) {
             }
         };
 
-        let mut pool: Vec<HWND> = Vec::new();
+        let mut pool: Vec<StripState> = Vec::new();
         let mut infos: Vec<SquiggleInfo> = Vec::new();
         let mut drawn: Vec<SquiggleInfo> = Vec::new();
         let mut popup = Popup { hwnd: popup_hwnd, rect: RECT::default(), info_idx: 0, shown: false };
@@ -509,7 +537,7 @@ fn run(rx: &Receiver<Vec<SquiggleInfo>>, action_tx: &Sender<OverlayAction>) {
             }
             if let Some(new_infos) = latest {
                 if new_infos != drawn {
-                    apply(&mut pool, hinst.into(), squiggle_class, &new_infos);
+                    apply(&mut pool, hinst.into(), squiggle_class, &new_infos, &drawn);
                     drawn = new_infos.clone();
                     // The world moved under the popup — hide it.
                     if popup.shown && !popup_still_valid(&popup, &new_infos, &infos) {
@@ -518,6 +546,14 @@ fn run(rx: &Receiver<Vec<SquiggleInfo>>, action_tx: &Sender<OverlayAction>) {
                     }
                 }
                 infos = new_infos;
+            }
+
+            // Animate fading strips
+            for state in pool.iter_mut() {
+                if state.alpha > 0 && state.alpha < 255 {
+                    state.alpha = (state.alpha + 50).min(255);
+                    draw_squiggle(state);
+                }
             }
 
             // Suggestion click?
@@ -717,10 +753,11 @@ unsafe fn hide_popup(popup: &mut Popup) {
 // ------------------------- squiggle strip drawing -------------------------
 
 unsafe fn apply(
-    pool: &mut Vec<HWND>,
+    pool: &mut Vec<StripState>,
     hinst: windows::Win32::Foundation::HINSTANCE,
     class_name: windows::core::PCWSTR,
     squiggles: &[SquiggleInfo],
+    drawn: &[SquiggleInfo],
 ) {
     let show = squiggles.len().min(MAX_SQUIGGLES);
     while pool.len() < show {
@@ -738,7 +775,7 @@ unsafe fn apply(
             hinst,
             None,
         ) {
-            Ok(hwnd) => pool.push(hwnd),
+            Ok(hwnd) => pool.push(StripState::new(hwnd)),
             Err(e) => {
                 crate::logging::log_error("squiggle", &format!("strip CreateWindowExW: {e}"));
                 return;
@@ -748,72 +785,104 @@ unsafe fn apply(
     for (i, s) in squiggles.iter().take(show).enumerate() {
         let w = s.w.clamp(4, 600);
         let strip_y = s.y + s.h - 2;
-        draw_squiggle(pool[i], s.x, strip_y, w, if s.spelling { RED } else { BLUE });
-        let _ = ShowWindow(pool[i], SW_SHOWNOACTIVATE);
+        let color = if s.spelling { RED } else { BLUE };
+        
+        let is_new = !drawn.iter().any(|d| {
+            d.x == s.x && (d.y + d.h - 2) == strip_y && d.w.clamp(4, 600) == w && (if d.spelling { RED } else { BLUE }) == color
+        });
+        
+        let state = &mut pool[i];
+        let new_alpha = if is_new { 55 } else {
+            if state.x == s.x && state.y == strip_y && state.w == w && state.color == color {
+                state.alpha
+            } else {
+                255
+            }
+        };
+
+        if state.x != s.x || state.y != strip_y || state.w != w || state.color != color || state.alpha != new_alpha {
+            state.x = s.x;
+            state.y = strip_y;
+            state.w = w;
+            state.color = color;
+            state.alpha = new_alpha;
+            draw_squiggle(state);
+            let _ = ShowWindow(state.hwnd, SW_SHOWNOACTIVATE);
+        }
     }
-    for hwnd in pool.iter().skip(show) {
-        let _ = ShowWindow(*hwnd, SW_HIDE);
+    for state in pool.iter_mut().skip(show) {
+        if state.alpha != 0 {
+            let _ = ShowWindow(state.hwnd, SW_HIDE);
+            state.alpha = 0;
+            state.x = -1; // invalidate so it re-draws next time
+        }
     }
 }
 
 /// Render a zigzag wave into a 32bpp premultiplied-alpha DIB and push it to
 /// the layered window at screen position (x, y).
-unsafe fn draw_squiggle(hwnd: HWND, x: i32, y: i32, w: i32, color: u32) {
-    let h = SQUIGGLE_H;
-    let bi = BITMAPINFO {
-        bmiHeader: BITMAPINFOHEADER {
-            biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
-            biWidth: w,
-            biHeight: -h, // top-down
-            biPlanes: 1,
-            biBitCount: 32,
-            biCompression: BI_RGB.0,
-            ..Default::default()
-        },
-        ..Default::default()
-    };
+unsafe fn draw_squiggle(state: &mut StripState) {
     let screen = GetDC(None);
     let memdc = CreateCompatibleDC(screen);
-    let mut bits: *mut std::ffi::c_void = std::ptr::null_mut();
-    let bmp: HBITMAP = match CreateDIBSection(memdc, &bi, DIB_RGB_COLORS, &mut bits, None, 0) {
-        Ok(b) => b,
-        Err(_) => {
+
+    if state.hbitmap.is_none() || state.bmp_w != state.w || state.bmp_color != state.color {
+        if let Some(h) = state.hbitmap {
+            let _ = DeleteObject(h);
+        }
+        let h = SQUIGGLE_H;
+        let bi = BITMAPINFO {
+            bmiHeader: BITMAPINFOHEADER {
+                biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+                biWidth: state.w,
+                biHeight: -h, // top-down
+                biPlanes: 1,
+                biBitCount: 32,
+                biCompression: BI_RGB.0,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut bits: *mut std::ffi::c_void = std::ptr::null_mut();
+        if let Ok(bmp) = CreateDIBSection(memdc, &bi, DIB_RGB_COLORS, &mut bits, None, 0) {
+            let px = std::slice::from_raw_parts_mut(bits as *mut u32, (state.w * h) as usize);
+            px.fill(0);
+            for cx in 0..state.w {
+                px[cx as usize] = state.color;
+                px[(state.w + cx) as usize] = state.color;
+                px[(2 * state.w + cx) as usize] = state.color;
+            }
+            state.hbitmap = Some(bmp);
+            state.bmp_w = state.w;
+            state.bmp_color = state.color;
+        } else {
             let _ = DeleteDC(memdc);
             ReleaseDC(None, screen);
             return;
         }
-    };
-    let old = SelectObject(memdc, bmp);
-
-    let px = std::slice::from_raw_parts_mut(bits as *mut u32, (w * h) as usize);
-    px.fill(0);
-    // Straight line: 3px thick, drawn on the top 3 rows (rows 0, 1 and 2), full width.
-    for cx in 0..w {
-        px[cx as usize] = color;
-        px[(w + cx) as usize] = color;
-        px[(2 * w + cx) as usize] = color;
     }
 
-    let blend = BLENDFUNCTION {
-        BlendOp: AC_SRC_OVER as u8,
-        SourceConstantAlpha: 255,
-        AlphaFormat: AC_SRC_ALPHA as u8,
-        ..Default::default()
-    };
-    let _ = UpdateLayeredWindow(
-        hwnd,
-        screen,
-        Some(&POINT { x, y }),
-        Some(&SIZE { cx: w, cy: h }),
-        memdc,
-        Some(&POINT { x: 0, y: 0 }),
-        COLORREF(0),
-        Some(&blend),
-        ULW_ALPHA,
-    );
-
-    SelectObject(memdc, old);
-    let _ = DeleteObject(bmp);
+    if let Some(bmp) = state.hbitmap {
+        let old = SelectObject(memdc, bmp);
+        let blend = BLENDFUNCTION {
+            BlendOp: AC_SRC_OVER as u8,
+            SourceConstantAlpha: state.alpha as u8,
+            AlphaFormat: AC_SRC_ALPHA as u8,
+            ..Default::default()
+        };
+        let _ = UpdateLayeredWindow(
+            state.hwnd,
+            screen,
+            Some(&POINT { x: state.x, y: state.y }),
+            Some(&SIZE { cx: state.w, cy: SQUIGGLE_H }),
+            memdc,
+            Some(&POINT { x: 0, y: 0 }),
+            COLORREF(0),
+            Some(&blend),
+            ULW_ALPHA,
+        );
+        SelectObject(memdc, old);
+    }
+    
     let _ = DeleteDC(memdc);
     ReleaseDC(None, screen);
 }
