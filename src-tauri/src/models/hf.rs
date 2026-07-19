@@ -12,6 +12,8 @@ pub struct HfSearchItem {
     pub tags: Vec<String>,
     pub pipeline_tag: Option<String>,
     pub gated: bool,
+    pub params_b: Option<f64>,
+    pub siblings_gguf: u32,
 }
 
 fn deserialize_gated<'de, D>(deserializer: D) -> Result<bool, D::Error>
@@ -115,25 +117,34 @@ pub async fn hf_search_models(
     let sort_val = match sort.as_str() {
         "likes" => "likes",
         "lastModified" => "lastModified",
+        "trending" => "trendingScore",
         _ => "downloads",
     };
 
-    let search_q = if query.trim().is_empty() {
-        "whisper.cpp".to_string()
-    } else {
-        format!("{} whisper.cpp", query)
-    };
+    let is_empty = query.trim().is_empty();
 
     let url = if track == "stt" {
+        let search_q = if is_empty {
+            "whisper.cpp".to_string()
+        } else {
+            format!("{} whisper.cpp", query)
+        };
         format!(
             "https://huggingface.co/api/models?search={}&sort={}&direction=-1&limit={}&full=true",
             urlencoding::encode(&search_q), sort_val, limit
         )
     } else {
-        format!(
-            "https://huggingface.co/api/models?search={}&filter=gguf&sort={}&direction=-1&limit={}&full=true",
-            urlencoding::encode(&query), sort_val, limit
-        )
+        if is_empty {
+            format!(
+                "https://huggingface.co/api/models?filter=gguf&sort={}&direction=-1&limit={}&full=true",
+                sort_val, limit
+            )
+        } else {
+            format!(
+                "https://huggingface.co/api/models?search={}&filter=gguf&sort={}&direction=-1&limit={}&full=true",
+                urlencoding::encode(&query), sort_val, limit
+            )
+        }
     };
 
     let client = get_client()?;
@@ -142,23 +153,42 @@ pub async fn hf_search_models(
 
     let mut items = Vec::new();
     for val in raw_items {
-        if track == "stt" {
-            let mut has_bin = false;
-            if let Some(siblings) = val.get("siblings").and_then(|v| v.as_array()) {
-                for sib in siblings {
-                    if let Some(rfilename) = sib.get("rfilename").and_then(|v| v.as_str()) {
-                        let basename = rfilename.rsplit('/').next().unwrap_or(rfilename);
+        let mut params_b = None;
+        if let Some(gguf) = val.get("gguf") {
+            if let Some(p) = gguf.get("parameters").or_else(|| gguf.get("total")).and_then(|v| v.as_f64()) {
+                params_b = Some((p / 1_000_000_000.0 * 10.0).round() / 10.0);
+            }
+        }
+        if params_b.is_none() {
+            if let Some(st) = val.get("safetensors") {
+                if let Some(p) = st.get("total").and_then(|v| v.as_f64()) {
+                    params_b = Some((p / 1_000_000_000.0 * 10.0).round() / 10.0);
+                }
+            }
+        }
+
+        let mut siblings_gguf = 0;
+        if let Some(siblings) = val.get("siblings").and_then(|v| v.as_array()) {
+            for sib in siblings {
+                if let Some(rfilename) = sib.get("rfilename").and_then(|v| v.as_str()) {
+                    let basename = rfilename.rsplit('/').next().unwrap_or(rfilename);
+                    if track == "stt" {
                         if basename.starts_with("ggml-") && basename.ends_with(".bin") {
-                            has_bin = true;
-                            break;
+                            siblings_gguf += 1;
+                        }
+                    } else {
+                        if rfilename.ends_with(".gguf") {
+                            siblings_gguf += 1;
                         }
                     }
                 }
             }
-            if !has_bin {
-                continue;
-            }
         }
+
+        if siblings_gguf == 0 {
+            continue;
+        }
+
         if let Ok(raw) = serde_json::from_value::<HfSearchItemRaw>(val.clone()) {
             items.push(HfSearchItem {
                 id: raw.id,
@@ -168,6 +198,8 @@ pub async fn hf_search_models(
                 tags: raw.tags,
                 pipeline_tag: raw.pipeline_tag,
                 gated: raw.gated,
+                params_b,
+                siblings_gguf,
             });
         }
     }
@@ -386,6 +418,10 @@ mod tests {
         assert!(!items.is_empty(), "search returned no GGUF repos");
         assert!(items[0].downloads > 0, "downloads missing: {:?}", items[0].id);
         assert!(!items[0].last_modified.is_empty(), "lastModified missing");
+
+        let browse_items = hf_search_models("".into(), "trending".into(), 5, "llm".into()).await.expect("browse failed");
+        assert!(!browse_items.is_empty(), "browse returned no GGUF repos");
+        assert!(browse_items[0].siblings_gguf > 0);
 
         let details = hf_model_details(items[0].id.clone(), "llm".into()).await.expect("details failed");
         assert!(!details.files.is_empty(), "no gguf files with sizes for {}", details.id);

@@ -60,6 +60,7 @@ const DEFAULT_SETTINGS: Settings = {
   pinned_stt: [],
   pinned_llm: [],
   pinned_tts: [],
+  hf_show_incompatible: false,
 };
 
 interface SettingsState {

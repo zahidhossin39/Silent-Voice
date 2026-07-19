@@ -35,6 +35,20 @@ function getFit(sizeBytes: number, hw: HardwareInfo | null) {
   return "bad";
 }
 
+function estimateFitFromParams(params_b: number | null, hw: HardwareInfo | null, repoName?: string) {
+  if (!hw) return null;
+  let p = params_b;
+  if (p === null && repoName) {
+    const m = repoName.match(/(\d+(?:\.\d+)?)\s*[bB]\b/);
+    if (m) p = parseFloat(m[1]);
+  }
+  if (p === null) return null;
+  const estRamGb = p * 0.6 * 1.2;
+  if (estRamGb < hw.available_ram_gb * 0.8) return "good";
+  if (estRamGb < hw.available_ram_gb) return "warn";
+  return "bad";
+}
+
 const FIT_DOT = {
   good: "bg-sv-good",
   warn: "bg-sv-warn",
@@ -103,6 +117,40 @@ export default function HfBrowser({ track, categoryFilter, languageFilter }: { t
   const togglePinned = useSettingsStore((s) => track === "stt" ? s.togglePinnedStt : s.togglePinnedLlm);
   const pinnedSet = useMemo(() => new Set(pinnedArr || []), [pinnedArr]);
 
+  const hfShowIncompatible = useSettingsStore((s) => s.settings.hf_show_incompatible);
+  const setSettings = useSettingsStore((s) => s.setSettings);
+
+  const downloadedLlm = useModelStore((s) => s.downloadedLlm);
+  const downloadedStt = useModelStore((s) => s.downloaded);
+  const modes = useSettingsStore((s) => s.modes);
+  const activeStt = useSettingsStore((s) => s.settings.active_stt_model);
+  const usingCloudStt = useSettingsStore((s) => s.settings.stt_cloud_provider_id);
+
+  const isModelInUse = (id: string, isHf: boolean = false) => {
+    if (!isHf) {
+      if (track === "llm") {
+        return modes.some((m) => m.model_source === "local" && m.model_id === id);
+      }
+      return !usingCloudStt && activeStt === id;
+    }
+    // HF rows only know the repo id, not the downloaded file stem — loose match.
+    const searchId = (id.split("/").pop() || id).toLowerCase();
+    if (track === "llm") {
+      return modes.some((m) => m.model_source === "local" && m.model_id.toLowerCase().includes(searchId));
+    }
+    return !usingCloudStt && !!activeStt?.toLowerCase().includes(searchId);
+  };
+
+  const isModelDownloaded = (id: string, isHf: boolean = false) => {
+    const searchId = isHf ? (id.split("/").pop() || id).toLowerCase() : id;
+    const set = track === "llm" ? downloadedLlm : downloadedStt;
+    if (!isHf) return set.has(id);
+    for (const downloadedId of set) {
+      if (downloadedId.toLowerCase().includes(searchId)) return true;
+    }
+    return false;
+  };
+
   // Debounce query
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -113,12 +161,6 @@ export default function HfBrowser({ track, categoryFilter, languageFilter }: { t
 
   // Fetch search results
   useEffect(() => {
-    if (!debouncedQuery) {
-      setSearchResults([]);
-      setSearchError(null);
-      return;
-    }
-    
     let active = true;
     setLoadingSearch(true);
     setSearchError(null);
@@ -137,7 +179,7 @@ export default function HfBrowser({ track, categoryFilter, languageFilter }: { t
       });
       
     return () => { active = false; };
-  }, [debouncedQuery, sort]);
+  }, [debouncedQuery, sort, track]);
 
   // Fetch details
   useEffect(() => {
@@ -164,6 +206,42 @@ export default function HfBrowser({ track, categoryFilter, languageFilter }: { t
     }
   }, [selectedType, selectedHfId]);
 
+  const sortStaffPicks = (a: any, b: any) => {
+    const getScore = (m: any) => {
+      let score = 0;
+      if (isModelInUse(m.id, false)) score += 1000;
+      if (pinnedSet.has(m.id)) score += 100;
+      if (isModelDownloaded(m.id, false)) score += 10;
+      return score;
+    };
+    return getScore(b) - getScore(a);
+  };
+
+  const sortHfResults = (a: HfSearchItem, b: HfSearchItem) => {
+    const getScore = (m: HfSearchItem) => {
+      let score = 0;
+      if (isModelInUse(m.id, true)) score += 1000;
+      if (pinnedSet.has(m.id)) score += 100;
+      if (isModelDownloaded(m.id, true)) score += 10;
+      return score;
+    };
+    return getScore(b) - getScore(a);
+  };
+
+  const staffPicksRaw = track === "stt" ? STT_MODELS.filter(m => {
+    if (categoryFilter && categoryFilter !== "all" && m.preset !== categoryFilter) return false;
+    if (languageFilter && languageFilter !== "all" && sttLanguage(m) !== languageFilter) return false;
+    return true;
+  }) : LLM_MODELS;
+  
+  const staffPicksSorted = [...staffPicksRaw].sort(sortStaffPicks);
+  
+  const hfResultsVisible = searchResults.filter(item => {
+    if (hfShowIncompatible) return true;
+    const fit = estimateFitFromParams(item.params_b, hardware, item.id.split("/")[1]);
+    return fit !== "bad";
+  }).sort(sortHfResults);
+
   return (
     <div className="flex h-[calc(100vh-140px)] w-full gap-4">
       {/* Left Pane - Search & List */}
@@ -180,26 +258,33 @@ export default function HfBrowser({ track, categoryFilter, languageFilter }: { t
             <select
               value={sort}
               onChange={(e) => setSort(e.target.value)}
-              className="rounded-lg border border-sv-border bg-sv-bg px-2 py-1 text-xs text-sv-text disabled:opacity-50"
-              disabled={!debouncedQuery}
+              className="rounded-lg border border-sv-border bg-sv-bg px-2 py-1 text-xs text-sv-text"
             >
               <option value="downloads">Best Match / Downloads</option>
               <option value="likes">Most Likes</option>
+              <option value="trending">Trending</option>
               <option value="lastModified">Recently Updated</option>
             </select>
+            <label className="flex items-center gap-1.5 text-xs text-sv-muted cursor-pointer">
+              <input 
+                type="checkbox" 
+                checked={hfShowIncompatible}
+                onChange={(e) => setSettings({ hf_show_incompatible: e.target.checked })}
+                className="rounded border-sv-border bg-sv-surface-2 text-sv-accent focus:ring-sv-accent"
+              />
+              Show incompatible
+            </label>
           </div>
         </div>
         
         <div className="flex-1 overflow-y-auto p-2">
-          {!debouncedQuery ? (
-            // Staff Picks
-            <div className="flex flex-col gap-1">
-              {(track === "stt" ? STT_MODELS.filter(m => {
-                if (categoryFilter && categoryFilter !== "all" && m.preset !== categoryFilter) return false;
-                if (languageFilter && languageFilter !== "all" && sttLanguage(m) !== languageFilter) return false;
-                return true;
-              }) : LLM_MODELS).map((m: any) => {
+          {!debouncedQuery && (
+            <div className="mb-4 flex flex-col gap-1">
+              <h3 className="px-2 pb-1 text-xs font-medium uppercase tracking-wide text-sv-muted">Staff Picks</h3>
+              {staffPicksSorted.map((m: any) => {
                 const isSelected = selectedType === "catalog" && selectedCatalogId === m.id;
+                const inUse = isModelInUse(m.id, false);
+                const fit = track === "llm" ? llmCompatibility(m, hardware).level : getFit(m.ram_mb * 1024 * 1024, hardware);
                 return (
                   <button
                     key={m.id}
@@ -211,15 +296,17 @@ export default function HfBrowser({ track, categoryFilter, languageFilter }: { t
                     <ProviderLogo provider={m.provider} size={32} />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
+                        {fit && <span className={`shrink-0 h-2 w-2 rounded-full ${(FIT_DOT as any)[fit]}`} />}
                         <h4 className="truncate text-sm font-medium">{m.name || m.label}</h4>
                       </div>
                       <p className="mt-0.5 truncate text-[11px] text-sv-muted">
                         {m.provider} · {m.params || m.speed_label} · {formatMB(m.size_mb)}
                       </p>
-                      <div className="mt-1 flex items-center gap-1.5">
+                      <div className="mt-1 flex flex-wrap items-center gap-1.5">
                         <span className="rounded-full bg-sv-accent/10 px-1.5 py-0.5 text-[9px] font-medium text-sv-accent">
                           Staff Pick
                         </span>
+                        {inUse && <span className="rounded-full bg-sv-good/10 px-1.5 py-0.5 text-[9px] font-medium text-sv-good">In use</span>}
                         {pinnedSet.has(m.id) && <span className="text-[10px] text-sv-accent">★ Pinned</span>}
                       </div>
                     </div>
@@ -227,32 +314,36 @@ export default function HfBrowser({ track, categoryFilter, languageFilter }: { t
                 );
               })}
             </div>
-          ) : loadingSearch ? (
-            <div className="flex flex-col gap-2 p-2">
-              {[1, 2, 3, 4].map((i) => (
-                <div key={i} className="flex h-[72px] animate-pulse items-center gap-3 rounded-lg bg-sv-surface-2 p-2.5">
-                  <div className="h-8 w-8 rounded-full bg-sv-border"></div>
-                  <div className="flex-1 space-y-2">
-                    <div className="h-3 w-3/4 rounded bg-sv-border"></div>
-                    <div className="h-2 w-1/2 rounded bg-sv-border"></div>
+          )}
+
+          <div className="flex flex-col gap-1">
+            {!debouncedQuery && <h3 className="px-2 pb-1 pt-2 text-xs font-medium uppercase tracking-wide text-sv-muted">Trending on Hugging Face</h3>}
+            
+            {loadingSearch ? (
+              <div className="flex flex-col gap-2 p-2">
+                {[1, 2, 3, 4].map((i) => (
+                  <div key={i} className="flex h-[72px] animate-pulse items-center gap-3 rounded-lg bg-sv-surface-2 p-2.5">
+                    <div className="h-8 w-8 rounded-full bg-sv-border"></div>
+                    <div className="flex-1 space-y-2">
+                      <div className="h-3 w-3/4 rounded bg-sv-border"></div>
+                      <div className="h-2 w-1/2 rounded bg-sv-border"></div>
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          ) : searchError ? (
-            <div className="p-4 text-center text-sm text-sv-bad">{searchError}</div>
-          ) : searchResults.length === 0 ? (
-            <div className="p-4 text-center text-sm text-sv-muted">No models found.</div>
-          ) : (
-            // HF Search Results
-            <div className="flex flex-col gap-1">
-              {searchResults.map((item) => {
+                ))}
+              </div>
+            ) : searchError ? (
+              <div className="p-2 text-sm text-sv-muted text-center">{!debouncedQuery ? "Hugging Face unreachable" : searchError}</div>
+            ) : hfResultsVisible.length === 0 ? (
+              <div className="p-4 text-center text-sm text-sv-muted">No models found.</div>
+            ) : (
+              hfResultsVisible.map((item) => {
                 const isSelected = selectedType === "hf" && selectedHfId === item.id;
                 const [owner, name] = item.id.split("/");
-                // Capability heuristics based on tags/pipeline
                 const isVision = item.tags?.includes("vision") || item.tags?.includes("multimodal") || item.pipeline_tag === "image-text-to-text";
                 const isToolUse = item.tags?.includes("tool-use") || item.tags?.includes("function-calling");
                 const isReasoning = item.tags?.includes("reasoning") || item.tags?.includes("thinking");
+                const inUse = isModelInUse(item.id, true);
+                const fit = estimateFitFromParams(item.params_b, hardware, name);
 
                 return (
                   <button
@@ -264,13 +355,15 @@ export default function HfBrowser({ track, categoryFilter, languageFilter }: { t
                   >
                     <ProviderLogo provider={owner} size={32} />
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        {fit && <span className={`shrink-0 h-2 w-2 rounded-full ${(FIT_DOT as any)[fit]}`} />}
                         <h4 className="truncate text-sm font-medium" title={name}>{name}</h4>
                       </div>
                       <p className="mt-0.5 truncate text-[11px] text-sv-muted" title={owner}>
                         {owner} · ↓{item.downloads.toLocaleString()} · {formatNdaysAgo(item.last_modified)}
                       </p>
-                      <div className="mt-1.5 flex flex-wrap gap-1">
+                      <div className="mt-1.5 flex flex-wrap gap-1 items-center">
+                        {inUse && <span className="rounded bg-sv-good/10 px-1 py-0.5 text-[9px] text-sv-good">In use</span>}
                         {isVision && <span className="rounded bg-sv-surface-2 px-1 py-0.5 text-[9px] text-sv-muted">Vision</span>}
                         {isToolUse && <span className="rounded bg-sv-surface-2 px-1 py-0.5 text-[9px] text-sv-muted">Tools</span>}
                         {isReasoning && <span className="rounded bg-sv-surface-2 px-1 py-0.5 text-[9px] text-sv-muted">Think</span>}
@@ -278,9 +371,9 @@ export default function HfBrowser({ track, categoryFilter, languageFilter }: { t
                     </div>
                   </button>
                 );
-              })}
-            </div>
-          )}
+              })
+            )}
+          </div>
         </div>
       </div>
 
@@ -484,6 +577,9 @@ function CatalogDetail({
   const download = useModelStore((s) => s.downloadLlm);
   const remove = useModelStore((s) => s.removeLlm);
 
+  const modes = useSettingsStore((s) => s.modes);
+  const inUse = modes.some(m => m.model_source === "local" && m.model_id === model.id);
+
   const level = llmCompatibility(model, hardware).level;
   const isDownloading = progress?.status === "downloading";
   const pct =
@@ -550,14 +646,21 @@ function CatalogDetail({
                 <span className="w-8 text-right text-xs text-sv-muted">{pct}%</span>
               </div>
             ) : downloaded ? (
-              <div className="flex items-center gap-3">
-                <span className="text-xs font-medium text-sv-good">Installed</span>
-                <button
-                  onClick={() => remove(model.id)}
-                  className="rounded-lg border border-sv-border bg-sv-surface px-3 py-1.5 text-xs text-sv-bad hover:bg-sv-surface-2"
-                >
-                  Remove
-                </button>
+              <div className="flex flex-col items-end gap-1">
+                <div className="flex items-center gap-3">
+                  {inUse ? (
+                    <span className="text-xs font-medium text-sv-good">In use</span>
+                  ) : (
+                    <span className="text-xs font-medium text-sv-good">Installed</span>
+                  )}
+                  <button
+                    onClick={() => remove(model.id)}
+                    className="rounded-lg border border-sv-border bg-sv-surface px-3 py-1.5 text-xs text-sv-bad hover:bg-sv-surface-2"
+                  >
+                    Remove
+                  </button>
+                </div>
+                {!inUse && <span className="text-[10px] text-sv-muted">Assign it to a mode in the Modes tab</span>}
               </div>
             ) : (
               <button
@@ -628,6 +731,7 @@ function HfDetail({ details, hardware, track }: { details: HfModelDetails; hardw
   const activeStt = useSettingsStore((s) => s.settings.active_stt_model);
   const usingCloudStt = useSettingsStore((s) => s.settings.stt_cloud_provider_id);
   const setSettings = useSettingsStore((s) => s.setSettings);
+  const modes = useSettingsStore((s) => s.modes);
   const selectStt = (id: string) =>
     setSettings({ active_stt_model: id, stt_cloud_provider_id: null });
 
@@ -722,34 +826,58 @@ function HfDetail({ details, hardware, track }: { details: HfModelDetails; hardw
           <div className="rounded-xl border border-sv-border bg-sv-surface-2/50 p-4">
             <h3 className="mb-3 text-sm font-medium">Download Options</h3>
             <div className="flex flex-col gap-2">
-              <select 
-                value={selectedIndex}
-                onChange={(e) => setSelectedIndex(Number(e.target.value))}
-                className="w-full rounded-lg border border-sv-border bg-sv-bg px-3 py-2 text-sm focus:border-sv-accent focus:outline-none"
-              >
+              <div className="flex flex-col gap-2">
                 {availableFiles.map((f, i) => {
                   const fit = getFit(f.size_bytes, hardware);
-                  const isDownloaded = track === "stt" ? downloadedStt.has(getModelId(f.name)) : downloadedLlm.has(getModelId(f.name));
+                  const mId = getModelId(f.name);
+                  const isDownloaded = track === "stt" ? downloadedStt.has(mId) : downloadedLlm.has(mId);
                   const parsedLabel = track === "stt" ? f.name.split('/').pop()?.replace(/^ggml-/i, "").replace(/\.bin$/i, "") : parseQuant(f.name);
-                  const extraTag = track === "stt" ? (f.name.includes(".en") ? " — English-only" : " — Multilingual") : "";
+                  const extraTag = track === "stt" ? (f.name.includes(".en") ? "English-only" : "Multilingual") : "";
+                  const isSelected = selectedIndex === i;
+                  
                   return (
-                    <option key={f.name} value={i} disabled={f.isMultiPart}>
-                      {parsedLabel} — {formatMB(f.size_bytes / (1024*1024))}
-                      {extraTag}
-                      {fit === "good" ? " (Fits well)" : fit === "warn" ? " (Tight fit)" : " (Too large)"}
-                      {f.isMultiPart ? " (Multi-part, not supported)" : ""}
-                      {isDownloaded ? " — Downloaded" : ""}
-                    </option>
+                    <button
+                      key={f.name}
+                      disabled={f.isMultiPart}
+                      onClick={() => setSelectedIndex(i)}
+                      className={`flex items-center justify-between rounded-lg border p-3 text-left transition ${
+                        f.isMultiPart ? "opacity-50 cursor-not-allowed border-sv-border bg-sv-bg" :
+                        isSelected ? "border-sv-accent bg-sv-accent/5 ring-1 ring-sv-accent/20" : "border-sv-border bg-sv-bg hover:bg-sv-surface-2"
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        {fit && <span className={`shrink-0 h-2 w-2 rounded-full ${(FIT_DOT as any)[fit]}`} />}
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-sm">{parsedLabel}</span>
+                            {isDownloaded && <span className="text-[10px] font-medium text-sv-good">Downloaded</span>}
+                          </div>
+                          <div className="mt-0.5 text-xs text-sv-muted">
+                            {formatMB(f.size_bytes / (1024 * 1024))}
+                            {extraTag ? ` · ${extraTag}` : ""}
+                            {fit === "good" ? " · Fits well" : fit === "warn" ? " · Tight fit" : fit === "bad" ? " · Too large" : ""}
+                            {f.isMultiPart ? " · (Multi-part, not supported)" : ""}
+                          </div>
+                        </div>
+                      </div>
+                      {isSelected && !f.isMultiPart && (
+                        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-sv-accent">
+                          <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>
+                      )}
+                    </button>
                   );
                 })}
-              </select>
+              </div>
 
               {selectedFile && !selectedFile.isMultiPart && (() => {
                 const fit = getFit(selectedFile.size_bytes, hardware);
                 const estSpeed = details.params_b ? (details.params_b <= 4 ? "Fast on this device" : details.params_b <= 9 ? "Usable" : "May be slow") : null;
                 const mId = getModelId(selectedFile.name);
                 const isDl = track === "stt" ? downloadedStt.has(mId) : downloadedLlm.has(mId);
-                const isActive = track === "stt" && !usingCloudStt && activeStt === mId;
+                const isActiveStt = track === "stt" && !usingCloudStt && activeStt === mId;
+                const isActiveLlm = track === "llm" && modes.some(m => m.model_source === "local" && m.model_id === mId);
+                const isActive = track === "stt" ? isActiveStt : isActiveLlm;
                 const prog = progress[mId];
                 const isDownloading = prog?.status === "downloading";
                 const pct = prog && prog.total_bytes > 0 ? Math.round((prog.downloaded_bytes / prog.total_bytes) * 100) : 0;
@@ -783,7 +911,7 @@ function HfDetail({ details, hardware, track }: { details: HfModelDetails; hardw
                     <div className="flex flex-col gap-1 text-[11px]">
                       {fit && (
                         <div className="flex items-center gap-1.5">
-                          <span className={`h-2 w-2 rounded-full ${FIT_DOT[fit]}`} />
+                          <span className={`h-2 w-2 rounded-full ${(FIT_DOT as any)[fit]}`} />
                           <span className="text-sv-text">{fit === "good" ? "Recommended" : fit === "warn" ? "Works, may be slow" : "Heavy for your device"}</span>
                         </div>
                       )}
@@ -799,21 +927,24 @@ function HfDetail({ details, hardware, track }: { details: HfModelDetails; hardw
                           <span className="w-8 text-right text-xs text-sv-muted">{pct}%</span>
                         </div>
                       ) : isDl ? (
-                        <div className="flex items-center gap-3">
-                          {isActive ? (
-                            <span className="text-xs font-medium text-sv-good">In use</span>
-                          ) : (
-                            track === "stt" ? (
-                              <button onClick={() => selectStt(mId)} className="rounded-lg bg-sv-surface-2 px-3 py-1.5 text-xs font-medium hover:bg-sv-accent hover:text-white">
-                                Select
-                              </button>
+                        <div className="flex flex-col items-end gap-1">
+                          <div className="flex items-center gap-3">
+                            {isActive ? (
+                              <span className="text-xs font-medium text-sv-good">In use</span>
                             ) : (
-                              <span className="text-xs font-medium text-sv-good">Installed</span>
-                            )
-                          )}
-                          <button onClick={() => track === "stt" ? removeStt(mId) : removeLlm(mId)} className="rounded-lg border border-sv-border bg-sv-surface px-3 py-1.5 text-xs text-sv-bad hover:bg-sv-surface-2">
-                            Remove
-                          </button>
+                              track === "stt" ? (
+                                <button onClick={() => selectStt(mId)} className="rounded-lg bg-sv-surface-2 px-3 py-1.5 text-xs font-medium hover:bg-sv-accent hover:text-white">
+                                  Select
+                                </button>
+                              ) : (
+                                <span className="text-xs font-medium text-sv-good">Installed</span>
+                              )
+                            )}
+                            <button onClick={() => track === "stt" ? removeStt(mId) : removeLlm(mId)} className="rounded-lg border border-sv-border bg-sv-surface px-3 py-1.5 text-xs text-sv-bad hover:bg-sv-surface-2">
+                              Remove
+                            </button>
+                          </div>
+                          {!isActive && track === "llm" && <span className="text-[10px] text-sv-muted">Assign it to a mode in the Modes tab</span>}
                         </div>
                       ) : (
                         <button onClick={doDownload} className="rounded-lg bg-sv-accent px-4 py-2 text-sm font-medium text-white hover:bg-sv-accent-hover">

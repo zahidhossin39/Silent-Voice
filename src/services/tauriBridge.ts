@@ -519,6 +519,8 @@ export async function hfSearchModels(
         tags: ["text-generation", "llama3", "gguf"],
         pipeline_tag: "text-generation",
         gated: false,
+        params_b: 8,
+        siblings_gguf: 1,
       }
     ];
   }

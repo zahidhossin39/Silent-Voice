@@ -191,6 +191,7 @@ export interface Settings {
   pinned_stt: string[];
   pinned_llm: string[];
   pinned_tts: string[];
+  hf_show_incompatible: boolean;
 }
 
 // ---------- Hugging Face ----------
@@ -202,6 +203,8 @@ export interface HfSearchItem {
   tags: string[];
   pipeline_tag: string | null;
   gated: boolean;
+  params_b: number | null;
+  siblings_gguf: number;
 }
 
 export interface HfModelDetails {
