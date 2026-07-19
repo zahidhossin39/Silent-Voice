@@ -331,6 +331,33 @@ pub fn check(text: &str) -> Vec<GectorEdit> {
             continue;
         }
 
+        // Detect-head gate (original GECToR postprocess_batch): skip the whole
+        // sentence unless the max per-token INCORRECT probability clears a
+        // threshold. This is the model's own false-positive filter — without
+        // it, borderline label-head tags fire on clean sentences.
+        // dtags order: 0 = $CORRECT, 1 = $INCORRECT (2-class softmax).
+        if let Ok((d_shape, d_data)) = outputs["detect_logits"].try_extract_tensor::<f32>() {
+            if d_shape.len() == 3 && d_shape[2] == 2 {
+                let mut max_incorrect = 0.0f32;
+                for (tok_idx, &word_id_opt) in word_ids.iter().enumerate() {
+                    if word_id_opt.is_none() {
+                        continue; // specials/padding
+                    }
+                    let row = tok_idx * 2;
+                    if let Some(pair) = d_data.get(row..row + 2) {
+                        let m = pair[0].max(pair[1]);
+                        let e0 = (pair[0] - m).exp();
+                        let e1 = (pair[1] - m).exp();
+                        max_incorrect = max_incorrect.max(e1 / (e0 + e1));
+                    }
+                }
+                if max_incorrect < 0.5 {
+                    get_cache().lock().map(|mut c| c.insert(sentence_text.clone(), Vec::new())).ok();
+                    continue;
+                }
+            }
+        }
+
         for w_id in 0..=words.len() {
             if let Some(sub_idx) = first_subtokens[w_id] {
                 if sub_idx >= seq_len {
