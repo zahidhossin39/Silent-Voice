@@ -28,7 +28,8 @@ where
 
 #[derive(Deserialize)]
 struct HfSearchItemRaw {
-    #[serde(rename = "id", alias = "_id")]
+    // No `_id` alias: HF sends both `id` and `_id`, and aliasing them to one
+    // field makes serde reject the item as a duplicate.
     id: String,
     #[serde(default)]
     downloads: u64,
@@ -261,6 +262,31 @@ pub async fn hf_model_details(repo_id: String) -> Result<HfModelDetails, String>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Live network test: exercises the real commands end-to-end. Passes
+    // vacuously offline (network errors are not assertion failures).
+    #[tokio::test]
+    async fn live_search_and_details() {
+        let items = match hf_search_models("qwen".into(), "downloads".into(), 5).await {
+            Ok(i) => i,
+            Err(e) => {
+                println!("live_search skip (offline?): {e}");
+                return;
+            }
+        };
+        assert!(!items.is_empty(), "search returned no GGUF repos");
+        assert!(items[0].downloads > 0, "downloads missing: {:?}", items[0].id);
+        assert!(!items[0].last_modified.is_empty(), "lastModified missing");
+
+        let details = hf_model_details(items[0].id.clone()).await.expect("details failed");
+        assert!(!details.files.is_empty(), "no gguf files with sizes for {}", details.id);
+        assert!(details.files.iter().all(|f| f.size_bytes > 0));
+        println!(
+            "OK {}: {} files, arch={:?}, params_b={:?}, ctx={:?}, tools={}, readme_len={}",
+            details.id, details.files.len(), details.arch, details.params_b,
+            details.context_length, details.has_tools, details.readme.len()
+        );
+    }
 
     #[test]
     fn test_validate_repo_id() {

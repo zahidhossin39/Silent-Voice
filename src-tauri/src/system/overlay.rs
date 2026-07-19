@@ -58,13 +58,20 @@ pub fn create_overlay(app: &AppHandle) -> tauri::Result<()> {
                 if x >= pos.x - margin && x <= pos.x + size.width as i32 + margin
                     && y >= pos.y - margin && y <= pos.y + size.height as i32 + margin
                 {
+                    // Use the window's REAL size, not OVERLAY_W×scale: at
+                    // creation the scale factor can still be wrong, and the
+                    // saved center comes from the actual outer size — any
+                    // mismatch shifts the center a fixed amount per restart,
+                    // making the pill "walk" across the screen.
                     let scale = win.scale_factor().unwrap_or(1.0);
-                    let new_w = (OVERLAY_W * scale).round() as i32;
-                    let new_h = (OVERLAY_H * scale).round() as i32;
-                    let _ = win.set_position(tauri::PhysicalPosition::new(
-                        x - new_w / 2,
-                        y - new_h / 2,
-                    ));
+                    let (w, h) = win
+                        .outer_size()
+                        .map(|s| (s.width as i32, s.height as i32))
+                        .unwrap_or((
+                            (OVERLAY_W * scale).round() as i32,
+                            (OVERLAY_H * scale).round() as i32,
+                        ));
+                    let _ = win.set_position(tauri::PhysicalPosition::new(x - w / 2, y - h / 2));
                     restored = true;
                     break;
                 }
