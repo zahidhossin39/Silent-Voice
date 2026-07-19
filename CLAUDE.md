@@ -75,6 +75,10 @@ After `cargo build`, whisper DLLs must be copied from `sidecars/` into
   "None" (not pre-release) → publish. Details in HANDBOOK §16.
 - Phase 5 (always-listening VAD/wake-word) is the only unbuilt phase.
 
-**Current state:** v0.1.6 released. In progress since: hyphenated-word
-duplication fix (`format_numbers`), Win10 rounded-corner fallback for the pill
-(`SetWindowRgn`), this CLAUDE.md split (full text now in `docs/HANDBOOK.md`).
+**Current state:** v0.1.6 released, v0.1.7 unreleased locally. Model Store
+overhauled: live HF trending feed (empty-query browse), per-row device-fit
+dots (exact for staff picks, param-estimated for HF results), "show
+incompatible" toggle, in-use/pinned/downloaded hierarchy sort, and an
+LM Studio-style quant row picker — applies to STT and LLM tracks (TTS already
+had its own sort/badges). GECToR grammar pass and HF model browser (from the
+prior session) are stable.
