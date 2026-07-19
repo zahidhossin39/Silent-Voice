@@ -38,13 +38,72 @@ pub fn create_overlay(app: &AppHandle) -> tauri::Result<()> {
     .visible(false)
     .build()?;
 
-    position_centered(&win, OVERLAY_W, OVERLAY_H);
+    let saved_pos: Option<(i32, i32)> = (|| {
+        let path = dirs::config_dir()?.join("SilentVoice").join("overlay-pos.json");
+        let data = std::fs::read_to_string(path).ok()?;
+        let json: serde_json::Value = serde_json::from_str(&data).ok()?;
+        Some((
+            json.get("x")?.as_i64()? as i32,
+            json.get("y")?.as_i64()? as i32,
+        ))
+    })();
+
+    let mut restored = false;
+    if let Some((x, y)) = saved_pos {
+        if let Ok(monitors) = win.available_monitors() {
+            for m in monitors {
+                let pos = m.position();
+                let size = m.size();
+                let margin = 20;
+                if x >= pos.x - margin && x <= pos.x + size.width as i32 + margin
+                    && y >= pos.y - margin && y <= pos.y + size.height as i32 + margin
+                {
+                    let scale = win.scale_factor().unwrap_or(1.0);
+                    let new_w = (OVERLAY_W * scale).round() as i32;
+                    let new_h = (OVERLAY_H * scale).round() as i32;
+                    let _ = win.set_position(tauri::PhysicalPosition::new(
+                        x - new_w / 2,
+                        y - new_h / 2,
+                    ));
+                    restored = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    if !restored {
+        position_centered(&win, OVERLAY_W, OVERLAY_H);
+    }
+
     let scale = win.scale_factor().unwrap_or(1.0);
     round_corners(
         &win,
         (OVERLAY_W * scale).round() as i32,
         (OVERLAY_H * scale).round() as i32,
     );
+
+    let win_clone = win.clone();
+    win.on_window_event(move |event| {
+        if let tauri::WindowEvent::Moved(_) = event {
+            if let Some(center) = current_center(&win_clone) {
+                static LAST_POS: std::sync::Mutex<Option<(i32, i32)>> = std::sync::Mutex::new(None);
+                if let Ok(mut last) = LAST_POS.lock() {
+                    if *last != Some(center) {
+                        *last = Some(center);
+                        if let Some(mut path) = dirs::config_dir() {
+                            path.push("SilentVoice");
+                            let _ = std::fs::create_dir_all(&path);
+                            path.push("overlay-pos.json");
+                            let json = serde_json::json!({ "x": center.0, "y": center.1 });
+                            let _ = std::fs::write(path, json.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    });
+
     let _ = win.show();
     Ok(())
 }

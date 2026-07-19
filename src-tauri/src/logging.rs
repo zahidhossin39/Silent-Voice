@@ -57,3 +57,14 @@ pub fn log_error(context: &str, msg: &str) {
 pub fn log_info(context: &str, msg: &str) {
     write_line("INFO", context, msg);
 }
+
+/// Human-readable message from a caught panic payload.
+pub fn panic_msg(p: &(dyn std::any::Any + Send)) -> String {
+    if let Some(s) = p.downcast_ref::<&str>() {
+        (*s).to_string()
+    } else if let Some(s) = p.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        "unknown panic".to_string()
+    }
+}

@@ -233,6 +233,15 @@ export default function Settings() {
                   onChange={(v) => toggleProofreadRule("Filler", v)}
                 />
               </Row>
+              <Row
+                label="Context grammar (neural)"
+                hint="AI pass that catches correctly-spelled wrong words (needs the GECToR model installed)"
+              >
+                <Toggle
+                  checked={!settings.proofread_disabled_rules.includes("Gector")}
+                  onChange={(v) => toggleProofreadRule("Gector", v)}
+                />
+              </Row>
               <div className="py-3.5">
                 <div className="text-sm">Don't check in these apps</div>
                 <div className="mt-0.5 text-xs text-sv-muted">

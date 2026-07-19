@@ -80,7 +80,18 @@ pub enum OverlayAction {
 
 pub fn spawn(action_tx: Sender<OverlayAction>) -> Sender<Vec<SquiggleInfo>> {
     let (tx, rx) = channel::<Vec<SquiggleInfo>>();
-    std::thread::spawn(move || run(rx, action_tx));
+    // Restart on panic: a dead overlay thread means squiggles freeze at
+    // stale positions forever (and the watcher's channel disconnects).
+    std::thread::spawn(move || loop {
+        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run(&rx, &action_tx)));
+        if let Err(p) = r {
+            crate::logging::log_error(
+                "squiggle",
+                &format!("overlay thread panicked: {}", crate::logging::panic_msg(&*p)),
+            );
+            std::thread::sleep(Duration::from_secs(1));
+        }
+    });
     tx
 }
 
@@ -433,7 +444,7 @@ struct Popup {
     shown: bool,
 }
 
-fn run(rx: Receiver<Vec<SquiggleInfo>>, action_tx: Sender<OverlayAction>) {
+fn run(rx: &Receiver<Vec<SquiggleInfo>>, action_tx: &Sender<OverlayAction>) {
     unsafe {
         let hinst = match GetModuleHandleW(None) {
             Ok(h) => h,

@@ -119,11 +119,19 @@ fn watcher(app: AppHandle) {
             });
 
             let mut actions = Vec::new();
-            if let Ok(action) = action_rx.recv_timeout(timeout) {
-                actions.push(action);
-                while let Ok(a) = action_rx.try_recv() {
-                    actions.push(a);
+            match action_rx.recv_timeout(timeout) {
+                Ok(action) => {
+                    actions.push(action);
+                    while let Ok(a) = action_rx.try_recv() {
+                        actions.push(a);
+                    }
                 }
+                // Overlay thread gone → recv_timeout returns Disconnected
+                // instantly; sleep instead or this loop busy-spins a core.
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                    std::thread::sleep(timeout);
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
             }
 
             // Focus moved to another window → wake up immediately.
@@ -213,17 +221,33 @@ fn watcher(app: AppHandle) {
                 a11y_engaged = true;
             }
 
-            let (squiggles, reason) = poll_once(
-                &automation,
-                my_pid,
-                &vocabulary,
-                &disabled_rules,
-                &ignore_apps,
-                &dismissed_words,
-                &mut last_text,
-                &mut last_chars,
-                &mut issues,
-            );
+            // A panic anywhere in the poll (Harper, GECToR, UIA) must not
+            // kill this thread — squiggles going permanently dead is worse
+            // than one skipped cycle. Log it so the cause stays visible.
+            let (squiggles, reason) = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                poll_once(
+                    &automation,
+                    my_pid,
+                    &vocabulary,
+                    &disabled_rules,
+                    &ignore_apps,
+                    &dismissed_words,
+                    &mut last_text,
+                    &mut last_chars,
+                    &mut issues,
+                )
+            })) {
+                Ok(r) => r,
+                Err(p) => {
+                    crate::logging::log_error(
+                        "inline_check",
+                        &format!("poll panicked: {}", crate::logging::panic_msg(&*p)),
+                    );
+                    last_text.clear();
+                    issues.clear();
+                    (Vec::new(), "panic")
+                }
+            };
             idle_polls = if squiggles == last_squiggles && !check_needed {
                 idle_polls.saturating_add(1)
             } else {
