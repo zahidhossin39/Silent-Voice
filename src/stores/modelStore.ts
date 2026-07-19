@@ -30,8 +30,10 @@ interface ModelState {
   remove: (modelId: string) => Promise<void>;
   downloadLlm: (modelId: string) => Promise<void>;
   downloadCustomLlm: (model: LlmModel) => Promise<void>;
+  downloadCustomStt: (modelId: string, url: string, filename: string, size_mb: number) => Promise<void>;
   removeLlm: (modelId: string) => Promise<void>;
   downloadTts: (voiceId: string) => Promise<void>;
+  downloadCustomTts: (voiceId: string, urlOnnx: string, urlJson: string, size_mb: number) => Promise<void>;
   removeTts: (voiceId: string) => Promise<void>;
 }
 
@@ -82,6 +84,31 @@ export const useModelStore = create<ModelState>()(
     try {
       const downloadUrl = model.url ?? WHISPER_BASE_URL + model.file;
       await bridgeDownload(modelId, downloadUrl, model.file);
+      set((s) => {
+        const downloaded = new Set(s.downloaded);
+        downloaded.add(modelId);
+        return {
+          downloaded,
+          progress: {
+            ...s.progress,
+            [modelId]: { ...s.progress[modelId], status: "downloaded" },
+          },
+        };
+      });
+    } catch (e) {
+      set((s) => ({
+        progress: {
+          ...s.progress,
+          [modelId]: { ...s.progress[modelId], status: "error", error: String(e) },
+        },
+      }));
+    }
+  },
+
+  downloadCustomStt: async (modelId, url, filename, size_mb) => {
+    startProgress(set, modelId, size_mb * 1024 * 1024);
+    try {
+      await bridgeDownload(modelId, url, filename);
       set((s) => {
         const downloaded = new Set(s.downloaded);
         downloaded.add(modelId);
@@ -186,6 +213,31 @@ export const useModelStore = create<ModelState>()(
     startProgress(set, voiceId, voice.size_mb * 1024 * 1024);
     try {
       await bridgeDownloadTts(voiceId, voice.url_onnx, voice.url_json);
+      set((s) => {
+        const downloadedTts = new Set(s.downloadedTts);
+        downloadedTts.add(voiceId);
+        return {
+          downloadedTts,
+          progress: {
+            ...s.progress,
+            [voiceId]: { ...s.progress[voiceId], status: "downloaded" },
+          },
+        };
+      });
+    } catch (e) {
+      set((s) => ({
+        progress: {
+          ...s.progress,
+          [voiceId]: { ...s.progress[voiceId], status: "error", error: String(e) },
+        },
+      }));
+    }
+  },
+
+  downloadCustomTts: async (voiceId, urlOnnx, urlJson, size_mb) => {
+    startProgress(set, voiceId, size_mb * 1024 * 1024);
+    try {
+      await bridgeDownloadTts(voiceId, urlOnnx, urlJson);
       set((s) => {
         const downloadedTts = new Set(s.downloadedTts);
         downloadedTts.add(voiceId);

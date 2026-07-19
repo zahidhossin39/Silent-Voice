@@ -3,7 +3,7 @@
 // Tauri, and returns sensible mock data when running in a plain
 // browser (Vite dev preview before the Rust backend is built).
 // ============================================================
-import type { HardwareInfo, HistoryEntry, HfSearchItem, HfModelDetails } from "../types";
+import type { HardwareInfo, HistoryEntry, HfSearchItem, HfModelDetails, PiperVoice } from "../types";
 
 export function isTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -505,7 +505,8 @@ export async function clearHistoryFile(): Promise<void> {
 export async function hfSearchModels(
   query: string,
   sort: string,
-  limit: number
+  limit: number,
+  track: string
 ): Promise<HfSearchItem[]> {
   if (!isTauri()) {
     // Mock data for browser preview
@@ -521,10 +522,10 @@ export async function hfSearchModels(
       }
     ];
   }
-  return invoke<HfSearchItem[]>("hf_search_models", { query, sort, limit });
+  return invoke<HfSearchItem[]>("hf_search_models", { query, sort, limit, track });
 }
 
-export async function hfModelDetails(repoId: string): Promise<HfModelDetails> {
+export async function hfModelDetails(repoId: string, track: string): Promise<HfModelDetails> {
   if (!isTauri()) {
     // Mock data for browser preview
     return {
@@ -545,5 +546,25 @@ export async function hfModelDetails(repoId: string): Promise<HfModelDetails> {
       readme: "# Meta Llama 3 8B Instruct\n\nThis is a mock readme for browser preview.",
     };
   }
-  return invoke<HfModelDetails>("hf_model_details", { repoId });
+  return invoke<HfModelDetails>("hf_model_details", { repoId, track });
+}
+
+export async function hfPiperVoices(): Promise<PiperVoice[]> {
+  if (!isTauri()) {
+    return [
+      {
+        key: "en_US-amy-medium",
+        name: "amy",
+        language_code: "en_US",
+        language_english: "English",
+        country_english: "United States",
+        quality: "medium",
+        num_speakers: 1,
+        onnx_path: "en/en_US/amy/medium/en_US-amy-medium.onnx",
+        onnx_size_bytes: 65000000,
+        json_path: "en/en_US/amy/medium/en_US-amy-medium.onnx.json"
+      }
+    ];
+  }
+  return invoke<PiperVoice[]>("hf_piper_voices");
 }

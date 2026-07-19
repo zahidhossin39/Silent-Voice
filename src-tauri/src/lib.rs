@@ -862,6 +862,7 @@ pub fn run() {
             set_overlay_opacity,
             hf::hf_search_models,
             hf::hf_model_details,
+            hf::hf_piper_voices,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Silent Voice")

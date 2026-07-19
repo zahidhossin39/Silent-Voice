@@ -73,6 +73,19 @@ export interface TtsModel {
   url_json: string; // piper: .onnx.json URL · sherpa: "" (everything is in the archive)
 }
 
+export interface PiperVoice {
+  key: string;
+  name: string;
+  language_code: string;
+  language_english: string;
+  country_english: string;
+  quality: string;
+  num_speakers: number;
+  onnx_path: string;
+  onnx_size_bytes: number;
+  json_path: string;
+}
+
 // ---------- Download state ----------
 export type DownloadStatus =
   | "not_downloaded"

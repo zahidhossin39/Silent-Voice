@@ -6,9 +6,10 @@ import { llmCompatibility } from "../../../services/recommend";
 import { hfSearchModels, hfModelDetails } from "../../../services/tauriBridge";
 import { useModelStore } from "../../../stores/modelStore";
 import { useSettingsStore } from "../../../stores/settingsStore";
-import type { HfSearchItem, HfModelDetails, LlmModel, HardwareInfo, HfFile } from "../../../types";
+import type { HfSearchItem, HfModelDetails, LlmModel, HardwareInfo, HfFile, SttModel } from "../../../types";
 import { formatMB, formatGB } from "../../../services/format";
 import SimpleMarkdown from "./SimpleMarkdown";
+import { STT_MODELS, sttLanguage } from "../../../services/catalog";
 
 // --- Helpers ---
 function formatNdaysAgo(isoDate: string) {
@@ -77,7 +78,7 @@ function parseParams(params_b: number | null): string {
 
 // --- Components ---
 
-export default function HfBrowser() {
+export default function HfBrowser({ track, categoryFilter, languageFilter }: { track: "llm" | "stt", categoryFilter?: string, languageFilter?: string }) {
   const { hardware } = useHardwareInfo();
   
   // Search state
@@ -98,9 +99,9 @@ export default function HfBrowser() {
   const [hfDetails, setHfDetails] = useState<HfModelDetails | null>(null);
   const [hfDetailsError, setHfDetailsError] = useState<string | null>(null);
 
-  const pinnedLlmArr = useSettingsStore((s) => s.settings.pinned_llm);
-  const togglePinnedLlm = useSettingsStore((s) => s.togglePinnedLlm);
-  const pinnedLlm = useMemo(() => new Set(pinnedLlmArr || []), [pinnedLlmArr]);
+  const pinnedArr = useSettingsStore((s) => track === "stt" ? s.settings.pinned_stt : s.settings.pinned_llm);
+  const togglePinned = useSettingsStore((s) => track === "stt" ? s.togglePinnedStt : s.togglePinnedLlm);
+  const pinnedSet = useMemo(() => new Set(pinnedArr || []), [pinnedArr]);
 
   // Debounce query
   useEffect(() => {
@@ -122,7 +123,7 @@ export default function HfBrowser() {
     setLoadingSearch(true);
     setSearchError(null);
     
-    hfSearchModels(debouncedQuery, sort, 20)
+    hfSearchModels(debouncedQuery, sort, 20, track)
       .then((res) => {
         if (!active) return;
         setSearchResults(res);
@@ -146,7 +147,7 @@ export default function HfBrowser() {
       setHfDetailsError(null);
       setHfDetails(null);
       
-      hfModelDetails(selectedHfId)
+      hfModelDetails(selectedHfId, track)
         .then((res) => {
           if (!active) return;
           setHfDetails(res);
@@ -193,7 +194,11 @@ export default function HfBrowser() {
           {!debouncedQuery ? (
             // Staff Picks
             <div className="flex flex-col gap-1">
-              {LLM_MODELS.map((m) => {
+              {(track === "stt" ? STT_MODELS.filter(m => {
+                if (categoryFilter && categoryFilter !== "all" && m.preset !== categoryFilter) return false;
+                if (languageFilter && languageFilter !== "all" && sttLanguage(m) !== languageFilter) return false;
+                return true;
+              }) : LLM_MODELS).map((m: any) => {
                 const isSelected = selectedType === "catalog" && selectedCatalogId === m.id;
                 return (
                   <button
@@ -206,16 +211,16 @@ export default function HfBrowser() {
                     <ProviderLogo provider={m.provider} size={32} />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <h4 className="truncate text-sm font-medium">{m.name}</h4>
+                        <h4 className="truncate text-sm font-medium">{m.name || m.label}</h4>
                       </div>
                       <p className="mt-0.5 truncate text-[11px] text-sv-muted">
-                        {m.provider} · {m.params} · {formatMB(m.size_mb)}
+                        {m.provider} · {m.params || m.speed_label} · {formatMB(m.size_mb)}
                       </p>
                       <div className="mt-1 flex items-center gap-1.5">
                         <span className="rounded-full bg-sv-accent/10 px-1.5 py-0.5 text-[9px] font-medium text-sv-accent">
                           Staff Pick
                         </span>
-                        {pinnedLlm.has(m.id) && <span className="text-[10px] text-sv-accent">★ Pinned</span>}
+                        {pinnedSet.has(m.id) && <span className="text-[10px] text-sv-accent">★ Pinned</span>}
                       </div>
                     </div>
                   </button>
@@ -237,7 +242,7 @@ export default function HfBrowser() {
           ) : searchError ? (
             <div className="p-4 text-center text-sm text-sv-bad">{searchError}</div>
           ) : searchResults.length === 0 ? (
-            <div className="p-4 text-center text-sm text-sv-muted">No GGUF models found.</div>
+            <div className="p-4 text-center text-sm text-sv-muted">No models found.</div>
           ) : (
             // HF Search Results
             <div className="flex flex-col gap-1">
@@ -286,12 +291,21 @@ export default function HfBrowser() {
             Select a model from the list to view details.
           </div>
         ) : selectedType === "catalog" && selectedCatalogId ? (
-          <CatalogDetail 
-            model={LLM_MODELS.find(m => m.id === selectedCatalogId)!} 
-            hardware={hardware} 
-            pinned={pinnedLlm.has(selectedCatalogId)}
-            onTogglePin={() => togglePinnedLlm(selectedCatalogId)}
-          />
+          track === "stt" ? (
+            <SttCatalogDetail 
+              model={STT_MODELS.find(m => m.id === selectedCatalogId)!} 
+              hardware={hardware} 
+              pinned={pinnedSet.has(selectedCatalogId)}
+              onTogglePin={() => togglePinned(selectedCatalogId)}
+            />
+          ) : (
+            <CatalogDetail 
+              model={LLM_MODELS.find(m => m.id === selectedCatalogId)!} 
+              hardware={hardware} 
+              pinned={pinnedSet.has(selectedCatalogId)}
+              onTogglePin={() => togglePinned(selectedCatalogId)}
+            />
+          )
         ) : selectedType === "hf" && selectedHfId ? (
           loadingDetails ? (
             <div className="flex h-full items-center justify-center">
@@ -305,6 +319,7 @@ export default function HfBrowser() {
             <HfDetail 
               details={hfDetails} 
               hardware={hardware} 
+              track={track}
             />
           ) : null
         ) : null}
@@ -314,6 +329,144 @@ export default function HfBrowser() {
 }
 
 // --- Detail Views ---
+
+function SttCatalogDetail({ 
+  model, 
+  hardware, 
+  pinned,
+  onTogglePin
+}: { 
+  model: SttModel; 
+  hardware: HardwareInfo | null;
+  pinned: boolean;
+  onTogglePin: () => void;
+}) {
+  const downloaded = useModelStore((s) => s.downloaded.has(model.id));
+  const progress = useModelStore((s) => s.progress[model.id]);
+  const download = useModelStore((s) => s.download);
+  const remove = useModelStore((s) => s.remove);
+
+  const activeStt = useSettingsStore((s) => s.settings.active_stt_model);
+  const usingCloudStt = useSettingsStore((s) => s.settings.stt_cloud_provider_id);
+  const setSettings = useSettingsStore((s) => s.setSettings);
+  const isActive = !usingCloudStt && activeStt === model.id;
+
+  const selectStt = (id: string) =>
+    setSettings({ active_stt_model: id, stt_cloud_provider_id: null });
+
+  // Use the same fit heuristic as ModelStore uses
+  const estRamGb = model.ram_mb / 1024;
+  let level = "good";
+  if (hardware) {
+    if (estRamGb > hardware.available_ram_gb) level = "bad";
+    else if (estRamGb > hardware.available_ram_gb * 0.8) level = "warn";
+  }
+
+  const isDownloading = progress?.status === "downloading";
+  const pct =
+    progress && progress.total_bytes > 0
+      ? Math.round((progress.downloaded_bytes / progress.total_bytes) * 100)
+      : 0;
+
+  return (
+    <div className="flex h-full flex-col overflow-y-auto p-5">
+      <div className="flex items-start gap-4">
+        <ProviderLogo provider={model.provider} size={48} />
+        <div className="flex-1">
+          <div className="flex items-center gap-3">
+            <h2 className="text-xl font-semibold">{model.label}</h2>
+            <span className="rounded-full bg-sv-accent/10 px-2 py-0.5 text-[10px] font-medium text-sv-accent">
+              Staff Pick
+            </span>
+            {isActive && (
+              <span className="rounded-full bg-sv-accent px-2 py-0.5 text-[10px] font-medium text-white">
+                Active
+              </span>
+            )}
+          </div>
+          <p className="mt-1 text-sm text-sv-muted">
+            {model.provider} · {model.best_for}
+          </p>
+        </div>
+        <button onClick={onTogglePin} title={pinned ? "Unpin" : "Pin to top"} className={pinned ? "rounded-lg p-2 transition text-sv-accent" : "rounded-lg p-2 transition text-sv-muted hover:text-sv-accent"}>
+          <svg viewBox="0 0 24 24" width="20" height="20" fill={pinned ? "currentColor" : "none"} stroke={pinned ? "none" : "currentColor"} strokeWidth={pinned ? undefined : "1.75"} strokeLinecap="round" strokeLinejoin="round"><path d="M12 2.5l2.9 6.2 6.6.6-5 4.6 1.4 6.6L12 17l-5.9 3.5L7.5 14l-5-4.6 6.6-.6L12 2.5z" /></svg>
+        </button>
+      </div>
+
+      <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="rounded-lg bg-sv-surface-2 p-3 text-center">
+          <div className="text-[10px] uppercase tracking-wide text-sv-muted">Size</div>
+          <div className="mt-1 font-medium">{formatMB(model.size_mb)}</div>
+        </div>
+        <div className="rounded-lg bg-sv-surface-2 p-3 text-center">
+          <div className="text-[10px] uppercase tracking-wide text-sv-muted">Speed</div>
+          <div className="mt-1 font-medium">{model.speed_label.replace("~", "")}</div>
+        </div>
+        <div className="rounded-lg bg-sv-surface-2 p-3 text-center">
+          <div className="text-[10px] uppercase tracking-wide text-sv-muted">Memory</div>
+          <div className="mt-1 font-medium">{model.ram_mb} MB</div>
+        </div>
+        <div className="rounded-lg bg-sv-surface-2 p-3 text-center">
+          <div className="text-[10px] uppercase tracking-wide text-sv-muted">Languages</div>
+          <div className="mt-1 font-medium">{model.multilingual ? "Multi" : "English"}</div>
+        </div>
+      </div>
+
+      <div className="mt-6 flex flex-col gap-3 rounded-xl border border-sv-border bg-sv-surface-2/50 p-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className={`h-2 w-2 rounded-full ${(FIT_DOT as any)[level]}`} />
+              <span className="font-medium">Download Model</span>
+            </div>
+            <p className="mt-1 text-xs text-sv-muted">
+              {formatMB(model.size_mb)}
+            </p>
+          </div>
+          <div>
+            {isDownloading ? (
+              <div className="flex w-32 items-center gap-2">
+                <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-sv-surface-2 border border-sv-border">
+                  <div className="h-full bg-sv-accent transition-all" style={{ width: `${pct}%` }} />
+                </div>
+                <span className="w-8 text-right text-xs text-sv-muted">{pct}%</span>
+              </div>
+            ) : downloaded ? (
+              <div className="flex items-center gap-3">
+                {isActive ? (
+                  <span className="text-xs font-medium text-sv-good">In use</span>
+                ) : (
+                  <button
+                    onClick={() => selectStt(model.id)}
+                    className="rounded-lg bg-sv-surface-2 px-3 py-1.5 text-xs font-medium hover:bg-sv-accent hover:text-white"
+                  >
+                    Select
+                  </button>
+                )}
+                <button
+                  onClick={() => remove(model.id)}
+                  className="rounded-lg border border-sv-border bg-sv-surface px-3 py-1.5 text-xs text-sv-bad hover:bg-sv-surface-2"
+                >
+                  Remove
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => download(model.id)}
+                className="rounded-lg bg-sv-accent px-4 py-2 text-sm font-medium text-white hover:bg-sv-accent-hover"
+              >
+                Download
+              </button>
+            )}
+          </div>
+        </div>
+        {progress?.status === "error" && (
+          <p className="text-xs text-sv-bad">{progress.error}</p>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function CatalogDetail({ 
   model, 
@@ -424,7 +577,7 @@ function CatalogDetail({
   );
 }
 
-function HfDetail({ details, hardware }: { details: HfModelDetails; hardware: HardwareInfo | null }) {
+function HfDetail({ details, hardware, track }: { details: HfModelDetails; hardware: HardwareInfo | null; track: "llm" | "stt" }) {
   const [owner, name] = details.id.split("/");
   const isVision = details.files.some(f => f.name.includes("mmproj")) || details.tags?.includes("vision") || details.tags?.includes("multimodal") || details.pipeline_tag === "image-text-to-text";
   const isToolUse = details.has_tools || details.tags?.includes("tool-use") || details.tags?.includes("function-calling");
@@ -432,7 +585,7 @@ function HfDetail({ details, hardware }: { details: HfModelDetails; hardware: Ha
 
   // Filter and group files
   // Exclude mmproj and non-gguf. Group multi-part into one.
-  const ggufs = details.files.filter(f => f.name.toLowerCase().endsWith(".gguf") && !f.name.includes("mmproj"));
+  const ggufs = details.files.filter(f => track === "stt" ? (f.name.includes("ggml-") && f.name.endsWith(".bin")) : (f.name.toLowerCase().endsWith(".gguf") && !f.name.includes("mmproj")));
   const multiPartRegex = /-(000\d{2})-of-(000\d{2})\.gguf$/i;
   
   const fileGroups = new Map<string, { name: string, size: number, isMultiPart: boolean, originalFiles: HfFile[] }>();
@@ -465,12 +618,30 @@ function HfDetail({ details, hardware }: { details: HfModelDetails; hardware: Ha
   
   // Custom download logic
   const downloadedLlm = useModelStore(s => s.downloadedLlm);
+  const downloadedStt = useModelStore(s => s.downloaded);
   const progress = useModelStore(s => s.progress);
-  const downloadCustom = useModelStore(s => s.downloadCustomLlm);
+  const downloadCustomLlm = useModelStore(s => s.downloadCustomLlm);
   const removeLlm = useModelStore(s => s.removeLlm);
+  const downloadCustomStt = useModelStore(s => s.downloadCustomStt);
+  const removeStt = useModelStore(s => s.remove);
+
+  const activeStt = useSettingsStore((s) => s.settings.active_stt_model);
+  const usingCloudStt = useSettingsStore((s) => s.settings.stt_cloud_provider_id);
+  const setSettings = useSettingsStore((s) => s.setSettings);
+  const selectStt = (id: string) =>
+    setSettings({ active_stt_model: id, stt_cloud_provider_id: null });
 
   // Derive model ID for storing (use stem of the selected file)
-  const getModelId = (filename: string) => filename.replace(/\.gguf$/i, "").toLowerCase();
+  const getModelId = (filename: string) => {
+    let base = filename;
+    if (base.includes('/')) {
+      base = base.split('/').pop() || base;
+    }
+    if (track === "stt") {
+      return base.replace(/^ggml-/i, "").replace(/\.bin$/i, "").toLowerCase();
+    }
+    return base.replace(/\.gguf$/i, "").toLowerCase();
+  };
 
   const handleCopyId = () => {
     navigator.clipboard.writeText(details.id);
@@ -511,7 +682,7 @@ function HfDetail({ details, hardware }: { details: HfModelDetails; hardware: Ha
             </span>
           )}
           <span className="rounded bg-sv-surface-2 px-2 py-1 text-[10px] font-medium tracking-wide text-sv-text border border-sv-border">
-            GGUF
+            {track === "stt" ? "GGML" : "GGUF"}
           </span>
           {details.context_length && (
             <span className="rounded bg-sv-surface-2 px-2 py-1 text-[10px] font-medium tracking-wide text-sv-text border border-sv-border">
@@ -558,10 +729,13 @@ function HfDetail({ details, hardware }: { details: HfModelDetails; hardware: Ha
               >
                 {availableFiles.map((f, i) => {
                   const fit = getFit(f.size_bytes, hardware);
-                  const isDownloaded = downloadedLlm.has(getModelId(f.name));
+                  const isDownloaded = track === "stt" ? downloadedStt.has(getModelId(f.name)) : downloadedLlm.has(getModelId(f.name));
+                  const parsedLabel = track === "stt" ? f.name.split('/').pop()?.replace(/^ggml-/i, "").replace(/\.bin$/i, "") : parseQuant(f.name);
+                  const extraTag = track === "stt" ? (f.name.includes(".en") ? " — English-only" : " — Multilingual") : "";
                   return (
                     <option key={f.name} value={i} disabled={f.isMultiPart}>
-                      {parseQuant(f.name)} — {formatMB(f.size_bytes / (1024*1024))}
+                      {parsedLabel} — {formatMB(f.size_bytes / (1024*1024))}
+                      {extraTag}
                       {fit === "good" ? " (Fits well)" : fit === "warn" ? " (Tight fit)" : " (Too large)"}
                       {f.isMultiPart ? " (Multi-part, not supported)" : ""}
                       {isDownloaded ? " — Downloaded" : ""}
@@ -574,28 +748,34 @@ function HfDetail({ details, hardware }: { details: HfModelDetails; hardware: Ha
                 const fit = getFit(selectedFile.size_bytes, hardware);
                 const estSpeed = details.params_b ? (details.params_b <= 4 ? "Fast on this device" : details.params_b <= 9 ? "Usable" : "May be slow") : null;
                 const mId = getModelId(selectedFile.name);
-                const isDl = downloadedLlm.has(mId);
+                const isDl = track === "stt" ? downloadedStt.has(mId) : downloadedLlm.has(mId);
+                const isActive = track === "stt" && !usingCloudStt && activeStt === mId;
                 const prog = progress[mId];
                 const isDownloading = prog?.status === "downloading";
                 const pct = prog && prog.total_bytes > 0 ? Math.round((prog.downloaded_bytes / prog.total_bytes) * 100) : 0;
 
                 const doDownload = () => {
                   const modelUrl = `https://huggingface.co/${details.id}/resolve/main/${selectedFile.originalFile.name}?download=true`;
-                  const customLlm: LlmModel = {
-                    id: mId,
-                    name: name + " (" + parseQuant(selectedFile.name) + ")",
-                    provider: owner,
-                    url: modelUrl,
-                    params: details.params_b ? parseParams(details.params_b) : "?B",
-                    size_mb: selectedFile.size_bytes / (1024*1024),
-                    ram_gb: (selectedFile.size_bytes / (1024*1024*1024)) * 1.2,
-                    tier: details.params_b ? (details.params_b <= 4 ? "tiny" : details.params_b <= 9 ? "small" : details.params_b <= 14 ? "medium" : "large") : "medium",
-                    speed_label: estSpeed || "Unknown",
-                    languages: "Multi",
-                    license: "HF",
-                    best_for: "General",
-                  };
-                  downloadCustom(customLlm);
+                  if (track === "stt") {
+                    const filename = selectedFile.originalFile.name.split('/').pop() || selectedFile.originalFile.name;
+                    downloadCustomStt(mId, modelUrl, filename, selectedFile.size_bytes / (1024*1024));
+                  } else {
+                    const customLlm: LlmModel = {
+                      id: mId,
+                      name: name + " (" + parseQuant(selectedFile.name) + ")",
+                      provider: owner,
+                      url: modelUrl,
+                      params: details.params_b ? parseParams(details.params_b) : "?B",
+                      size_mb: selectedFile.size_bytes / (1024*1024),
+                      ram_gb: (selectedFile.size_bytes / (1024*1024*1024)) * 1.2,
+                      tier: details.params_b ? (details.params_b <= 4 ? "tiny" : details.params_b <= 9 ? "small" : details.params_b <= 14 ? "medium" : "large") : "medium",
+                      speed_label: estSpeed || "Unknown",
+                      languages: "Multi",
+                      license: "HF",
+                      best_for: "General",
+                    };
+                    downloadCustomLlm(customLlm);
+                  }
                 };
 
                 return (
@@ -620,8 +800,18 @@ function HfDetail({ details, hardware }: { details: HfModelDetails; hardware: Ha
                         </div>
                       ) : isDl ? (
                         <div className="flex items-center gap-3">
-                          <span className="text-xs font-medium text-sv-good">Installed</span>
-                          <button onClick={() => removeLlm(mId)} className="rounded-lg border border-sv-border bg-sv-surface px-3 py-1.5 text-xs text-sv-bad hover:bg-sv-surface-2">
+                          {isActive ? (
+                            <span className="text-xs font-medium text-sv-good">In use</span>
+                          ) : (
+                            track === "stt" ? (
+                              <button onClick={() => selectStt(mId)} className="rounded-lg bg-sv-surface-2 px-3 py-1.5 text-xs font-medium hover:bg-sv-accent hover:text-white">
+                                Select
+                              </button>
+                            ) : (
+                              <span className="text-xs font-medium text-sv-good">Installed</span>
+                            )
+                          )}
+                          <button onClick={() => track === "stt" ? removeStt(mId) : removeLlm(mId)} className="rounded-lg border border-sv-border bg-sv-surface px-3 py-1.5 text-xs text-sv-bad hover:bg-sv-surface-2">
                             Remove
                           </button>
                         </div>

@@ -91,11 +91,26 @@ fn map_hf_error(err: reqwest::Error) -> String {
     }
 }
 
+#[derive(Serialize)]
+pub struct PiperVoice {
+    pub key: String,
+    pub name: String,
+    pub language_code: String,
+    pub language_english: String,
+    pub country_english: String,
+    pub quality: String,
+    pub num_speakers: u32,
+    pub onnx_path: String,
+    pub onnx_size_bytes: u64,
+    pub json_path: String,
+}
+
 #[tauri::command]
 pub async fn hf_search_models(
     query: String,
     sort: String,
     limit: u32,
+    track: String,
 ) -> Result<Vec<HfSearchItem>, String> {
     let sort_val = match sort.as_str() {
         "likes" => "likes",
@@ -103,10 +118,23 @@ pub async fn hf_search_models(
         _ => "downloads",
     };
 
-    let url = format!(
-        "https://huggingface.co/api/models?search={}&filter=gguf&sort={}&direction=-1&limit={}&full=true",
-        urlencoding::encode(&query), sort_val, limit
-    );
+    let search_q = if query.trim().is_empty() {
+        "whisper.cpp".to_string()
+    } else {
+        format!("{} whisper.cpp", query)
+    };
+
+    let url = if track == "stt" {
+        format!(
+            "https://huggingface.co/api/models?search={}&sort={}&direction=-1&limit={}&full=true",
+            urlencoding::encode(&search_q), sort_val, limit
+        )
+    } else {
+        format!(
+            "https://huggingface.co/api/models?search={}&filter=gguf&sort={}&direction=-1&limit={}&full=true",
+            urlencoding::encode(&query), sort_val, limit
+        )
+    };
 
     let client = get_client()?;
     let res = client.get(&url).send().await.map_err(map_hf_error)?;
@@ -114,7 +142,24 @@ pub async fn hf_search_models(
 
     let mut items = Vec::new();
     for val in raw_items {
-        if let Ok(raw) = serde_json::from_value::<HfSearchItemRaw>(val) {
+        if track == "stt" {
+            let mut has_bin = false;
+            if let Some(siblings) = val.get("siblings").and_then(|v| v.as_array()) {
+                for sib in siblings {
+                    if let Some(rfilename) = sib.get("rfilename").and_then(|v| v.as_str()) {
+                        let basename = rfilename.rsplit('/').next().unwrap_or(rfilename);
+                        if basename.starts_with("ggml-") && basename.ends_with(".bin") {
+                            has_bin = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            if !has_bin {
+                continue;
+            }
+        }
+        if let Ok(raw) = serde_json::from_value::<HfSearchItemRaw>(val.clone()) {
             items.push(HfSearchItem {
                 id: raw.id,
                 downloads: raw.downloads,
@@ -155,7 +200,7 @@ pub fn strip_frontmatter(content: &str) -> String {
 }
 
 #[tauri::command]
-pub async fn hf_model_details(repo_id: String) -> Result<HfModelDetails, String> {
+pub async fn hf_model_details(repo_id: String, track: String) -> Result<HfModelDetails, String> {
     if !validate_repo_id(&repo_id) {
         return Err("Invalid repository ID".into());
     }
@@ -217,7 +262,13 @@ pub async fn hf_model_details(repo_id: String) -> Result<HfModelDetails, String>
     if let Some(siblings) = data.get("siblings").and_then(|v| v.as_array()) {
         for sib in siblings {
             if let Some(rfilename) = sib.get("rfilename").and_then(|v| v.as_str()) {
-                if rfilename.ends_with(".gguf") {
+                let basename = rfilename.rsplit('/').next().unwrap_or(rfilename);
+                let matches = if track == "stt" {
+                    basename.starts_with("ggml-") && basename.ends_with(".bin")
+                } else {
+                    rfilename.ends_with(".gguf")
+                };
+                if matches {
                     if let Some(size) = sib.get("size").and_then(|v| v.as_u64()) {
                         files.push(HfFile {
                             name: rfilename.to_string(),
@@ -259,6 +310,64 @@ pub async fn hf_model_details(repo_id: String) -> Result<HfModelDetails, String>
     })
 }
 
+#[tauri::command]
+pub async fn hf_piper_voices() -> Result<Vec<PiperVoice>, String> {
+    let url = "https://huggingface.co/rhasspy/piper-voices/raw/main/voices.json";
+    let client = get_client()?;
+    let res = client.get(url).send().await.map_err(map_hf_error)?;
+    let data: Value = res.json().await.map_err(map_hf_error)?;
+    let obj = data.as_object().ok_or("Invalid voices.json format")?;
+    
+    let mut voices = Vec::new();
+    for (key, val) in obj {
+        let name = val["name"].as_str().unwrap_or("").to_string();
+        let language_code = val["language"]["code"].as_str().unwrap_or("").to_string();
+        let language_english = val["language"]["name_english"].as_str().unwrap_or("").to_string();
+        let country_english = val["language"]["country_english"].as_str().unwrap_or("").to_string();
+        let quality = val["quality"].as_str().unwrap_or("").to_string();
+        let num_speakers = val["num_speakers"].as_u64().unwrap_or(1) as u32;
+        
+        let files = val.get("files").and_then(|f| f.as_object());
+        let mut onnx_path = None;
+        let mut onnx_size_bytes = 0;
+        let mut json_path = None;
+        
+        if let Some(files_obj) = files {
+            for (fpath, fval) in files_obj {
+                if fpath.ends_with(".onnx") {
+                    onnx_path = Some(fpath.to_string());
+                    onnx_size_bytes = fval["size_bytes"].as_u64().unwrap_or(0);
+                } else if fpath.ends_with(".onnx.json") {
+                    json_path = Some(fpath.to_string());
+                }
+            }
+        }
+        
+        if let (Some(onnx), Some(json)) = (onnx_path, json_path) {
+            voices.push(PiperVoice {
+                key: key.to_string(),
+                name,
+                language_code,
+                language_english,
+                country_english,
+                quality,
+                num_speakers,
+                onnx_path: onnx,
+                onnx_size_bytes,
+                json_path: json,
+            });
+        }
+    }
+    
+    voices.sort_by(|a, b| {
+        a.language_english.cmp(&b.language_english)
+            .then(a.name.cmp(&b.name))
+            .then(a.quality.cmp(&b.quality))
+    });
+    
+    Ok(voices)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -267,7 +376,7 @@ mod tests {
     // vacuously offline (network errors are not assertion failures).
     #[tokio::test]
     async fn live_search_and_details() {
-        let items = match hf_search_models("qwen".into(), "downloads".into(), 5).await {
+        let items = match hf_search_models("qwen".into(), "downloads".into(), 5, "llm".into()).await {
             Ok(i) => i,
             Err(e) => {
                 println!("live_search skip (offline?): {e}");
@@ -278,7 +387,7 @@ mod tests {
         assert!(items[0].downloads > 0, "downloads missing: {:?}", items[0].id);
         assert!(!items[0].last_modified.is_empty(), "lastModified missing");
 
-        let details = hf_model_details(items[0].id.clone()).await.expect("details failed");
+        let details = hf_model_details(items[0].id.clone(), "llm".into()).await.expect("details failed");
         assert!(!details.files.is_empty(), "no gguf files with sizes for {}", details.id);
         assert!(details.files.iter().all(|f| f.size_bytes > 0));
         println!(
@@ -333,5 +442,20 @@ mod tests {
         let json5 = r#"{"id": "a/b", "gated": "false"}"#;
         let item5: HfSearchItemRaw = serde_json::from_str(json5).unwrap();
         assert!(!item5.gated);
+    }
+
+    #[tokio::test]
+    async fn live_piper_voices() {
+        let voices = match hf_piper_voices().await {
+            Ok(v) => v,
+            Err(e) => {
+                println!("live_piper_voices skip (offline?): {e}");
+                return;
+            }
+        };
+        assert!(!voices.is_empty(), "voices missing");
+        assert!(!voices[0].name.is_empty());
+        assert!(!voices[0].onnx_path.is_empty());
+        assert!(voices[0].onnx_size_bytes > 0);
     }
 }

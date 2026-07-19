@@ -1,13 +1,10 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import Page from "../shared/Page";
-import ModelCard from "../shared/ModelCard";
-import { useHardwareInfo } from "../../hooks/useHardwareInfo";
 import {
   STT_MODELS,
   TTS_MODELS,
   sttLanguage,
 } from "../../services/catalog";
-import { sttCompatibility } from "../../services/recommend";
 import { formatMB } from "../../services/format";
 import { useModelStore } from "../../stores/modelStore";
 import { useSettingsStore } from "../../stores/settingsStore";
@@ -15,7 +12,9 @@ import type {
   SttPreset,
   TtsModel,
   CompatibilityLevel,
+  PiperVoice,
 } from "../../types";
+import { hfPiperVoices } from "../../services/tauriBridge";
 import HfBrowser from "./hf/HfBrowser";
 
 type Tab = "stt" | "llm" | "tts";
@@ -28,12 +27,6 @@ const CATEGORIES: { id: SttPreset | "all"; label: string }[] = [
   { id: "multilingual", label: "Multilingual" },
 ];
 
-// Lower = shown first. Recommended leads, then compatible, then heavy.
-const LEVEL_RANK: Record<CompatibilityLevel, number> = {
-  good: 0,
-  warn: 1,
-  bad: 2,
-};
 
 const DOT: Record<CompatibilityLevel, string> = {
   good: "bg-sv-good",
@@ -42,30 +35,18 @@ const DOT: Record<CompatibilityLevel, string> = {
 };
 
 export default function ModelStore() {
-  const { hardware } = useHardwareInfo();
   const [tab, setTab] = useState<Tab>("stt");
   const [category, setCategory] = useState<SttPreset | "all">("all");
   const [language, setLanguage] = useState<string>("all");
-  const downloadedStt = useModelStore((s) => s.downloaded);
   const downloadedTts = useModelStore((s) => s.downloadedTts);
 
-  const activeStt = useSettingsStore((s) => s.settings.active_stt_model);
-  const usingCloudStt = useSettingsStore((s) => s.settings.stt_cloud_provider_id);
   const activeTts = useSettingsStore((s) => s.settings.active_tts_voice);
   const setSettings = useSettingsStore((s) => s.setSettings);
 
-  const pinnedSttArr = useSettingsStore((s) => s.settings.pinned_stt);
   const pinnedTtsArr = useSettingsStore((s) => s.settings.pinned_tts);
-  const togglePinnedStt = useSettingsStore((s) => s.togglePinnedStt);
   const togglePinnedTts = useSettingsStore((s) => s.togglePinnedTts);
 
-  const pinnedStt = useMemo(() => new Set(pinnedSttArr || []), [pinnedSttArr]);
   const pinnedTts = useMemo(() => new Set(pinnedTtsArr || []), [pinnedTtsArr]);
-
-  // Selecting a local model also switches the STT source back to local so it
-  // actually takes effect (a cloud provider would otherwise override it).
-  const selectStt = (id: string) =>
-    setSettings({ active_stt_model: id, stt_cloud_provider_id: null });
 
   // All languages present in the catalog, for the language dropdown.
   const languages = useMemo(() => {
@@ -73,42 +54,61 @@ export default function ModelStore() {
     return ["all", ...Array.from(set).sort()];
   }, []);
 
-  const sttModels = useMemo(() => {
-    let list = STT_MODELS.slice();
-    if (category !== "all") list = list.filter((m) => m.preset === category);
-    if (language !== "all")
-      list = list.filter((m) => sttLanguage(m) === language);
-    return list.sort((a, b) => {
-      const aActive = a.id === activeStt && !usingCloudStt ? 0 : 1;
-      const bActive = b.id === activeStt && !usingCloudStt ? 0 : 1;
-      if (aActive !== bActive) return aActive - bActive;
-      const aPinned = pinnedStt.has(a.id) ? 0 : 1;
-      const bPinned = pinnedStt.has(b.id) ? 0 : 1;
-      if (aPinned !== bPinned) return aPinned - bPinned;
-      const aDown = downloadedStt.has(a.id) ? 0 : 1;
-      const bDown = downloadedStt.has(b.id) ? 0 : 1;
-      if (aDown !== bDown) return aDown - bDown;
-      const aRank = LEVEL_RANK[sttCompatibility(a, hardware).level];
-      const bRank = LEVEL_RANK[sttCompatibility(b, hardware).level];
-      if (aRank !== bRank) return aRank - bRank;
-      return a.size_mb - b.size_mb;
-    });
-  }, [category, language, downloadedStt, hardware, activeStt, usingCloudStt, pinnedStt]);
 
   // TTS search + language filter.
   const [ttsSearch, setTtsSearch] = useState("");
   const [ttsLanguage, setTtsLanguage] = useState<string>("all");
-  const ttsLanguages = useMemo(() => {
-    const set = new Set(TTS_MODELS.map((v) => v.language));
-    return ["all", ...Array.from(set).sort()];
+  const [piperVoices, setPiperVoices] = useState<PiperVoice[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    hfPiperVoices().then(res => {
+      if (active) setPiperVoices(res);
+    }).catch(e => console.error("Piper voices error:", e));
+    return () => { active = false; };
   }, []);
+
+  const allTtsModels = useMemo(() => {
+    const fromPiper = piperVoices.map((v) => {
+      const urlBase = `https://huggingface.co/rhasspy/piper-voices/resolve/main/${v.onnx_path.replace('.onnx', '')}`;
+      // Piper qualities are x_low/low/medium/high — map onto the app's tiers.
+      const quality =
+        v.quality === "high" ? ("natural" as const)
+        : v.quality === "medium" ? ("balanced" as const)
+        : ("fast" as const);
+      return {
+        id: v.key,
+        label: `${v.name} (${v.language_english}, ${v.country_english})`,
+        gender: "unknown" as const,
+        accent: "US" as const,
+        language: v.language_english,
+        quality,
+        size_mb: Math.round(v.onnx_size_bytes / (1024 * 1024)),
+        engine: "piper" as const,
+        url_onnx: `${urlBase}.onnx?download=true`,
+        url_json: `${urlBase}.onnx.json?download=true`
+      };
+    });
+    const merged = [...TTS_MODELS];
+    for (const pv of fromPiper) {
+      if (!merged.some(m => m.id === pv.id)) {
+        merged.push(pv);
+      }
+    }
+    return merged;
+  }, [piperVoices]);
+
+  const ttsLanguages = useMemo(() => {
+    const set = new Set(allTtsModels.map((v) => v.language));
+    return ["all", ...Array.from(set).sort()];
+  }, [allTtsModels]);
 
   // Voices: ACTIVE voice first, then downloaded, then fast → natural (fast
   // tiers suit CPU-only machines).
   const QUALITY_RANK = { fast: 0, balanced: 1, natural: 2 } as const;
   const sortedTts = useMemo(() => {
     const q = ttsSearch.trim().toLowerCase();
-    let list = TTS_MODELS.filter(
+    let list = allTtsModels.filter(
       (v) =>
         (ttsLanguage === "all" || v.language === ttsLanguage) &&
         (!q ||
@@ -129,7 +129,7 @@ export default function ModelStore() {
       return QUALITY_RANK[a.quality] - QUALITY_RANK[b.quality];
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [downloadedTts, activeTts, ttsSearch, ttsLanguage, pinnedTts]);
+  }, [downloadedTts, activeTts, ttsSearch, ttsLanguage, pinnedTts, allTtsModels]);
 
   return (
     <Page
@@ -228,28 +228,10 @@ export default function ModelStore() {
                 </option>
               ))}
             </Select>
-            <span className="ml-auto text-[11px] text-sv-muted">
-              {sttModels.length} model{sttModels.length === 1 ? "" : "s"}
-            </span>
           </div>
 
-          <div className="grid grid-cols-1 items-start gap-2 lg:grid-cols-2">
-            {sttModels.map((m) => (
-              <ModelCard
-                key={m.id}
-                model={m}
-                hardware={hardware}
-                active={!usingCloudStt && activeStt === m.id}
-                onSelect={() => selectStt(m.id)}
-                pinned={pinnedStt.has(m.id)}
-                onTogglePin={() => togglePinnedStt(m.id)}
-              />
-            ))}
-            {sttModels.length === 0 && (
-              <p className="rounded-xl border border-dashed border-sv-border bg-sv-surface p-6 text-center text-sm text-sv-muted lg:col-span-2">
-                No models match these filters.
-              </p>
-            )}
+          <div className="flex-1 overflow-hidden">
+            <HfBrowser track="stt" categoryFilter={category} languageFilter={language} />
           </div>
         </>
       ) : (
@@ -259,7 +241,7 @@ export default function ModelStore() {
             modes (Clean Up, Formal, Email…). Assign one to a mode in the Modes
             tab. You can also use a cloud provider instead (API Keys).
           </p>
-          <HfBrowser />
+          <HfBrowser track="llm" />
         </>
       )}
     </Page>
@@ -322,8 +304,15 @@ function TtsCard({
 }) {
   const downloaded = useModelStore((s) => s.downloadedTts.has(voice.id));
   const progress = useModelStore((s) => s.progress[voice.id]);
-  const download = useModelStore((s) => s.downloadTts);
+  const downloadCustomTts = useModelStore((s) => s.downloadCustomTts);
   const remove = useModelStore((s) => s.removeTts);
+
+  const download = () => {
+    // If it's a known catalog model, we could use downloadTts.
+    // However, for merged custom Piper models from hfPiperVoices, we must use downloadCustomTts
+    // with the explicit URLs (as they are not in the hardcoded TTS_MODELS array).
+    downloadCustomTts(voice.id, voice.url_onnx, voice.url_json, voice.size_mb);
+  };
 
   const isDownloading = progress?.status === "downloading";
   const pct =
@@ -404,7 +393,7 @@ function TtsCard({
           </>
         ) : (
           <button
-            onClick={() => download(voice.id)}
+            onClick={download}
             className="w-[84px] text-center rounded-lg border border-sv-border px-3 py-1.5 text-xs font-medium text-sv-text hover:border-sv-accent hover:text-sv-accent"
           >
             Download
