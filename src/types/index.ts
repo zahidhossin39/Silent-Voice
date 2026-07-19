@@ -179,3 +179,35 @@ export interface Settings {
   pinned_llm: string[];
   pinned_tts: string[];
 }
+
+// ---------- Hugging Face ----------
+export interface HfSearchItem {
+  id: string;
+  downloads: number;
+  likes: number;
+  last_modified: string;
+  tags: string[];
+  pipeline_tag: string | null;
+  gated: boolean;
+}
+
+export interface HfModelDetails {
+  id: string;
+  downloads: number;
+  likes: number;
+  last_modified: string;
+  tags: string[];
+  pipeline_tag: string | null;
+  gated: boolean;
+  arch: string | null;
+  params_b: number | null;
+  context_length: number | null;
+  has_tools: boolean;
+  files: HfFile[];
+  readme: string;
+}
+
+export interface HfFile {
+  name: string;
+  size_bytes: number;
+}

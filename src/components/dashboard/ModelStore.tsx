@@ -1,25 +1,22 @@
 import { useMemo, useState } from "react";
 import Page from "../shared/Page";
 import ModelCard from "../shared/ModelCard";
-import ProviderLogo from "../shared/ProviderLogo";
 import { useHardwareInfo } from "../../hooks/useHardwareInfo";
 import {
   STT_MODELS,
-  LLM_MODELS,
   TTS_MODELS,
   sttLanguage,
 } from "../../services/catalog";
-import { llmCompatibility, sttCompatibility } from "../../services/recommend";
-import { formatMB, formatGB } from "../../services/format";
+import { sttCompatibility } from "../../services/recommend";
+import { formatMB } from "../../services/format";
 import { useModelStore } from "../../stores/modelStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import type {
   SttPreset,
-  LlmModel,
   TtsModel,
-  HardwareInfo,
   CompatibilityLevel,
 } from "../../types";
+import HfBrowser from "./hf/HfBrowser";
 
 type Tab = "stt" | "llm" | "tts";
 
@@ -50,7 +47,6 @@ export default function ModelStore() {
   const [category, setCategory] = useState<SttPreset | "all">("all");
   const [language, setLanguage] = useState<string>("all");
   const downloadedStt = useModelStore((s) => s.downloaded);
-  const downloadedLlm = useModelStore((s) => s.downloadedLlm);
   const downloadedTts = useModelStore((s) => s.downloadedTts);
 
   const activeStt = useSettingsStore((s) => s.settings.active_stt_model);
@@ -59,14 +55,11 @@ export default function ModelStore() {
   const setSettings = useSettingsStore((s) => s.setSettings);
 
   const pinnedSttArr = useSettingsStore((s) => s.settings.pinned_stt);
-  const pinnedLlmArr = useSettingsStore((s) => s.settings.pinned_llm);
   const pinnedTtsArr = useSettingsStore((s) => s.settings.pinned_tts);
   const togglePinnedStt = useSettingsStore((s) => s.togglePinnedStt);
-  const togglePinnedLlm = useSettingsStore((s) => s.togglePinnedLlm);
   const togglePinnedTts = useSettingsStore((s) => s.togglePinnedTts);
 
   const pinnedStt = useMemo(() => new Set(pinnedSttArr || []), [pinnedSttArr]);
-  const pinnedLlm = useMemo(() => new Set(pinnedLlmArr || []), [pinnedLlmArr]);
   const pinnedTts = useMemo(() => new Set(pinnedTtsArr || []), [pinnedTtsArr]);
 
   // Selecting a local model also switches the STT source back to local so it
@@ -101,23 +94,6 @@ export default function ModelStore() {
       return a.size_mb - b.size_mb;
     });
   }, [category, language, downloadedStt, hardware, activeStt, usingCloudStt, pinnedStt]);
-
-  const sortedLlm = useMemo(
-    () =>
-      [...LLM_MODELS].sort((a, b) => {
-        const aPinned = pinnedLlm.has(a.id) ? 0 : 1;
-        const bPinned = pinnedLlm.has(b.id) ? 0 : 1;
-        if (aPinned !== bPinned) return aPinned - bPinned;
-        const aDown = downloadedLlm.has(a.id) ? 0 : 1;
-        const bDown = downloadedLlm.has(b.id) ? 0 : 1;
-        if (aDown !== bDown) return aDown - bDown;
-        const aRank = LEVEL_RANK[llmCompatibility(a, hardware).level];
-        const bRank = LEVEL_RANK[llmCompatibility(b, hardware).level];
-        if (aRank !== bRank) return aRank - bRank;
-        return a.size_mb - b.size_mb;
-      }),
-    [downloadedLlm, hardware, pinnedLlm]
-  );
 
   // TTS search + language filter.
   const [ttsSearch, setTtsSearch] = useState("");
@@ -283,11 +259,7 @@ export default function ModelStore() {
             modes (Clean Up, Formal, Email…). Assign one to a mode in the Modes
             tab. You can also use a cloud provider instead (API Keys).
           </p>
-          <div className="grid grid-cols-1 items-start gap-2 lg:grid-cols-2">
-            {sortedLlm.map((m) => (
-              <LlmCard key={m.id} model={m} hardware={hardware} pinned={pinnedLlm.has(m.id)} onTogglePin={() => togglePinnedLlm(m.id)} />
-            ))}
-          </div>
+          <HfBrowser />
         </>
       )}
     </Page>
@@ -468,139 +440,6 @@ function TabButton({
   );
 }
 
-function LlmCard({
-  model,
-  hardware,
-  pinned,
-  onTogglePin,
-}: {
-  model: LlmModel;
-  hardware: HardwareInfo | null;
-  pinned: boolean;
-  onTogglePin: () => void;
-}) {
-  const downloaded = useModelStore((s) => s.downloadedLlm.has(model.id));
-  const progress = useModelStore((s) => s.progress[model.id]);
-  const download = useModelStore((s) => s.downloadLlm);
-  const remove = useModelStore((s) => s.removeLlm);
-  const [open, setOpen] = useState(false);
-
-  const level = llmCompatibility(model, hardware).level;
-  const isDownloading = progress?.status === "downloading";
-  const pct =
-    progress && progress.total_bytes > 0
-      ? Math.round((progress.downloaded_bytes / progress.total_bytes) * 100)
-      : 0;
-
-  return (
-    <div className="overflow-hidden rounded-xl border border-sv-border bg-sv-surface transition hover:border-sv-muted/40">
-      <div className="flex items-center gap-3 px-3.5 py-2.5">
-        <button
-          onClick={() => setOpen((v) => !v)}
-          className="flex min-w-0 flex-1 items-center gap-3 text-left"
-        >
-          <ProviderLogo provider={model.provider} size={30} />
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <span
-                className={`h-2 w-2 shrink-0 rounded-full ${DOT[level]}`}
-                title={level}
-              />
-              <h3 className="truncate text-sm font-medium">{model.name}</h3>
-            </div>
-            <p className="mt-0.5 truncate text-[11px] text-sv-muted">
-              {model.provider} · {model.params} · {formatMB(model.size_mb)}
-            </p>
-          </div>
-          <Chevron open={open} />
-        </button>
-        <div className="flex shrink-0 items-center justify-end gap-2 min-w-[168px]">
-          <button onClick={onTogglePin} title={pinned ? "Unpin" : "Pin to top"} className={pinned ? "mr-auto rounded-lg p-1.5 transition text-sv-accent" : "mr-auto rounded-lg p-1.5 transition text-sv-muted hover:text-sv-accent"}><StarIcon filled={pinned} /></button>
-          {isDownloading ? (
-            <div className="flex items-center gap-2">
-              <div className="h-1.5 w-20 overflow-hidden rounded-full bg-sv-surface-2">
-                <div
-                  className="h-full bg-sv-accent transition-all"
-                  style={{ width: `${pct}%` }}
-                />
-              </div>
-              <span className="w-8 text-right text-[11px] text-sv-muted">
-                {pct}%
-              </span>
-            </div>
-          ) : downloaded ? (
-            <>
-              <span className="w-[84px] text-right text-[11px] text-sv-good">Installed</span>
-              <button
-                onClick={() => remove(model.id)}
-                title="Remove download"
-                className="rounded-lg p-1.5 text-sv-muted transition hover:bg-sv-surface-2 hover:text-sv-bad"
-              >
-                <TrashIcon />
-              </button>
-            </>
-          ) : (
-            <button
-              onClick={() => download(model.id)}
-              className="w-[84px] text-center rounded-lg border border-sv-border px-3 py-1.5 text-xs font-medium text-sv-text hover:border-sv-accent hover:text-sv-accent"
-            >
-              Download
-            </button>
-          )}
-        </div>
-      </div>
-
-      {open && (
-        <div className="border-t border-sv-border/70 px-3.5 py-3">
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <LlmStat label="Size (params)" value={model.params} />
-            <LlmStat label="Speed" value={model.speed_label.replace("~", "")} />
-            <LlmStat label="Download" value={formatMB(model.size_mb)} />
-            <LlmStat label="Memory use" value={formatGB(model.ram_gb)} />
-          </div>
-          <p className="mt-2.5 text-[11px] text-sv-muted">
-            {model.best_for} · {model.languages} · {model.license}
-          </p>
-        </div>
-      )}
-
-      {progress?.status === "error" && (
-        <p className="px-3.5 pb-2 text-[11px] text-sv-bad">{progress.error}</p>
-      )}
-    </div>
-  );
-}
-
-function LlmStat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-lg bg-sv-surface-2 px-2.5 py-1.5">
-      <div className="text-[10px] uppercase tracking-wide text-sv-muted">
-        {label}
-      </div>
-      <div className="text-xs font-medium">{value}</div>
-    </div>
-  );
-}
-
-function Chevron({ open }: { open: boolean }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width="16"
-      height="16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={`shrink-0 text-sv-muted transition-transform ${
-        open ? "rotate-180" : ""
-      }`}
-    >
-      <path d="M6 9l6 6 6-6" />
-    </svg>
-  );
-}
 
 function TrashIcon() {
   return (

@@ -5,7 +5,7 @@ import { useSettingsStore } from "../../stores/settingsStore";
 import { useModelStore } from "../../stores/modelStore";
 import { localLlmGenerate, apiGenerate } from "../../services/tauriBridge";
 import { LLM_MODELS } from "../../services/catalog";
-import type { Mode, ModelSource } from "../../types";
+import type { LlmModel, Mode, ModelSource } from "../../types";
 
 const SAMPLE_TEXT =
   "um so i was thinking like maybe we could uh meet tomorrow you know to go over the the budget stuff";
@@ -28,6 +28,7 @@ export default function Modes() {
   const updateMode = useSettingsStore((s) => s.updateMode);
   const deleteMode = useSettingsStore((s) => s.deleteMode);
   const downloadedLlm = useModelStore((s) => s.downloadedLlm);
+  const customLlm = useModelStore((s) => s.customLlm);
 
   const [editing, setEditing] = useState<Mode | null>(null);
   const localCount = downloadedLlm.size;
@@ -169,6 +170,7 @@ export default function Modes() {
           onSave={save}
           onCancel={() => setEditing(null)}
           downloadedLlm={downloadedLlm}
+          customLlm={customLlm}
         />
       )}
     </Page>
@@ -181,12 +183,14 @@ function Editor({
   onSave,
   onCancel,
   downloadedLlm,
+  customLlm,
 }: {
   mode: Mode;
   onChange: (m: Mode) => void;
   onSave: () => void;
   onCancel: () => void;
   downloadedLlm: Set<string>;
+  customLlm: LlmModel[];
 }) {
   const readonly = false;
   const providers = useSettingsStore((s) => s.providers);
@@ -199,7 +203,10 @@ function Editor({
       : undefined;
 
   // Local models the user has downloaded (joined with catalog for names).
-  const localModels = LLM_MODELS.filter((m) => downloadedLlm.has(m.id));
+  const localModels = [
+    ...LLM_MODELS.filter((m) => downloadedLlm.has(m.id)),
+    ...customLlm.filter((m) => downloadedLlm.has(m.id)),
+  ];
   const localReady =
     mode.model_source === "local" && downloadedLlm.has(mode.model_id);
 

@@ -10,7 +10,7 @@ mod transcription;
 
 use audio::capture::{self, Recorder};
 use history::HistoryEntry;
-use models::{downloader, registry};
+use models::{downloader, registry, hf};
 use serde::Deserialize;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, AtomicU64};
@@ -860,6 +860,8 @@ pub fn run() {
             show_overlay,
             set_overlay_size,
             set_overlay_opacity,
+            hf::hf_search_models,
+            hf::hf_model_details,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Silent Voice")

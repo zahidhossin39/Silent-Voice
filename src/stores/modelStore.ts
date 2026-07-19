@@ -1,5 +1,6 @@
 import { create } from "zustand";
-import type { DownloadProgress } from "../types";
+import { persist } from "zustand/middleware";
+import type { DownloadProgress, LlmModel } from "../types";
 import {
   listDownloadedModels,
   downloadModel as bridgeDownload,
@@ -22,11 +23,13 @@ interface ModelState {
   downloaded: Set<string>; // STT (whisper) model ids
   downloadedLlm: Set<string>; // LLM (GGUF) model ids
   downloadedTts: Set<string>; // TTS (Piper) voice ids
+  customLlm: LlmModel[];
   progress: Record<string, DownloadProgress>;
   refresh: () => Promise<void>;
   download: (modelId: string) => Promise<void>;
   remove: (modelId: string) => Promise<void>;
   downloadLlm: (modelId: string) => Promise<void>;
+  downloadCustomLlm: (model: LlmModel) => Promise<void>;
   removeLlm: (modelId: string) => Promise<void>;
   downloadTts: (voiceId: string) => Promise<void>;
   removeTts: (voiceId: string) => Promise<void>;
@@ -50,13 +53,16 @@ function startProgress(
   }));
 }
 
-export const useModelStore = create<ModelState>((set) => ({
-  downloaded: new Set<string>(),
-  downloadedLlm: new Set<string>(),
-  downloadedTts: new Set<string>(),
-  progress: {},
+export const useModelStore = create<ModelState>()(
+  persist(
+    (set) => ({
+      downloaded: new Set<string>(),
+      downloadedLlm: new Set<string>(),
+      downloadedTts: new Set<string>(),
+      customLlm: [],
+      progress: {},
 
-  refresh: async () => {
+      refresh: async () => {
     const [stt, llm, tts] = await Promise.all([
       listDownloadedModels(),
       listDownloadedLlm(),
@@ -135,14 +141,42 @@ export const useModelStore = create<ModelState>((set) => ({
     }
   },
 
+  downloadCustomLlm: async (model) => {
+    startProgress(set, model.id, model.size_mb * 1024 * 1024);
+    try {
+      await bridgeDownloadLlm(model.id, model.url);
+      set((s) => {
+        const downloadedLlm = new Set(s.downloadedLlm);
+        downloadedLlm.add(model.id);
+        const exists = s.customLlm.some((m) => m.id === model.id);
+        return {
+          downloadedLlm,
+          customLlm: exists ? s.customLlm : [...s.customLlm, model],
+          progress: {
+            ...s.progress,
+            [model.id]: { ...s.progress[model.id], status: "downloaded" },
+          },
+        };
+      });
+    } catch (e) {
+      set((s) => ({
+        progress: {
+          ...s.progress,
+          [model.id]: { ...s.progress[model.id], status: "error", error: String(e) },
+        },
+      }));
+    }
+  },
+
   removeLlm: async (modelId) => {
     await bridgeDeleteLlm(modelId);
     set((s) => {
       const downloadedLlm = new Set(s.downloadedLlm);
       downloadedLlm.delete(modelId);
+      const customLlm = s.customLlm.filter((m) => m.id !== modelId);
       const progress = { ...s.progress };
       delete progress[modelId];
-      return { downloadedLlm, progress };
+      return { downloadedLlm, customLlm, progress };
     });
   },
 
@@ -183,7 +217,13 @@ export const useModelStore = create<ModelState>((set) => ({
       return { downloadedTts, progress };
     });
   },
-}));
+    }),
+    {
+      name: "sv-model-store",
+      partialize: (state) => ({ customLlm: state.customLlm }),
+    }
+  )
+);
 
 // Allow the Rust backend to push live download progress via events.
 export function applyDownloadProgress(p: DownloadProgress) {

@@ -3,7 +3,7 @@
 // Tauri, and returns sensible mock data when running in a plain
 // browser (Vite dev preview before the Rust backend is built).
 // ============================================================
-import type { HardwareInfo, HistoryEntry } from "../types";
+import type { HardwareInfo, HistoryEntry, HfSearchItem, HfModelDetails } from "../types";
 
 export function isTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -498,4 +498,52 @@ export async function clearHistoryFile(): Promise<void> {
   } catch (e) {
     console.warn("clear_history failed", e);
   }
+}
+
+// ---------------- Hugging Face ----------------
+
+export async function hfSearchModels(
+  query: string,
+  sort: string,
+  limit: number
+): Promise<HfSearchItem[]> {
+  if (!isTauri()) {
+    // Mock data for browser preview
+    return [
+      {
+        id: "bartowski/Meta-Llama-3-8B-Instruct-GGUF",
+        downloads: 12500,
+        likes: 450,
+        last_modified: new Date().toISOString(),
+        tags: ["text-generation", "llama3", "gguf"],
+        pipeline_tag: "text-generation",
+        gated: false,
+      }
+    ];
+  }
+  return invoke<HfSearchItem[]>("hf_search_models", { query, sort, limit });
+}
+
+export async function hfModelDetails(repoId: string): Promise<HfModelDetails> {
+  if (!isTauri()) {
+    // Mock data for browser preview
+    return {
+      id: repoId,
+      downloads: 12500,
+      likes: 450,
+      last_modified: new Date().toISOString(),
+      tags: ["text-generation", "llama3", "gguf"],
+      gated: false,
+      context_length: 8192,
+      has_tools: true,
+      pipeline_tag: "text-generation",
+      arch: "llama",
+      params_b: 8.0,
+      files: [
+        { name: "Meta-Llama-3-8B-Instruct-Q4_K_M.gguf", size_bytes: 4920000000 }
+      ],
+      readme: "# Meta Llama 3 8B Instruct\n\nThis is a mock readme for browser preview.",
+    };
+  }
+  return invoke<HfModelDetails>("hf_model_details", { repoId });
 }
