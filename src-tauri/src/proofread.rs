@@ -17,6 +17,42 @@ use std::sync::Arc;
 
 const FILLER_WORDS: &[&str] = &["um", "umm", "uh", "uhh", "erm"];
 
+/// Cheap heuristic: does this text look like code/JSON/template markup
+/// rather than English prose? Inline proofreading polls whatever field has
+/// focus, including code editors and workflow-builder expression fields
+/// (n8n, VS Code, JSON viewers) — spelling/grammar rules read identifiers
+/// and JSON keys as errors there. Skip proofreading entirely instead of
+/// flagging them, so no squiggles are drawn on code in the first place.
+fn looks_like_code(text: &str) -> bool {
+    let trimmed = text.trim();
+    if trimmed.chars().count() < 12 {
+        return false; // too short to judge reliably
+    }
+    // Template expressions ("{{ ... }}") are the strongest single signal —
+    // n8n, Handlebars, Vue, Jinja all use this and it never appears in prose.
+    if trimmed.contains("{{") && trimmed.contains("}}") {
+        return true;
+    }
+    let chars: Vec<char> = trimmed.chars().collect();
+    let mut code_punct = 0usize;
+    let mut json_pairs = 0usize;
+    for (i, &c) in chars.iter().enumerate() {
+        if matches!(c, '{' | '}' | '[' | ']' | '`' | '<' | '>' | '|' | '\\' | '=') {
+            code_punct += 1;
+        }
+        if c == ':' && i > 0 && chars[i - 1] == '"' {
+            json_pairs += 1;
+        }
+    }
+    // Two or more `"key":` pairs is unambiguously JSON.
+    if json_pairs >= 2 {
+        return true;
+    }
+    // Prose rarely exceeds a couple percent of structural punctuation;
+    // code/JSON bodies are dense with it.
+    code_punct as f64 / chars.len() as f64 > 0.06
+}
+
 #[derive(Serialize, Clone)]
 pub struct ProofIssue {
     /// Char-index range into the checked text (exclusive end).
@@ -34,6 +70,10 @@ pub struct ProofIssue {
 /// as correctly spelled. `disabled_rules` holds Harper rule ids the user
 /// turned off in Settings (unknown ids are ignored by Harper).
 pub fn check(text: &str, vocabulary: &str, disabled_rules: &[String], gector_sensitivity: &str) -> Vec<ProofIssue> {
+    if looks_like_code(text) {
+        return Vec::new();
+    }
+
     let mut dict = MergedDictionary::new();
     dict.add_dictionary(FstDictionary::curated());
 
@@ -230,6 +270,29 @@ pub fn check(text: &str, vocabulary: &str, disabled_rules: &[String], gector_sen
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn skips_json_and_template_text() {
+        let json_text = r#"{ "article": { "title": {{ JSON.stringify($('Code in JavaScript').item.json.title) }}, "body_markdown": {{ JSON.stringify($('Code in JavaScript').item.json.body_markdown) }}, "published": false, "tags": {{ JSON.stringify($('Code in JavaScript').item.json.tags) }}, "main_image": } }"#;
+        let issues = check(json_text, "", &[], "balanced");
+        assert!(issues.is_empty(), "expected code to be skipped, got: {:?}", issues.iter().map(|i| &i.message).collect::<Vec<_>>());
+
+        let plain_json = r#"{"name": "value", "count": 42, "active": true}"#;
+        let issues = check(plain_json, "", &[], "balanced");
+        assert!(issues.is_empty(), "expected plain JSON to be skipped, got: {:?}", issues.iter().map(|i| &i.message).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn still_checks_normal_prose_with_occasional_punctuation() {
+        // Real English with a semicolon and a parenthetical should NOT be
+        // mistaken for code by the punctuation-density heuristic.
+        let issues = check("This is a mispeled word; it happens sometimes (rarely).", "", &[], "balanced");
+        assert!(
+            issues.iter().any(|i| i.kind.contains("Spell")),
+            "expected prose to still be checked, got: {:?}",
+            issues.iter().map(|i| &i.message).collect::<Vec<_>>()
+        );
+    }
 
     #[test]
     fn flags_misspelling_and_respects_vocabulary() {
