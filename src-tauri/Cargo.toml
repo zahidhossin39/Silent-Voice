@@ -70,6 +70,10 @@ windows = { version = "0.58", features = [
   "Win32_System_Variant",
 ] }
 windows-core = "0.58"
+# WebView2 memory trimming when hidden to tray. Version must match wry's, and
+# its windows-core (0.61) differs from ours (0.58) — renamed import for casts.
+webview2-com = "0.38"
+windows-core-061 = { package = "windows-core", version = "0.61" }
 
 [profile.release]
 lto = true

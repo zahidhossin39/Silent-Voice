@@ -722,6 +722,33 @@ fn set_overlay_opacity(app: AppHandle, value: f64) {
     let _ = app.emit("overlay://opacity", value);
 }
 
+/// Tell WebView2 to shed renderer memory while the dashboard is hidden in the
+/// tray, and go back to normal when it's shown (perf roadmap item 10).
+fn set_webview_memory_low(app: &AppHandle, low: bool) {
+    #[cfg(windows)]
+    if let Some(win) = app.get_webview_window("main") {
+        let _ = win.with_webview(move |webview| unsafe {
+            use webview2_com::Microsoft::Web::WebView2::Win32::{
+                ICoreWebView2_19, COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_LOW,
+                COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_NORMAL,
+            };
+            use windows_core_061::Interface;
+            if let Ok(core) = webview.controller().CoreWebView2() {
+                if let Ok(wv19) = core.cast::<ICoreWebView2_19>() {
+                    let level = if low {
+                        COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_LOW
+                    } else {
+                        COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_NORMAL
+                    };
+                    let _ = wv19.SetMemoryUsageTargetLevel(level);
+                }
+            }
+        });
+    }
+    #[cfg(not(windows))]
+    let _ = (app, low);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     logging::log_info("app", &format!("Silent Voice starting (v{})", env!("CARGO_PKG_VERSION")));
@@ -777,9 +804,17 @@ pub fn run() {
         // and the app can never surface its UI again without a restart.
         .on_window_event(|window, event| {
             if window.label() == "main" {
-                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                    api.prevent_close();
-                    let _ = window.hide();
+                match event {
+                    tauri::WindowEvent::CloseRequested { api, .. } => {
+                        api.prevent_close();
+                        let _ = window.hide();
+                        set_webview_memory_low(window.app_handle(), true);
+                    }
+                    // Any focus regain means the window is visible again.
+                    tauri::WindowEvent::Focused(true) => {
+                        set_webview_memory_low(window.app_handle(), false);
+                    }
+                    _ => {}
                 }
             }
         })
@@ -814,6 +849,28 @@ pub fn run() {
                 loop {
                     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
                     overlay::ensure_visible(&handle);
+                }
+            });
+
+            // Idle-unload sweep (perf roadmap item 7): free the RAM held by
+            // whisper-server + GECToR after 10 min without a dictation/check.
+            // Both reload transparently on next use (whisper pays one cold
+            // model load; the pill shows "transcribing" during it).
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let idle = std::time::Duration::from_secs(600);
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+                    let stopped = handle
+                        .state::<AppState>()
+                        .whisper_server
+                        .lock()
+                        .map(|mut s| s.stop_if_idle(idle))
+                        .unwrap_or(false);
+                    if stopped {
+                        logging::log_info("stt", "stopped idle whisper-server");
+                    }
+                    gector::unload_if_idle(idle);
                 }
             });
             Ok(())
