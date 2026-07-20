@@ -24,6 +24,8 @@ pub struct WhisperServer {
     child: Option<Child>,
     /// model|language|vocab|gpu|threads — any change requires a restart.
     key: Option<String>,
+    /// Last dictation through this server, for the idle-unload sweep.
+    last_used: Option<Instant>,
 }
 
 impl WhisperServer {
@@ -33,7 +35,10 @@ impl WhisperServer {
         }
         match self.child.as_mut() {
             Some(child) => match child.try_wait() {
-                Ok(None) => true,
+                Ok(None) => {
+                    self.last_used = Some(Instant::now());
+                    true
+                }
                 _ => {
                     self.child = None;
                     self.key = None;
@@ -42,6 +47,21 @@ impl WhisperServer {
             },
             None => false,
         }
+    }
+
+    /// Kill the server (freeing the loaded model's RAM) if it hasn't served a
+    /// dictation for `max_idle`. The next dictation restarts it — that first
+    /// one waits out the model load again, like a cold start.
+    pub fn stop_if_idle(&mut self, max_idle: Duration) -> bool {
+        if self.child.is_some() {
+            if let Some(t) = self.last_used {
+                if t.elapsed() >= max_idle {
+                    self.stop();
+                    return true;
+                }
+            }
+        }
+        false
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -72,6 +92,14 @@ impl WhisperServer {
             .arg(threads.to_string())
             .arg("-l")
             .arg(if language.is_empty() { "auto" } else { language })
+            // Greedy decoding: skips beam search (default 5 candidate beams)
+            // for 2-4x faster inference at near-identical accuracy for
+            // dictation-length clips.
+            .arg("-bs")
+            .arg("1")
+            // Flash attention: faster attention kernels; whisper.cpp disables
+            // it by itself with a warning when the backend lacks support.
+            .arg("-fa")
             .current_dir(exe.parent().unwrap_or_else(|| Path::new(".")));
         let vocab = vocabulary.trim();
         if !vocab.is_empty() {
@@ -94,6 +122,7 @@ impl WhisperServer {
         let child = cmd.spawn().map_err(|e| e.to_string())?;
         self.child = Some(child);
         self.key = Some(key.to_string());
+        self.last_used = Some(Instant::now());
         Ok(())
     }
 

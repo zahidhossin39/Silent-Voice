@@ -126,6 +126,9 @@ pub async fn transcribe(
         "-l".into(),
         lang.into(),
         "--no-timestamps".into(), // -nt: text only, no [timestamps]
+        "-bs".into(),
+        "1".into(), // greedy decoding — same speedup as the server path
+        "-fa".into(),
     ];
 
     // Custom vocabulary: fed to whisper.cpp as an initial prompt, which biases
