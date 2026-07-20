@@ -10,7 +10,12 @@
 use crate::audio::capture::WHISPER_SAMPLE_RATE;
 
 const FRAME_MS: usize = 30;
-const PAD_FRAMES: usize = 8; // ~240ms of context kept on each side
+// Words often start softly (breathy onsets like "h", "wh") and only clear the
+// RMS threshold mid-word — keep extra context BEFORE the first loud frame so
+// the first word isn't clipped. Trailing padding stays shorter: silence after
+// speech is exactly what Whisper hallucinates extra words on.
+const PAD_FRAMES_LEAD: usize = 14; // ~420ms before speech
+const PAD_FRAMES_TAIL: usize = 8; // ~240ms after speech
 
 /// Map the 0–100 sensitivity slider to an RMS threshold (log scale).
 /// 100 = very sensitive (whispers count as speech, threshold ~0.0015)
@@ -44,8 +49,8 @@ pub fn trim_silence(samples: &[f32], sensitivity: u32) -> Option<Vec<f32>> {
     let first = frames.iter().position(|f| frame_rms(f) >= threshold)?;
     let last = frames.iter().rposition(|f| frame_rms(f) >= threshold)?;
 
-    let start = first.saturating_sub(PAD_FRAMES) * frame_len;
-    let end = ((last + 1 + PAD_FRAMES) * frame_len).min(samples.len());
+    let start = first.saturating_sub(PAD_FRAMES_LEAD) * frame_len;
+    let end = ((last + 1 + PAD_FRAMES_TAIL) * frame_len).min(samples.len());
 
     // Under ~0.3s of audio left → treat as no speech.
     if end.saturating_sub(start) < WHISPER_SAMPLE_RATE as usize * 3 / 10 {
