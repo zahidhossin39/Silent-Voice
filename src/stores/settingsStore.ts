@@ -55,6 +55,7 @@ const DEFAULT_SETTINGS: Settings = {
   proofread_disabled_rules: [],
   gector_sensitivity: "balanced",
   proofread_ignore_apps: "",
+  pill_auto_hide: false,
   active_tts_voice: null,
   tts_hotkey: "Ctrl+Alt+S",
   onboarded: false,

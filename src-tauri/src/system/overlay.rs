@@ -1,5 +1,6 @@
 use crate::AppState;
 use std::sync::atomic::Ordering;
+use std::time::Duration;
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
 pub const OVERLAY_LABEL: &str = "overlay";
@@ -259,6 +260,39 @@ pub fn toggle_overlay(app: &AppHandle) {
     } else {
         hide_overlay(app);
     }
+}
+
+/// Mark the pill as actively needed (about to record, or a fresh idle period
+/// just started) — invalidates any pending auto-hide timer from before.
+pub fn mark_active(app: &AppHandle) -> u64 {
+    app.try_state::<AppState>()
+        .map(|s| s.pill_activity_gen.fetch_add(1, Ordering::SeqCst) + 1)
+        .unwrap_or(0)
+}
+
+/// If "hide the pill when idle" is on, hide it 5s from now — unless a newer
+/// call to `mark_active` (a fresh recording, or a later idle transition)
+/// superseded this one in the meantime.
+pub fn schedule_autohide(app: &AppHandle) {
+    let auto_hide = app
+        .try_state::<AppState>()
+        .and_then(|s| s.config.lock().ok().map(|c| c.pill_auto_hide))
+        .unwrap_or(false);
+    if !auto_hide {
+        return;
+    }
+    let my_gen = mark_active(app);
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        let still_current = app
+            .try_state::<AppState>()
+            .map(|s| s.pill_activity_gen.load(Ordering::SeqCst) == my_gen)
+            .unwrap_or(false);
+        if still_current {
+            hide_overlay(&app);
+        }
+    });
 }
 
 /// Keep-alive: ensure the pill stays shown + topmost (unless the user hid it).

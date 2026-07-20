@@ -186,6 +186,7 @@ export interface Settings {
   proofread_disabled_rules: string[]; // Harper rule ids the user turned off (plus our "Filler" pseudo-rule)
   gector_sensitivity: "relaxed" | "balanced" | "aggressive";
   proofread_ignore_apps: string; // comma-separated exe-name substrings where squiggles are suppressed
+  pill_auto_hide: boolean; // hide the recording pill ~5s after idle, reappear on next hotkey press
   active_tts_voice: string | null; // Piper voice id for read-aloud; null = none selected
   tts_hotkey: string; // global hotkey that reads the current text selection aloud
   onboarded: boolean; // true once the first-launch setup wizard has been completed/skipped

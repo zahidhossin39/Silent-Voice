@@ -63,6 +63,7 @@ export function useRuntimeSync() {
   const proofreadDisabledRules = useSettingsStore((s) => s.settings.proofread_disabled_rules);
   const gectorSensitivity = useSettingsStore((s) => s.settings.gector_sensitivity);
   const proofreadIgnoreApps = useSettingsStore((s) => s.settings.proofread_ignore_apps);
+  const pillAutoHide = useSettingsStore((s) => s.settings.pill_auto_hide);
   const ttsVoice = useSettingsStore((s) => s.settings.active_tts_voice);
   const ttsHotkey = useSettingsStore((s) => s.settings.tts_hotkey);
   const autoStart = useSettingsStore((s) => s.settings.auto_start);
@@ -134,9 +135,10 @@ export function useRuntimeSync() {
       performanceThreads,
       proofreadDisabledRules,
       gectorSensitivity,
-      proofreadIgnoreApps.split(",").map((a) => a.trim()).filter(Boolean)
+      proofreadIgnoreApps.split(",").map((a) => a.trim()).filter(Boolean),
+      pillAutoHide
     );
-  }, [toggleMode, inputSensitivity, inlineProofread, highPerformance, performanceThreads, proofreadDisabledRules, gectorSensitivity, proofreadIgnoreApps]);
+  }, [toggleMode, inputSensitivity, inlineProofread, highPerformance, performanceThreads, proofreadDisabledRules, gectorSensitivity, proofreadIgnoreApps, pillAutoHide]);
 
   useEffect(() => {
     setAutostart(autoStart);

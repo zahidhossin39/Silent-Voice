@@ -198,6 +198,14 @@ fn emit_state(app: &AppHandle, state: &str) {
     let _ = app.emit("pipeline://state", PipelineState { state: state.into() });
 }
 
+/// The pipeline finished (successfully or not) and the pill returns to idle.
+/// Also starts the pill's auto-hide countdown (no-op unless the user turned
+/// that setting on).
+fn go_idle(app: &AppHandle) {
+    emit_state(app, "idle");
+    overlay::schedule_autohide(app);
+}
+
 /// Hotkey pressed. Behavior:
 ///  - idle → start recording (push-to-talk begins)
 ///  - recording + this press is the second tap of a double-tap → lock recording on
@@ -287,6 +295,7 @@ pub fn start_capture(app: &AppHandle) {
         Ok(rec) => {
             *slot = Some(rec);
             overlay::show_overlay(app);
+            overlay::mark_active(app); // cancel any pending auto-hide from before
             emit_state(app, "recording");
         }
         Err(e) => {
@@ -437,7 +446,7 @@ fn finalize_recording(app: AppHandle) {
         let samples = rec.stop();
         if samples.is_empty() {
             // pill stays visible; just return to idle state
-            emit_state(&app, "idle");
+            go_idle(&app);
             return;
         }
 
@@ -527,7 +536,7 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
     // entirely — no transcription time wasted on noise.
     let Some(samples) = crate::audio::gate::trim_silence(&samples, input_sensitivity) else {
         crate::logging::log_info("gate", "clip below sensitivity threshold — skipped");
-        emit_state(&app, "idle");
+        go_idle(&app);
         return;
     };
 
@@ -535,7 +544,7 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
     if let Err(e) = capture::write_wav(&wav_path, &samples) {
         report_error(&app, "audio", &e);
         // pill stays visible; just return to idle state
-        emit_state(&app, "idle");
+        go_idle(&app);
         return;
     }
 
@@ -560,7 +569,7 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
         Err(e) => {
             report_error(&app, "stt", &e);
             // pill stays visible; just return to idle state
-            emit_state(&app, "idle");
+            go_idle(&app);
             return;
         }
     };
@@ -645,5 +654,5 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
     );
 
     // pill stays visible; just return to idle state
-    emit_state(&app, "idle");
+    go_idle(&app);
 }

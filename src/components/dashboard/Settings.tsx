@@ -205,6 +205,15 @@ export default function Settings() {
             />
           </Row>
           <Row
+            label="Auto-hide the pill"
+            hint="Pill disappears ~5s after it's done, and reappears the moment you press the hotkey again"
+          >
+            <Toggle
+              checked={settings.pill_auto_hide}
+              onChange={(v) => setSettings({ pill_auto_hide: v })}
+            />
+          </Row>
+          <Row
             label="Inline proofreading"
             hint="Red/blue underlines beneath spelling & grammar mistakes as you type in any app (English only)"
           >
