@@ -24,8 +24,6 @@ pub struct WhisperServer {
     child: Option<Child>,
     /// model|language|vocab|gpu|threads — any change requires a restart.
     key: Option<String>,
-    /// Last dictation through this server, for the idle-unload sweep.
-    last_used: Option<Instant>,
 }
 
 impl WhisperServer {
@@ -35,10 +33,7 @@ impl WhisperServer {
         }
         match self.child.as_mut() {
             Some(child) => match child.try_wait() {
-                Ok(None) => {
-                    self.last_used = Some(Instant::now());
-                    true
-                }
+                Ok(None) => true,
                 _ => {
                     self.child = None;
                     self.key = None;
@@ -47,21 +42,6 @@ impl WhisperServer {
             },
             None => false,
         }
-    }
-
-    /// Kill the server (freeing the loaded model's RAM) if it hasn't served a
-    /// dictation for `max_idle`. The next dictation restarts it — that first
-    /// one waits out the model load again, like a cold start.
-    pub fn stop_if_idle(&mut self, max_idle: Duration) -> bool {
-        if self.child.is_some() {
-            if let Some(t) = self.last_used {
-                if t.elapsed() >= max_idle {
-                    self.stop();
-                    return true;
-                }
-            }
-        }
-        false
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -122,7 +102,6 @@ impl WhisperServer {
         let child = cmd.spawn().map_err(|e| e.to_string())?;
         self.child = Some(child);
         self.key = Some(key.to_string());
-        self.last_used = Some(Instant::now());
         Ok(())
     }
 

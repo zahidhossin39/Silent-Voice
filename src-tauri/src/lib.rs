@@ -75,6 +75,10 @@ pub struct RuntimeConfig {
     // overrides the globally active one. Resolved by the frontend (like
     // set_active_mode) so Rust never needs the mode/provider tables.
     pub app_profiles: Vec<AppProfile>,
+    // When true, the pill hides itself ~5s after returning to idle and
+    // reappears on the next hotkey press. When false (default), it stays
+    // visible the whole time the app is running, as before.
+    pub pill_auto_hide: bool,
 }
 
 /// One per-app profile rule, fully resolved by the frontend.
@@ -119,6 +123,7 @@ impl Default for RuntimeConfig {
             tts_voice_id: String::new(),
             tts_hotkey: "Ctrl+Alt+S".into(),
             app_profiles: Vec::new(),
+            pill_auto_hide: false,
         }
     }
 }
@@ -153,6 +158,10 @@ pub struct AppState {
     pub overlay_hidden: AtomicBool,
     /// Bumped on each overlay resize so an in-flight tween knows it's superseded.
     pub overlay_resize_gen: AtomicU64,
+    /// Bumped whenever the pill has a reason to stay visible (recording
+    /// starts, or a fresh idle period begins) so a stale auto-hide timer from
+    /// an earlier idle period knows it's been superseded and does nothing.
+    pub pill_activity_gen: AtomicU64,
     /// Double-tap hotkey lock state.
     pub tap: Mutex<TapState>,
     /// Exe basename of the app focused when recording started (per-app profiles).
@@ -255,6 +264,7 @@ fn set_behavior(
     proofread_disabled_rules: Vec<String>,
     gector_sensitivity: String,
     proofread_ignore_apps: Vec<String>,
+    pill_auto_hide: bool,
 ) -> Result<(), String> {
     let mut cfg = state.config.lock().map_err(|e| e.to_string())?;
     cfg.toggle_mode = toggle_mode;
@@ -269,6 +279,7 @@ fn set_behavior(
         .map(|a| a.trim().to_lowercase())
         .filter(|a| !a.is_empty())
         .collect();
+    cfg.pill_auto_hide = pill_auto_hide;
     Ok(())
 }
 
@@ -852,24 +863,16 @@ pub fn run() {
                 }
             });
 
-            // Idle-unload sweep (perf roadmap item 7): free the RAM held by
-            // whisper-server + GECToR after 10 min without a dictation/check.
-            // Both reload transparently on next use (whisper pays one cold
-            // model load; the pill shows "transcribing" during it).
-            let handle = app.handle().clone();
+            // Idle-unload sweep (perf roadmap item 7, GECToR half only):
+            // whisper-server is intentionally NOT auto-stopped here — killing
+            // it means the next dictation pays a multi-second model reload
+            // mid-recording, which clips the start of what gets said. GECToR
+            // reloads in well under a second (no audio involved), so it's
+            // safe to free after 10 min idle.
             tauri::async_runtime::spawn(async move {
                 let idle = std::time::Duration::from_secs(600);
                 loop {
                     tokio::time::sleep(std::time::Duration::from_secs(60)).await;
-                    let stopped = handle
-                        .state::<AppState>()
-                        .whisper_server
-                        .lock()
-                        .map(|mut s| s.stop_if_idle(idle))
-                        .unwrap_or(false);
-                    if stopped {
-                        logging::log_info("stt", "stopped idle whisper-server");
-                    }
                     gector::unload_if_idle(idle);
                 }
             });
