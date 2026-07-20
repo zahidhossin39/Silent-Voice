@@ -522,6 +522,9 @@ fn run(rx: &Receiver<Vec<SquiggleInfo>>, action_tx: &Sender<OverlayAction>) {
         let mut popup = Popup { hwnd: popup_hwnd, rect: RECT::default(), info_idx: 0, shown: false };
         let mut hover_since: Option<(usize, Instant)> = None;
         let mut outside_since: Option<Instant> = None;
+        // Set when the idle blocking recv below received a list; consumed at
+        // the top of the next iteration.
+        let mut pending: Option<Vec<SquiggleInfo>> = None;
 
         loop {
             let mut msg = MSG::default();
@@ -531,7 +534,7 @@ fn run(rx: &Receiver<Vec<SquiggleInfo>>, action_tx: &Sender<OverlayAction>) {
             }
 
             // Newest squiggle list wins.
-            let mut latest: Option<Vec<SquiggleInfo>> = None;
+            let mut latest: Option<Vec<SquiggleInfo>> = pending.take();
             while let Ok(v) = rx.try_recv() {
                 latest = Some(v);
             }
@@ -678,7 +681,21 @@ fn run(rx: &Receiver<Vec<SquiggleInfo>>, action_tx: &Sender<OverlayAction>) {
                 render_popup(popup.hwnd, px, py);
             }
 
-            std::thread::sleep(Duration::from_millis(30));
+            // Idle (nothing on screen, no popup): block on the channel
+            // instead of spinning at 30ms — wakes instantly when the watcher
+            // sends squiggles, and only pumps messages every 500ms otherwise.
+            let idle = drawn.is_empty() && !popup.shown;
+            if idle {
+                match rx.recv_timeout(Duration::from_millis(500)) {
+                    Ok(v) => pending = Some(v),
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                        std::thread::sleep(Duration::from_millis(500));
+                    }
+                }
+            } else {
+                std::thread::sleep(Duration::from_millis(30));
+            }
         }
     }
 }
