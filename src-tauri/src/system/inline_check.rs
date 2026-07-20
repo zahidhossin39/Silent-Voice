@@ -56,6 +56,9 @@ const IGNORE_EXES: &[&str] = &[
 ];
 const MAX_TEXT: i32 = 6000;
 const POLL_MS: u64 = 250;
+// While squiggles are on screen, poll faster so they track typing/scrolling
+// closely — this is what keeps the "stale trail" short.
+const ACTIVE_POLL_MS: u64 = 100;
 // Backoff when nothing has changed for IDLE_AFTER_POLLS cycles (~2s):
 // squiggle positions and text are stable, so poll gently until the focused
 // window changes or something moves again.
@@ -113,7 +116,9 @@ fn watcher(app: AppHandle) {
         // engaged while the user's toggle is actually ON.
         let mut a11y_engaged = false;
         loop {
-            let timeout = Duration::from_millis(if idle_polls >= IDLE_AFTER_POLLS {
+            let timeout = Duration::from_millis(if !last_squiggles.is_empty() {
+                ACTIVE_POLL_MS
+            } else if idle_polls >= IDLE_AFTER_POLLS {
                 IDLE_POLL_MS
             } else {
                 POLL_MS
@@ -239,6 +244,8 @@ fn watcher(app: AppHandle) {
                     &mut last_text,
                     &mut last_chars,
                     &mut issues,
+                    &overlay_tx,
+                    was_active,
                 )
             })) {
                 Ok(r) => r,
@@ -282,6 +289,8 @@ fn poll_once(
     last_text: &mut String,
     last_chars: &mut Vec<char>,
     issues: &mut Vec<proofread::ProofIssue>,
+    overlay_tx: &std::sync::mpsc::Sender<Vec<SquiggleInfo>>,
+    was_active: bool,
 ) -> (Vec<SquiggleInfo>, &'static str) {
     unsafe {
         // Never squiggle our own dashboard (its WebView2 child has a different
@@ -362,6 +371,12 @@ fn poll_once(
         }
         // Re-lint only when the text actually changed; rects refresh every poll.
         if text != *last_text {
+            // The old squiggles point at text that no longer exists — hide
+            // them NOW, before the re-lint (Harper + GECToR can take a while),
+            // instead of leaving a stale trail until it finishes.
+            if was_active {
+                let _ = overlay_tx.send(Vec::new());
+            }
             *issues = proofread::check(&text, vocabulary, disabled_rules, gector_sensitivity);
             *last_chars = text.chars().collect();
             *last_text = text;
