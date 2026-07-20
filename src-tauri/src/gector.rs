@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::OnceLock;
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::{Duration, Instant};
 use ort::init_from;
 use ort::session::Session;
 use ort::value::Tensor;
@@ -13,7 +14,37 @@ struct Gector {
     verb_map: HashMap<(String, String), String>,
 }
 
-static GECTOR: OnceLock<Option<Gector>> = OnceLock::new();
+// Reloadable (not OnceLock) so the ~100MB ONNX session can be freed after
+// idle and lazily re-created on the next check.
+static GECTOR: Mutex<Option<Arc<Gector>>> = Mutex::new(None);
+static LAST_USED: Mutex<Option<Instant>> = Mutex::new(None);
+
+#[cfg(test)]
+fn is_loaded() -> bool {
+    GECTOR.lock().map(|g| g.is_some()).unwrap_or(false)
+}
+
+/// Drop the ONNX session (freeing its RAM) once nothing has used it for
+/// `max_idle`. The next check() reloads it transparently — the int8 model
+/// loads in well under a second, on the background watcher thread.
+pub fn unload_if_idle(max_idle: Duration) {
+    let idle = LAST_USED
+        .lock()
+        .ok()
+        .and_then(|t| *t)
+        .map(|t| t.elapsed() >= max_idle)
+        .unwrap_or(false);
+    if idle {
+        if let Ok(mut slot) = GECTOR.lock() {
+            if slot.take().is_some() {
+                crate::logging::log_info("gector", "unloaded idle model");
+            }
+        }
+        if let Ok(mut t) = LAST_USED.lock() {
+            *t = None;
+        }
+    }
+}
 
 fn parse_verb_vocab(text: &str) -> HashMap<(String, String), String> {
     let mut verb_map = HashMap::new();
@@ -166,11 +197,23 @@ pub fn check(text: &str, sensitivity: &str) -> Vec<GectorEdit> {
     };
 
     let mut edits = Vec::new();
-    let gector = GECTOR.get_or_init(init_gector);
+    let gector = {
+        let mut slot = match GECTOR.lock() {
+            Ok(s) => s,
+            Err(_) => return edits,
+        };
+        if slot.is_none() {
+            *slot = init_gector().map(Arc::new);
+        }
+        slot.clone()
+    };
 
     let Some(g) = gector else {
         return edits;
     };
+    if let Ok(mut t) = LAST_USED.lock() {
+        *t = Some(Instant::now());
+    }
 
     let keep_idx = g.labels.iter().position(|l| l == "$KEEP").unwrap_or(0);
 
@@ -587,14 +630,14 @@ mod tests {
     #[test]
     fn test_gector_inference() {
         let edits = check("I have alot of work .", "balanced");
-        if GECTOR.get().is_some() && GECTOR.get().unwrap().is_some() {
+        if is_loaded() {
             assert!(!edits.is_empty(), "expected some edit for alot");
         } else {
             println!("test_gector_inference skip: model missing");
         }
 
         let clean = check("This sentence is perfectly fine.", "balanced");
-        if GECTOR.get().is_some() && GECTOR.get().unwrap().is_some() {
+        if is_loaded() {
             assert!(clean.is_empty(), "expected no edits for clean text");
         }
     }
@@ -606,7 +649,7 @@ mod tests {
         // the flagged range must exactly cover the offending word.
         let text = "I know, I have alot of work.";
         let edits = check(text, "balanced");
-        if GECTOR.get().map(|g| g.is_some()) != Some(true) {
+        if !is_loaded() {
             println!("test_punctuation_alignment skip: model missing");
             return;
         }
