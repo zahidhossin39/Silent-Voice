@@ -252,7 +252,10 @@ fn watcher(app: AppHandle) {
                     (Vec::new(), "panic")
                 }
             };
-            idle_polls = if squiggles == last_squiggles && !check_needed {
+            // Only back off while nothing is on screen — backing off with
+            // squiggles visible risks a stale trail lingering up to
+            // IDLE_POLL_MS after the underlying text changes.
+            idle_polls = if squiggles == last_squiggles && !check_needed && squiggles.is_empty() {
                 idle_polls.saturating_add(1)
             } else {
                 0
