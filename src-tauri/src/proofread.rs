@@ -13,7 +13,7 @@ use harper_core::linting::{LintGroup, Linter, Suggestion};
 use harper_core::spell::{FstDictionary, MergedDictionary, MutableDictionary};
 use harper_core::{Dialect, DictWordMetadata, Document};
 use serde::Serialize;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 const FILLER_WORDS: &[&str] = &["um", "umm", "uh", "uhh", "erm"];
 
@@ -53,6 +53,54 @@ fn looks_like_code(text: &str) -> bool {
     code_punct as f64 / chars.len() as f64 > 0.06
 }
 
+// Building the dictionary + curated LintGroup takes tens of ms and check()
+// runs several times a second while inline proofreading — cache it and only
+// rebuild when the vocabulary or disabled rules actually change.
+struct CachedLinter {
+    vocabulary: String,
+    disabled_rules: Vec<String>,
+    dict: Arc<MergedDictionary>,
+    linter: LintGroup,
+}
+
+static LINTER_CACHE: Mutex<Option<CachedLinter>> = Mutex::new(None);
+
+fn build_linter(vocabulary: &str, disabled_rules: &[String]) -> (Arc<MergedDictionary>, LintGroup) {
+    let mut dict = MergedDictionary::new();
+    dict.add_dictionary(FstDictionary::curated());
+
+    let custom: Vec<&str> = vocabulary
+        .split([',', '\n'])
+        .map(str::trim)
+        .filter(|w| !w.is_empty())
+        .collect();
+    if !custom.is_empty() {
+        let mut user = MutableDictionary::new();
+        for &w in &custom {
+            // Harper tokenizes on punctuation, so "whisper.cpp" is checked as
+            // "whisper" + "cpp" — whitelist each sub-token too, plus a
+            // lowercase variant so sentence position doesn't re-flag it.
+            for part in w
+                .split(|c: char| !c.is_alphanumeric() && c != '\'' && c != '-')
+                .filter(|p| !p.is_empty())
+                .chain(std::iter::once(w))
+            {
+                user.append_word_str(part, DictWordMetadata::default());
+                user.append_word_str(&part.to_lowercase(), DictWordMetadata::default());
+            }
+        }
+        dict.add_dictionary(Arc::new(user));
+    }
+
+    let dict = Arc::new(dict);
+    let mut linter = LintGroup::new_curated(dict.clone(), Dialect::American);
+    linter.config.set_rule_enabled("LongSentences", false);
+    for rule in disabled_rules {
+        linter.config.set_rule_enabled(rule, false);
+    }
+    (dict, linter)
+}
+
 #[derive(Serialize, Clone)]
 pub struct ProofIssue {
     /// Char-index range into the checked text (exclusive end).
@@ -74,42 +122,33 @@ pub fn check(text: &str, vocabulary: &str, disabled_rules: &[String], gector_sen
         return Vec::new();
     }
 
-    let mut dict = MergedDictionary::new();
-    dict.add_dictionary(FstDictionary::curated());
-
-    let custom: Vec<&str> = vocabulary
+    let custom_lower: std::collections::HashSet<String> = vocabulary
         .split([',', '\n'])
         .map(str::trim)
         .filter(|w| !w.is_empty())
+        .map(|w| w.to_lowercase())
         .collect();
-    let custom_lower: std::collections::HashSet<String> = custom.iter().map(|w| w.to_lowercase()).collect();
-    if !custom.is_empty() {
-        let mut user = MutableDictionary::new();
-        for &w in &custom {
-            // Harper tokenizes on punctuation, so "whisper.cpp" is checked as
-            // "whisper" + "cpp" — whitelist each sub-token too, plus a
-            // lowercase variant so sentence position doesn't re-flag it.
-            for part in w
-                .split(|c: char| !c.is_alphanumeric() && c != '\'' && c != '-')
-                .filter(|p| !p.is_empty())
-                .chain(std::iter::once(w))
-            {
-                user.append_word_str(part, DictWordMetadata::default());
-                user.append_word_str(&part.to_lowercase(), DictWordMetadata::default());
-            }
-        }
-        dict.add_dictionary(Arc::new(user));
-    }
 
-    let dict = Arc::new(dict);
-    let doc = Document::new_plain_english(text, &*dict);
-    let mut linter = LintGroup::new_curated(dict, Dialect::American);
-    linter.config.set_rule_enabled("LongSentences", false);
-    for rule in disabled_rules {
-        linter.config.set_rule_enabled(rule, false);
+    let mut cache_guard = LINTER_CACHE.lock().unwrap();
+    let stale = match cache_guard.as_ref() {
+        Some(c) => c.vocabulary != vocabulary || c.disabled_rules != disabled_rules,
+        None => true,
+    };
+    if stale {
+        let (dict, linter) = build_linter(vocabulary, disabled_rules);
+        *cache_guard = Some(CachedLinter {
+            vocabulary: vocabulary.to_string(),
+            disabled_rules: disabled_rules.to_vec(),
+            dict,
+            linter,
+        });
     }
+    let cached = cache_guard.as_mut().unwrap();
 
-    let mut issues: Vec<ProofIssue> = linter
+    let doc = Document::new_plain_english(text, &*cached.dict);
+
+    let mut issues: Vec<ProofIssue> = cached
+        .linter
         .lint(&doc)
         .into_iter()
         .map(|l| ProofIssue {
@@ -133,6 +172,7 @@ pub fn check(text: &str, vocabulary: &str, disabled_rules: &[String], gector_sen
                 .collect(),
         })
         .collect();
+    drop(cache_guard); // don't hold the linter lock through GECToR below
     // Scan text for consecutive duplicate words
     let chars: Vec<char> = text.chars().collect();
     struct Word {
