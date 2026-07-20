@@ -355,9 +355,9 @@ fn poll_once(
                 _ => return (Vec::new(), "not selectable"),
             }
         }
-        let doc = match pattern.DocumentRange() {
-            Ok(d) => d,
-            Err(_) => return (Vec::new(), "no document range"),
+        let doc = match checkable_range(&pattern) {
+            Some(d) => d,
+            None => return (Vec::new(), "no document range"),
         };
         let text = match doc.GetText(MAX_TEXT) {
             Ok(t) => t.to_string(),
@@ -456,7 +456,9 @@ fn apply_fix(
             .GetCurrentPattern(UIA_TextPatternId)
             .and_then(|unk| unk.cast())
             .map_err(|e| format!("no text pattern: {e}"))?;
-        let doc = pattern.DocumentRange().map_err(|e| e.to_string())?;
+        // Must be the SAME base range the lint offsets were computed against
+        // (visible range, not document) or start/end point at the wrong text.
+        let doc = checkable_range(&pattern).ok_or("no document range")?;
 
         // The text may have changed between the popup opening and the click —
         // verify the range still holds exactly the word we flagged.
@@ -503,6 +505,23 @@ fn apply_fix(
         }
         Ok(())
     }
+}
+
+/// The range to proofread: the VISIBLE portion of the text (item 8 — reading
+/// a 6000-char document every poll wastes CPU when only a screenful can show
+/// squiggles anyway). Providers that don't support GetVisibleRanges fall back
+/// to the full document, which is exactly the old behavior.
+unsafe fn checkable_range(pattern: &IUIAutomationTextPattern) -> Option<IUIAutomationTextRange> {
+    if let Ok(arr) = pattern.GetVisibleRanges() {
+        if let Ok(len) = arr.Length() {
+            if len >= 1 {
+                if let Ok(r) = arr.GetElement(0) {
+                    return Some(r);
+                }
+            }
+        }
+    }
+    pattern.DocumentRange().ok()
 }
 
 /// How many complete "\r\n" pairs sit fully before char index `idx`.
