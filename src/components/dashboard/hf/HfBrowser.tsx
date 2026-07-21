@@ -93,30 +93,30 @@ function parseParams(params_b: number | null): string {
 
 // --- Components ---
 
-// A labeled 0..1 progress bar. Accuracy = accent (orange); speed = green so a
-// "faster device → fuller green bar" reads at a glance.
+// A labeled 0..1 meter. Minimal on purpose: a single monochrome fill (no
+// decorative color-coding between bars), a thin track, and the numeric
+// caption doing the real talking. The label already tells the two apart.
 function MetricBar({
   label,
   value,
   caption,
-  tone,
 }: {
   label: string;
   value: number;
   caption?: string;
-  tone: "accuracy" | "speed";
 }) {
   const pct = Math.round(Math.max(0, Math.min(1, value)) * 100);
-  const barCls = tone === "accuracy" ? "bg-sv-accent" : "bg-sv-good";
   return (
     <div>
-      <div className="mb-1 flex items-center justify-between">
+      <div className="mb-1.5 flex items-baseline justify-between">
         <span className="text-xs font-medium text-sv-text">{label}</span>
-        {caption && <span className="text-[10px] text-sv-muted">{caption}</span>}
+        {caption && (
+          <span className="text-[11px] tabular-nums text-sv-muted">{caption}</span>
+        )}
       </div>
-      <div className="h-2 w-full overflow-hidden rounded-full bg-sv-bg">
+      <div className="h-1 w-full overflow-hidden rounded-full bg-sv-text/10">
         <div
-          className={`h-full rounded-full ${barCls} transition-all`}
+          className="h-full rounded-full bg-sv-text/80 transition-all"
           style={{ width: `${pct}%` }}
         />
       </div>
@@ -523,14 +523,12 @@ function SttCatalogDetail({
         <MetricBar
           label="Accuracy"
           value={accuracyScore(model.wer)}
-          tone="accuracy"
           caption={`~${model.wer.replace("~", "")} word error`}
         />
-        <div className="mt-3">
+        <div className="mt-4">
           <MetricBar
             label="Speed"
             value={speedScore(model.speed_label, hardware)}
-            tone="speed"
             caption={
               deviceRealtimeLabel(model.speed_label, hardware) ??
               model.speed_label.replace("~", "")
