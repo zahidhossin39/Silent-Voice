@@ -79,6 +79,10 @@ pub struct RuntimeConfig {
     // reappears on the next hotkey press. When false (default), it stays
     // visible the whole time the app is running, as before.
     pub pill_auto_hide: bool,
+    // When true, a single trailing space is appended to the pasted text so the
+    // next dictation doesn't butt up against this one. History stores the
+    // clean text (no trailing space) — the space is a paste-time nicety only.
+    pub append_trailing_space: bool,
 }
 
 /// One per-app profile rule, fully resolved by the frontend.
@@ -124,6 +128,7 @@ impl Default for RuntimeConfig {
             tts_hotkey: "Ctrl+Alt+S".into(),
             app_profiles: Vec::new(),
             pill_auto_hide: false,
+            append_trailing_space: false,
         }
     }
 }
@@ -265,6 +270,7 @@ fn set_behavior(
     gector_sensitivity: String,
     proofread_ignore_apps: Vec<String>,
     pill_auto_hide: bool,
+    append_trailing_space: bool,
 ) -> Result<(), String> {
     let mut cfg = state.config.lock().map_err(|e| e.to_string())?;
     cfg.toggle_mode = toggle_mode;
@@ -280,6 +286,7 @@ fn set_behavior(
         .filter(|a| !a.is_empty())
         .collect();
     cfg.pill_auto_hide = pill_auto_hide;
+    cfg.append_trailing_space = append_trailing_space;
     Ok(())
 }
 

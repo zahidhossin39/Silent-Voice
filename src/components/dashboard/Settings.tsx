@@ -214,6 +214,15 @@ export default function Settings() {
             />
           </Row>
           <Row
+            label="Append trailing space"
+            hint="Add a space after each pasted transcription so the next one doesn't run into it"
+          >
+            <Toggle
+              checked={settings.append_trailing_space}
+              onChange={(v) => setSettings({ append_trailing_space: v })}
+            />
+          </Row>
+          <Row
             label="Inline proofreading"
             hint="Red/blue underlines beneath spelling & grammar mistakes as you type in any app (English only)"
           >

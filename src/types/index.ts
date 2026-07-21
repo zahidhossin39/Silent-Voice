@@ -187,6 +187,7 @@ export interface Settings {
   gector_sensitivity: "relaxed" | "balanced" | "aggressive";
   proofread_ignore_apps: string; // comma-separated exe-name substrings where squiggles are suppressed
   pill_auto_hide: boolean; // hide the recording pill ~5s after idle, reappear on next hotkey press
+  append_trailing_space: boolean; // add a space after pasted text so the next dictation has a gap
   active_tts_voice: string | null; // Piper voice id for read-aloud; null = none selected
   tts_hotkey: string; // global hotkey that reads the current text selection aloud
   onboarded: boolean; // true once the first-launch setup wizard has been completed/skipped

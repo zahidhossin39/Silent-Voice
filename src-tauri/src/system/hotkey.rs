@@ -619,9 +619,22 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
     // Runs after replacements so digits inside replacement output are untouched.
     let processed_text = textfmt::format_numbers(&processed_text);
 
-    // Paste the processed (or raw) text at the cursor.
+    // Paste the processed (or raw) text at the cursor. When the trailing-space
+    // toggle is on, append one space just for the paste (history keeps the
+    // clean text) so the next dictation has a gap before it.
     if !processed_text.is_empty() {
-        if let Err(e) = paste::paste_at_cursor(&processed_text) {
+        let append_space = app
+            .state::<AppState>()
+            .config
+            .lock()
+            .map(|c| c.append_trailing_space)
+            .unwrap_or(false);
+        let to_paste = if append_space && !processed_text.ends_with(' ') {
+            format!("{processed_text} ")
+        } else {
+            processed_text.clone()
+        };
+        if let Err(e) = paste::paste_at_cursor(&to_paste) {
             report_error(&app, "paste", &e);
         }
     }
