@@ -19,8 +19,6 @@
     "core:window:allow-close",
     "shell:allow-execute",
     "shell:allow-spawn",
-    "dialog:allow-open",
-    "dialog:allow-save",
     "global-shortcut:allow-register",
     "global-shortcut:allow-unregister",
     "global-shortcut:allow-is-registered",

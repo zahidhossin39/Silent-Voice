@@ -486,79 +486,7 @@ async fn api_test_stt(base_url: String, api_key: String, model: String) -> Resul
 
 // ---------------- Storage location ----------------
 
-#[tauri::command]
-fn get_data_location() -> models::registry::DataLocation {
-    models::registry::load_data_location()
-}
 
-#[tauri::command]
-fn set_data_location(
-    models_root: Option<String>,
-    history_root: Option<String>,
-) -> Result<(), String> {
-    let loc = models::registry::DataLocation {
-        models_root,
-        history_root,
-    };
-    models::registry::save_data_location(&loc)?;
-    models::registry::ensure_dirs().map_err(|e| e.to_string())
-}
-
-/// Open the data folder in the OS file explorer. Opens the parent SilentVoice
-/// folder (so models/, llm/, history.json are all visible) and SELECTS a real
-/// entry inside it — `explorer /select` forces a fresh, populated view, which
-/// avoids the stale/blank-window glitch plain folder-open sometimes shows.
-#[tauri::command]
-fn open_data_folder(kind: String) -> Result<(), String> {
-    let _ = models::registry::ensure_dirs();
-    let folder = match kind.as_str() {
-        "history" => models::registry::history_path()
-            .parent()
-            .map(|p| p.to_path_buf())
-            .unwrap_or_else(models::registry::models_dir),
-        _ => models::registry::models_dir()
-            .parent()
-            .map(|p| p.to_path_buf())
-            .unwrap_or_else(models::registry::models_dir),
-    };
-
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        // Find a real entry inside the folder to select (forces a fresh view).
-        let first_entry = std::fs::read_dir(&folder)
-            .ok()
-            .and_then(|mut it| it.next())
-            .and_then(|e| e.ok())
-            .map(|e| e.path());
-
-        let mut cmd = std::process::Command::new("explorer");
-        match first_entry {
-            Some(entry) => {
-                cmd.raw_arg(format!("/select,\"{}\"", entry.display()));
-            }
-            None => {
-                cmd.raw_arg(format!("\"{}\"", folder.display()));
-            }
-        }
-        let _ = cmd.spawn().map_err(|e| e.to_string())?;
-    }
-    #[cfg(not(windows))]
-    {
-        let _ = &folder;
-    }
-    Ok(())
-}
-
-#[tauri::command]
-async fn pick_folder(app: AppHandle) -> Option<String> {
-    use tauri_plugin_dialog::DialogExt;
-    app.dialog()
-        .file()
-        .blocking_pick_folder()
-        .and_then(|p| p.into_path().ok())
-        .map(|p| p.to_string_lossy().to_string())
-}
 
 // ---------------- Local LLM (bundled llama.cpp) ----------------
 
@@ -775,7 +703,7 @@ pub fn run() {
             }
         }))
         .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_dialog::init())
+
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_store::Builder::new().build())
@@ -895,10 +823,7 @@ pub fn run() {
             api_generate,
             api_list_models,
             api_test_stt,
-            get_data_location,
-            set_data_location,
-            pick_folder,
-            open_data_folder,
+
             list_downloaded_llm,
             download_llm_model,
             delete_llm_model,

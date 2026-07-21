@@ -32,14 +32,7 @@ pub fn load_data_location() -> DataLocation {
     }
 }
 
-/// Persist new storage-location preferences.
-pub fn save_data_location(loc: &DataLocation) -> Result<(), String> {
-    let dir = bootstrap_dir();
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let json = serde_json::to_string_pretty(loc).map_err(|e| e.to_string())?;
-    std::fs::write(data_location_file(), json).map_err(|e| e.to_string())?;
-    Ok(())
-}
+
 
 // ── Resolved paths (honour overrides, fall back to bootstrap_dir) ──
 
