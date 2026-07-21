@@ -4,7 +4,6 @@ import type { DownloadProgress, LlmModel } from "../types";
 import {
   listDownloadedModels,
   downloadModel as bridgeDownload,
-  downloadMoonshineModel as bridgeDownloadMoonshine,
   deleteModel as bridgeDelete,
   listDownloadedLlm,
   downloadLlmModel as bridgeDownloadLlm,
@@ -83,13 +82,8 @@ export const useModelStore = create<ModelState>()(
     if (!model) return;
     startProgress(set, modelId, model.size_mb * 1024 * 1024);
     try {
-      if (model.engine === "moonshine") {
-        // Archive download + extract on the Rust side (no whisper filename).
-        await bridgeDownloadMoonshine(modelId, model.url!);
-      } else {
-        const downloadUrl = model.url ?? WHISPER_BASE_URL + model.file;
-        await bridgeDownload(modelId, downloadUrl, model.file);
-      }
+      const downloadUrl = model.url ?? WHISPER_BASE_URL + model.file;
+      await bridgeDownload(modelId, downloadUrl, model.file);
       set((s) => {
         const downloaded = new Set(s.downloaded);
         downloaded.add(modelId);

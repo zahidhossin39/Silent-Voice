@@ -627,15 +627,6 @@ async fn download_model(
 }
 
 #[tauri::command]
-async fn download_moonshine_model(
-    app: AppHandle,
-    model_id: String,
-    url: String,
-) -> Result<(), String> {
-    downloader::download_moonshine_model(app, model_id, url).await
-}
-
-#[tauri::command]
 fn delete_model(model_id: String) -> Result<(), String> {
     downloader::delete_model(&model_id)
 }
@@ -928,7 +919,6 @@ pub fn run() {
             local_llm_generate,
             list_downloaded_models,
             download_model,
-            download_moonshine_model,
             delete_model,
             load_history,
             save_history,

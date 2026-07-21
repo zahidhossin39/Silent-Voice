@@ -226,57 +226,7 @@ async fn download_to(
     Ok(())
 }
 
-/// Download a Moonshine (sherpa-onnx) STT model. `url` is a .tar.bz2 archive
-/// whose top-level folder name equals `model_id` (k2-fsa's layout). Extracts
-/// into the STT models dir with the system `tar` (bsdtar auto-detects bzip2),
-/// then deletes the archive — same machinery as sherpa TTS voices.
-pub async fn download_moonshine_model(
-    app: AppHandle,
-    model_id: String,
-    url: String,
-) -> Result<(), String> {
-    registry::ensure_dirs().map_err(|e| e.to_string())?;
-    let archive = registry::models_dir().join(format!("{model_id}.tar.bz2"));
-    download_to(app.clone(), model_id.clone(), url, archive.clone()).await?;
-
-    let out = tokio::task::spawn_blocking({
-        let archive = archive.clone();
-        let dest = registry::models_dir();
-        move || {
-            let mut cmd = std::process::Command::new("tar");
-            cmd.arg("-xf").arg(&archive).arg("-C").arg(&dest);
-            #[cfg(windows)]
-            {
-                use std::os::windows::process::CommandExt;
-                const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-                cmd.creation_flags(CREATE_NO_WINDOW);
-            }
-            cmd.output()
-        }
-    })
-    .await
-    .map_err(|e| e.to_string())?
-    .map_err(|e| format!("could not run tar: {e}"))?;
-    let _ = std::fs::remove_file(&archive);
-    if !out.status.success() {
-        return Err(format!(
-            "Moonshine archive extraction failed: {}",
-            String::from_utf8_lossy(&out.stderr)
-        ));
-    }
-    if registry::moonshine_complete_dir(&model_id).is_none() {
-        return Err("Moonshine archive did not contain the expected files".into());
-    }
-    Ok(())
-}
-
 pub fn delete_model(model_id: &str) -> Result<(), String> {
-    // Moonshine models are a whole directory; whisper models are one .bin.
-    let dir = registry::moonshine_dir(model_id);
-    if dir.is_dir() {
-        std::fs::remove_dir_all(&dir).map_err(|e| e.to_string())?;
-        return Ok(());
-    }
     let path = registry::model_path(model_id);
     if path.exists() {
         std::fs::remove_file(&path).map_err(|e| e.to_string())?;

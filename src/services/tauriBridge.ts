@@ -119,16 +119,6 @@ export async function downloadModel(
   await invoke<void>("download_model", { modelId, url, fileName });
 }
 
-// Moonshine STT: `url` is a .tar.bz2 archive extracted into the STT models
-// dir (runs on sherpa-onnx, not whisper). Progress events reuse download://.
-export async function downloadMoonshineModel(
-  modelId: string,
-  url: string
-): Promise<void> {
-  if (!isTauri()) return;
-  await invoke<void>("download_moonshine_model", { modelId, url });
-}
-
 export async function deleteModel(modelId: string): Promise<void> {
   if (!isTauri()) return;
   await invoke<void>("delete_model", { modelId });

@@ -186,45 +186,6 @@ export const STT_MODELS: SttModel[] = [
     best_for: "Original large model",
   },
 
-  // ── Moonshine (Useful Sensors, sherpa-onnx engine) ────────
-  // NOT Whisper: these run on the bundled sherpa-onnx offline recognizer, not
-  // whisper.cpp. `file` is intentionally "" (unused) — `engine: "moonshine"`
-  // routes both the download (url is a .tar.bz2 archive whose top folder ==
-  // id) and the transcription path. English-only, optimized for short
-  // utterances with very low latency. URLs curl-verified → 200.
-  {
-    id: "sherpa-onnx-moonshine-tiny-en-int8",
-    file: "",
-    family: "Moonshine",
-    provider: "Useful Sensors",
-    label: "Moonshine Tiny (English)",
-    size_mb: 103,
-    ram_mb: 600,
-    speed_label: "~15x realtime",
-    wer: "~5%",
-    multilingual: false,
-    preset: "speed",
-    best_for: "Fast English dictation with very low latency",
-    engine: "moonshine",
-    url: "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-moonshine-tiny-en-int8.tar.bz2",
-  },
-  {
-    id: "sherpa-onnx-moonshine-base-en-int8",
-    file: "",
-    family: "Moonshine",
-    provider: "Useful Sensors",
-    label: "Moonshine Base (English)",
-    size_mb: 239,
-    ram_mb: 1100,
-    speed_label: "~8x realtime",
-    wer: "~3.7%",
-    multilingual: false,
-    preset: "balanced",
-    best_for: "Accurate English dictation, still faster than Whisper",
-    engine: "moonshine",
-    url: "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-moonshine-base-en-int8.tar.bz2",
-  },
-
   // ── Distil-Whisper (HuggingFace) ──────────────────────────
   {
     id: "distil-large-v3.5",
