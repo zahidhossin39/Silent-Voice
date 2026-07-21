@@ -248,7 +248,7 @@ pub fn check(text: &str, sensitivity: &str) -> Vec<GectorEdit> {
         let sentence_text: String = sentence_chars.iter().collect();
 
         {
-            let mut cache = get_cache().lock().unwrap();
+            let cache = get_cache().lock().unwrap();
             if let Some(cached_edits) = cache.get(&sentence_text) {
                 for mut edit in cached_edits.clone() {
                     edit.start += s_start;
