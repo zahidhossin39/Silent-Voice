@@ -152,12 +152,14 @@ export default function Modes() {
                   >
                     Edit
                   </button>
-                  <button
-                    onClick={() => deleteMode(m.id)}
-                    className="rounded-lg border border-sv-border px-2.5 py-1 text-sv-muted hover:text-sv-bad"
-                  >
-                    Delete
-                  </button>
+                  {!m.builtin && (
+                    <button
+                      onClick={() => deleteMode(m.id)}
+                      className="rounded-lg border border-sv-border px-2.5 py-1 text-sv-muted hover:text-sv-bad"
+                    >
+                      Delete
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
@@ -192,7 +194,7 @@ function Editor({
   downloadedLlm: Set<string>;
   customLlm: LlmModel[];
 }) {
-  const readonly = false;
+  const readonly = mode.builtin;
   const providers = useSettingsStore((s) => s.providers);
   const [testing, setTesting] = useState(false);
   const [testOut, setTestOut] = useState<string | null>(null);

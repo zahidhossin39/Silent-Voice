@@ -218,6 +218,7 @@ export const useSettingsStore = create<SettingsState>()(
         })),
       deleteMode: (id) =>
         set((s) => {
+          if (s.modes.find((m) => m.id === id)?.builtin) return s;
           const nextActive = s.settings.active_mode_id === id ? "raw" : s.settings.active_mode_id;
           return {
             modes: s.modes.filter((m) => m.id !== id),

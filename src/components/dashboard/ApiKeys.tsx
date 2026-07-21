@@ -83,7 +83,12 @@ const PRESETS: {
     model: "",
     note: "Anthropic's own docs call this OpenAI-compat layer a testing aid, not production-ready — expect rough edges. It does not support audio, so never enable STT for it.",
   },
-  { name: "Custom", base_url: "", model: "" },
+  {
+    name: "Custom",
+    base_url: "",
+    model: "",
+    note: "Fill in an OpenAI-compatible base URL (usually ending in /v1) and a model id after adding — both start empty and nothing will work until they're set.",
+  },
 ];
 
 export default function ApiKeys() {
@@ -248,8 +253,12 @@ export default function ApiKeys() {
                     />
                     <button
                       onClick={() => loadModels(p)}
-                      disabled={loadingModels[p.id]}
-                      title="Fetch all available models"
+                      disabled={loadingModels[p.id] || !p.base_url.trim()}
+                      title={
+                        !p.base_url.trim()
+                          ? "Enter a base URL first"
+                          : "Fetch all available models"
+                      }
                       className="shrink-0 rounded-lg border border-sv-border px-2 py-2 text-xs hover:bg-sv-surface-2 disabled:opacity-50"
                     >
                       {loadingModels[p.id] ? "…" : "↻ Load"}
