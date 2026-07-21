@@ -64,6 +64,8 @@ const DEFAULT_SETTINGS: Settings = {
   pinned_llm: [],
   pinned_tts: [],
   hf_show_incompatible: false,
+  history_limit: 100,
+  history_retention: "never",
 };
 
 interface SettingsState {

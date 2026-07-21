@@ -195,6 +195,8 @@ export interface Settings {
   pinned_llm: string[];
   pinned_tts: string[];
   hf_show_incompatible: boolean;
+  history_limit: number; // max transcriptions to keep (hard count cap)
+  history_retention: "never" | "3d" | "2w" | "3m"; // auto-delete entries older than this
 }
 
 // ---------- Hugging Face ----------

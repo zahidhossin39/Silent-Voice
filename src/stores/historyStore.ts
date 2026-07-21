@@ -7,6 +7,28 @@ import {
   saveHistory,
   clearHistoryFile,
 } from "../services/tauriBridge";
+import { useSettingsStore } from "./settingsStore";
+
+const DAY_MS = 86_400_000;
+const RETENTION_MS: Record<string, number> = {
+  "3d": 3 * DAY_MS,
+  "2w": 14 * DAY_MS,
+  "3m": 90 * DAY_MS,
+};
+
+// Apply the user's history-limit (count cap) and retention window (age cap).
+// Read non-reactively from the settings store so the two stores stay decoupled.
+function prune(entries: HistoryEntry[]): HistoryEntry[] {
+  const s = useSettingsStore.getState().settings;
+  let out = entries;
+  const window = RETENTION_MS[s.history_retention];
+  if (window) {
+    const now = Date.now();
+    out = out.filter((e) => now - e.timestamp <= window);
+  }
+  const limit = s.history_limit > 0 ? s.history_limit : 1000;
+  return out.length > limit ? out.slice(0, limit) : out;
+}
 
 interface HistoryState {
   entries: HistoryEntry[];
@@ -17,6 +39,7 @@ interface HistoryState {
   update: (id: number, processedText: string) => void;
   remove: (id: number) => void;
   clear: () => void;
+  reprune: () => void;
 }
 
 // History is stored as a local JSON file (%APPDATA%/SilentVoice/history.json) in
@@ -31,8 +54,11 @@ export const useHistoryStore = create<HistoryState>()(
       hydrate: async () => {
         const fromFile = await loadHistory();
         if (fromFile !== null) {
-          // Running in Tauri: the JSON file is the source of truth.
-          set({ entries: fromFile, hydrated: true });
+          // Running in Tauri: the JSON file is the source of truth. Prune on
+          // load so a retention window applies even to already-saved entries.
+          const pruned = prune(fromFile);
+          set({ entries: pruned, hydrated: true });
+          if (isTauri() && pruned.length !== fromFile.length) saveHistory(pruned);
         } else {
           set({ hydrated: true });
         }
@@ -44,7 +70,7 @@ export const useHistoryStore = create<HistoryState>()(
       },
 
       addFull: (entry) => {
-        const entries = [entry, ...get().entries].slice(0, 1000);
+        const entries = prune([entry, ...get().entries]);
         set({ entries });
         if (isTauri()) saveHistory(entries);
       },
@@ -66,6 +92,16 @@ export const useHistoryStore = create<HistoryState>()(
       clear: () => {
         set({ entries: [] });
         if (isTauri()) clearHistoryFile();
+      },
+
+      // Re-apply limit/retention to what's already stored — call when the
+      // user changes either history setting.
+      reprune: () => {
+        const pruned = prune(get().entries);
+        if (pruned.length !== get().entries.length) {
+          set({ entries: pruned });
+          if (isTauri()) saveHistory(pruned);
+        }
       },
     }),
     {

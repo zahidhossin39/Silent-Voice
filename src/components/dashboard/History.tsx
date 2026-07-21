@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Page from "../shared/Page";
 import { useHistoryStore } from "../../stores/historyStore";
 import { useSettingsStore } from "../../stores/settingsStore";
+import type { Settings } from "../../types";
 
 // Proofreading squiggles were removed from History at the user's request;
 // inline system-wide proofreading in other apps is unaffected.
@@ -27,18 +28,33 @@ function newWordsFromCorrection(original: string, corrected: string): string[] {
   return out;
 }
 
+const RETENTION_OPTIONS: { value: Settings["history_retention"]; label: string }[] = [
+  { value: "never", label: "Never" },
+  { value: "3d", label: "After 3 days" },
+  { value: "2w", label: "After 2 weeks" },
+  { value: "3m", label: "After 3 months" },
+];
+
 export default function History() {
   const entries = useHistoryStore((s) => s.entries);
   const update = useHistoryStore((s) => s.update);
   const remove = useHistoryStore((s) => s.remove);
   const clear = useHistoryStore((s) => s.clear);
+  const reprune = useHistoryStore((s) => s.reprune);
   const vocabulary = useSettingsStore((s) => s.settings.custom_vocabulary);
+  const historyLimit = useSettingsStore((s) => s.settings.history_limit);
+  const historyRetention = useSettingsStore((s) => s.settings.history_retention);
   const setSettings = useSettingsStore((s) => s.setSettings);
 
   const [query, setQuery] = useState("");
   const [editingId, setEditingId] = useState<number | null>(null);
   const [draft, setDraft] = useState("");
   const [learnedMsg, setLearnedMsg] = useState<string | null>(null);
+
+  // Re-apply the count/age caps whenever either setting changes.
+  useEffect(() => {
+    reprune();
+  }, [historyLimit, historyRetention, reprune]);
 
   const filtered = entries.filter((e) =>
     (e.processed_text + e.raw_text)
@@ -96,6 +112,61 @@ export default function History() {
         )
       }
     >
+      {/* History controls: count cap + auto-delete window */}
+      <div className="mb-4 rounded-xl border border-sv-border bg-sv-surface p-4">
+        <div className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-sv-muted">
+          History
+        </div>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center justify-between gap-3 sm:justify-start">
+            <div>
+              <div className="text-sm font-medium">History limit</div>
+              <div className="text-[11px] text-sv-muted">
+                Keep at most this many transcriptions
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min={1}
+                max={10000}
+                value={historyLimit}
+                onChange={(e) =>
+                  setSettings({
+                    history_limit: Math.max(1, Math.min(10000, Number(e.target.value) || 1)),
+                  })
+                }
+                className="w-20 rounded-lg border border-sv-border bg-sv-bg px-3 py-1.5 text-right text-sm focus:outline-none focus:ring-1 focus:ring-sv-accent"
+              />
+              <span className="text-xs text-sv-muted">entries</span>
+            </div>
+          </div>
+          <div className="flex items-center justify-between gap-3 sm:justify-start">
+            <div>
+              <div className="text-sm font-medium">Auto-delete</div>
+              <div className="text-[11px] text-sv-muted">
+                Remove entries older than
+              </div>
+            </div>
+            <select
+              value={historyRetention}
+              onChange={(e) =>
+                setSettings({
+                  history_retention: e.target.value as Settings["history_retention"],
+                })
+              }
+              className="rounded-lg border border-sv-border bg-sv-bg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-sv-accent"
+            >
+              {RETENTION_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </div>
+
       <input
         value={query}
         onChange={(e) => setQuery(e.target.value)}
