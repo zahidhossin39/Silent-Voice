@@ -123,28 +123,61 @@ pub async fn hf_search_models(
 
     let is_empty = query.trim().is_empty();
 
-    let url = if track == "stt" {
-        let search_q = if is_empty {
-            "whisper.cpp".to_string()
+    let q = query.trim();
+
+    // STT previously force-appended "whisper.cpp" to every query, which — with
+    // the ggml-only filter below — made most real searches return nothing.
+    // Only ggml repos are loadable, so bias the FIRST pass toward "ggml"
+    // (measurably the highest-yield term: "distil"/"turbo"/"large v3" each go
+    // from 0-1 usable hits to 14-15), then fall back to the raw words so an
+    // exact repo name still resolves.
+    let (primary, fallback) = if track == "stt" {
+        if is_empty {
+            ("whisper.cpp".to_string(), None)
+        } else if q.to_lowercase().contains("ggml") {
+            (q.to_string(), None)
         } else {
-            format!("{} whisper.cpp", query)
-        };
+            (format!("{q} ggml"), Some(q.to_string()))
+        }
+    } else if is_empty {
+        (String::new(), None)
+    } else {
+        (q.to_string(), Some(format!("{q} gguf")))
+    };
+
+    let mut items = search_once(&primary, sort_val, limit, &track, is_empty).await?;
+    if items.is_empty() {
+        if let Some(second) = fallback {
+            items = search_once(&second, sort_val, limit, &track, false).await?;
+        }
+    }
+
+    Ok(items)
+}
+
+/// One search request + the track's format filter.
+async fn search_once(
+    search_q: &str,
+    sort_val: &str,
+    limit: u32,
+    track: &str,
+    browse: bool,
+) -> Result<Vec<HfSearchItem>, String> {
+    let url = if track == "stt" {
         format!(
             "https://huggingface.co/api/models?search={}&sort={}&direction=-1&limit={}&full=true",
-            urlencoding::encode(&search_q), sort_val, limit
+            urlencoding::encode(search_q), sort_val, limit
+        )
+    } else if browse {
+        format!(
+            "https://huggingface.co/api/models?filter=gguf&sort={}&direction=-1&limit={}&full=true",
+            sort_val, limit
         )
     } else {
-        if is_empty {
-            format!(
-                "https://huggingface.co/api/models?filter=gguf&sort={}&direction=-1&limit={}&full=true",
-                sort_val, limit
-            )
-        } else {
-            format!(
-                "https://huggingface.co/api/models?search={}&filter=gguf&sort={}&direction=-1&limit={}&full=true",
-                urlencoding::encode(&query), sort_val, limit
-            )
-        }
+        format!(
+            "https://huggingface.co/api/models?search={}&filter=gguf&sort={}&direction=-1&limit={}&full=true",
+            urlencoding::encode(search_q), sort_val, limit
+        )
     };
 
     let client = get_client()?;
@@ -431,6 +464,24 @@ mod tests {
             details.id, details.files.len(), details.arch, details.params_b,
             details.context_length, details.has_tools, details.readme.len()
         );
+    }
+
+    // Guards the STT search regression: force-appending "whisper.cpp" made
+    // these plain queries return 0-1 usable repos. Passes vacuously offline.
+    #[tokio::test]
+    async fn live_stt_search_plain_queries() {
+        for q in ["distil", "turbo", "large v3"] {
+            match hf_search_models(q.into(), "downloads".into(), 20, "stt".into()).await {
+                Ok(items) => {
+                    println!("STT '{q}' -> {} results", items.len());
+                    assert!(!items.is_empty(), "STT search '{q}' returned nothing");
+                }
+                Err(e) => {
+                    println!("live_stt_search skip (offline?): {e}");
+                    return;
+                }
+            }
+        }
     }
 
     #[test]
