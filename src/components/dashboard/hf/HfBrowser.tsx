@@ -10,6 +10,7 @@ import type { HfSearchItem, HfModelDetails, LlmModel, HardwareInfo, HfFile, SttM
 import { formatMB, formatGB } from "../../../services/format";
 import SimpleMarkdown from "./SimpleMarkdown";
 import { STT_MODELS, sttLanguage } from "../../../services/catalog";
+import { accuracyScore, speedScore, deviceRealtimeLabel } from "../../../services/modelMetrics";
 
 // --- Helpers ---
 function formatNdaysAgo(isoDate: string) {
@@ -91,6 +92,37 @@ function parseParams(params_b: number | null): string {
 }
 
 // --- Components ---
+
+// A labeled 0..1 progress bar. Accuracy = accent (orange); speed = green so a
+// "faster device → fuller green bar" reads at a glance.
+function MetricBar({
+  label,
+  value,
+  caption,
+  tone,
+}: {
+  label: string;
+  value: number;
+  caption?: string;
+  tone: "accuracy" | "speed";
+}) {
+  const pct = Math.round(Math.max(0, Math.min(1, value)) * 100);
+  const barCls = tone === "accuracy" ? "bg-sv-accent" : "bg-sv-good";
+  return (
+    <div>
+      <div className="mb-1 flex items-center justify-between">
+        <span className="text-xs font-medium text-sv-text">{label}</span>
+        {caption && <span className="text-[10px] text-sv-muted">{caption}</span>}
+      </div>
+      <div className="h-2 w-full overflow-hidden rounded-full bg-sv-bg">
+        <div
+          className={`h-full rounded-full ${barCls} transition-all`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+    </div>
+  );
+}
 
 export default function HfBrowser({ track, categoryFilter, languageFilter }: { track: "llm" | "stt", categoryFilter?: string, languageFilter?: string }) {
   const { hardware } = useHardwareInfo();
@@ -486,14 +518,31 @@ function SttCatalogDetail({
         </button>
       </div>
 
-      <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+      {/* Accuracy (intrinsic) + speed (computed for THIS device) as bars */}
+      <div className="mt-6 rounded-xl border border-sv-border bg-sv-surface-2/50 p-4">
+        <MetricBar
+          label="Accuracy"
+          value={accuracyScore(model.wer)}
+          tone="accuracy"
+          caption={`~${model.wer.replace("~", "")} word error`}
+        />
+        <div className="mt-3">
+          <MetricBar
+            label="Speed"
+            value={speedScore(model.speed_label, hardware)}
+            tone="speed"
+            caption={
+              deviceRealtimeLabel(model.speed_label, hardware) ??
+              model.speed_label.replace("~", "")
+            }
+          />
+        </div>
+      </div>
+
+      <div className="mt-4 grid grid-cols-3 gap-3">
         <div className="rounded-lg bg-sv-surface-2 p-3 text-center">
           <div className="text-[10px] uppercase tracking-wide text-sv-muted">Size</div>
           <div className="mt-1 font-medium">{formatMB(model.size_mb)}</div>
-        </div>
-        <div className="rounded-lg bg-sv-surface-2 p-3 text-center">
-          <div className="text-[10px] uppercase tracking-wide text-sv-muted">Speed</div>
-          <div className="mt-1 font-medium">{model.speed_label.replace("~", "")}</div>
         </div>
         <div className="rounded-lg bg-sv-surface-2 p-3 text-center">
           <div className="text-[10px] uppercase tracking-wide text-sv-muted">Memory</div>
