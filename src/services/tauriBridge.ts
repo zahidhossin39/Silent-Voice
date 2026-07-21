@@ -48,16 +48,6 @@ export async function hideSelfWindow(): Promise<void> {
   }
 }
 
-/** Broadcast the overlay opacity (0-100) to the overlay window. */
-export async function setOverlayOpacity(value: number): Promise<void> {
-  if (!isTauri()) return;
-  try {
-    await invoke<void>("set_overlay_opacity", { value });
-  } catch (e) {
-    console.warn("set_overlay_opacity failed", e);
-  }
-}
-
 export async function quitApp(): Promise<void> {
   if (!isTauri()) return;
   try {
@@ -386,7 +376,7 @@ export async function localLlmGenerate(
   return invoke<string>("local_llm_generate", { modelId, systemPrompt, text });
 }
 
-// ---------------- AI modes (Ollama, optional) ----------------
+// ---------------- AI modes ----------------
 
 export async function setActiveMode(
   modeId: string,
@@ -447,34 +437,6 @@ export async function apiTestStt(
 ): Promise<string> {
   if (!isTauri()) return "(Cloud STT requires the desktop app)";
   return invoke<string>("api_test_stt", { baseUrl, apiKey, model: sttModel });
-}
-
-export interface OllamaStatus {
-  running: boolean;
-  models: string[];
-}
-
-export async function ollamaStatus(): Promise<OllamaStatus> {
-  if (!isTauri()) return { running: false, models: [] };
-  try {
-    return await invoke<OllamaStatus>("ollama_status");
-  } catch {
-    return { running: false, models: [] };
-  }
-}
-
-export async function ollamaGenerate(
-  model: string,
-  systemPrompt: string,
-  text: string
-): Promise<string> {
-  if (!isTauri())
-    return "(AI processing requires the desktop app + Ollama running)";
-  return invoke<string>("ollama_generate", {
-    model,
-    systemPrompt,
-    text,
-  });
 }
 
 // Writes to the OS clipboard via Rust (arboard) — the webview's

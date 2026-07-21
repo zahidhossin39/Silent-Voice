@@ -46,7 +46,6 @@ const DEFAULT_SETTINGS: Settings = {
   audio_device: null,
   auto_start: false,
   theme: "dark",
-  overlay_opacity: 92,
   custom_vocabulary: "",
   stt_cloud_provider_id: null,
   toggle_mode: true,

@@ -177,7 +177,6 @@ export interface Settings {
   audio_device: string | null;
   auto_start: boolean;
   theme: "dark" | "light";
-  overlay_opacity: number; // 0-100; pill see-through amount
   custom_vocabulary: string; // comma/newline-separated words fed to whisper.cpp as a priming prompt
   stt_cloud_provider_id: string | null; // null = use local active_stt_model; else an ApiProvider.id with uses including "stt"
   toggle_mode: boolean; // double-tap the hotkey to lock recording on; single press stops

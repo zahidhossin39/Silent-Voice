@@ -45,6 +45,32 @@ const RETENTION_UNITS: Settings["history_retention_custom_unit"][] = [
   "months",
 ];
 
+// h-9 keeps these the same height as ScrollNumberPicker's collapsed pill so
+// the controls in a row line up.
+const SELECT_CLS =
+  "h-9 rounded-lg border border-sv-border bg-sv-bg px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sv-accent";
+
+// Same shape as the Settings tab's rows, so both pages read as one system.
+function Row({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 border-b border-sv-border/60 py-3.5 last:border-b-0">
+      <div className="min-w-0">
+        <div className="text-sm">{label}</div>
+        {hint && <div className="mt-0.5 text-xs text-sv-muted">{hint}</div>}
+      </div>
+      <div className="shrink-0">{children}</div>
+    </div>
+  );
+}
+
 export default function History() {
   const entries = useHistoryStore((s) => s.entries);
   const update = useHistoryStore((s) => s.update);
@@ -136,81 +162,64 @@ export default function History() {
       }
     >
       {/* History controls: count cap + auto-delete window */}
-      <div className="mb-4 rounded-xl border border-sv-border bg-sv-surface p-4">
-        <div className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-sv-muted">
-          History
-        </div>
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center justify-between gap-3 sm:justify-start">
-            <div>
-              <div className="text-sm font-medium">History limit</div>
-              <div className="text-[11px] text-sv-muted">
-                Keep at most this many transcriptions
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <ScrollNumberPicker
-                value={historyLimit}
-                onChange={(v) => setSettings({ history_limit: v })}
-                min={1}
-                max={10000}
-              />
-              <span className="text-xs text-sv-muted">entries</span>
-            </div>
+      <div className="mb-5 rounded-xl border border-sv-border bg-sv-surface px-4">
+        <Row label="History limit" hint="Keep at most this many transcriptions">
+          <div className="flex items-center gap-2.5">
+            <ScrollNumberPicker
+              value={historyLimit}
+              onChange={(v) => setSettings({ history_limit: v })}
+              min={1}
+              max={10000}
+            />
+            <span className="text-sm text-sv-muted">entries</span>
           </div>
-          <div className="flex items-center justify-between gap-3 sm:justify-start">
-            <div>
-              <div className="text-sm font-medium">Auto-delete</div>
-              <div className="text-[11px] text-sv-muted">
-                Remove entries older than
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <select
-                value={historyRetention}
-                onChange={(e) =>
-                  setSettings({
-                    history_retention: e.target.value as Settings["history_retention"],
-                  })
-                }
-                className="rounded-lg border border-sv-border bg-sv-bg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-sv-accent"
-              >
-                {RETENTION_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-              {historyRetention === "custom" && (
-                <>
-                  <ScrollNumberPicker
-                    value={customValue}
-                    onChange={(v) => setSettings({ history_retention_custom_value: v })}
-                    min={1}
-                    max={999}
-                    width={56}
-                  />
-                  <select
-                    value={customUnit}
-                    onChange={(e) =>
-                      setSettings({
-                        history_retention_custom_unit: e.target
-                          .value as Settings["history_retention_custom_unit"],
-                      })
-                    }
-                    className="rounded-lg border border-sv-border bg-sv-bg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-sv-accent"
-                  >
-                    {RETENTION_UNITS.map((u) => (
-                      <option key={u} value={u}>
-                        {u}
-                      </option>
-                    ))}
-                  </select>
-                </>
-              )}
-            </div>
+        </Row>
+        <Row label="Auto-delete" hint="Remove entries older than">
+          <div className="flex items-center gap-2.5">
+            <select
+              value={historyRetention}
+              onChange={(e) =>
+                setSettings({
+                  history_retention: e.target.value as Settings["history_retention"],
+                })
+              }
+              className={SELECT_CLS}
+            >
+              {RETENTION_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+            {historyRetention === "custom" && (
+              <>
+                <ScrollNumberPicker
+                  value={customValue}
+                  onChange={(v) => setSettings({ history_retention_custom_value: v })}
+                  min={1}
+                  max={999}
+                  width={60}
+                />
+                <select
+                  value={customUnit}
+                  onChange={(e) =>
+                    setSettings({
+                      history_retention_custom_unit: e.target
+                        .value as Settings["history_retention_custom_unit"],
+                    })
+                  }
+                  className={SELECT_CLS}
+                >
+                  {RETENTION_UNITS.map((u) => (
+                    <option key={u} value={u}>
+                      {u}
+                    </option>
+                  ))}
+                </select>
+              </>
+            )}
           </div>
-        </div>
+        </Row>
       </div>
 
       <input

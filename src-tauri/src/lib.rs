@@ -45,9 +45,9 @@ pub struct RuntimeConfig {
     pub replacements: Vec<(String, String)>,
     // Active AI processing mode (applied after transcription, before paste).
     pub mode_id: String,
-    pub mode_source: String, // "none" | "local" (Ollama) | "api" (OpenAI-compatible)
+    pub mode_source: String, // "none" | "local" (bundled llama-server) | "api" (OpenAI-compatible)
     pub mode_prompt: String,
-    pub mode_model: String, // LLM model id / Ollama tag
+    pub mode_model: String, // LLM model id / bundled llama-server model
     pub mode_base_url: String, // for "api": e.g. http://localhost:1234/v1
     pub mode_api_key: String,  // for "api": optional (empty for local servers)
     // Behavior flags (Settings toggles).
@@ -441,22 +441,6 @@ fn set_active_mode(
     Ok(())
 }
 
-// ---------------- AI processing (Ollama) ----------------
-
-#[tauri::command]
-async fn ollama_status() -> llm::ollama::OllamaStatus {
-    llm::ollama::status().await
-}
-
-#[tauri::command]
-async fn ollama_generate(
-    model: String,
-    system_prompt: String,
-    text: String,
-) -> Result<String, String> {
-    llm::ollama::generate(&model, &system_prompt, &text).await
-}
-
 /// Generic OpenAI-compatible call — works for LM Studio, llama.cpp server,
 /// OpenAI, OpenRouter, Groq, etc. Used for mode tests and "Test connection".
 #[tauri::command]
@@ -744,13 +728,6 @@ fn set_overlay_size(app: AppHandle, width: f64, height: f64) {
     system::overlay::animate_resize(&app, width, height);
 }
 
-/// Broadcast the overlay opacity (0-100) to the overlay window.
-#[tauri::command]
-fn set_overlay_opacity(app: AppHandle, value: f64) {
-    use tauri::Emitter;
-    let _ = app.emit("overlay://opacity", value);
-}
-
 /// Tell WebView2 to shed renderer memory while the dashboard is hidden in the
 /// tray, and go back to normal when it's shown (perf roadmap item 10).
 fn set_webview_memory_low(app: &AppHandle, low: bool) {
@@ -915,8 +892,6 @@ pub fn run() {
             download_tts_model,
             delete_tts_model,
             set_active_mode,
-            ollama_status,
-            ollama_generate,
             api_generate,
             api_list_models,
             api_test_stt,
@@ -942,7 +917,6 @@ pub fn run() {
             hide_overlay,
             show_overlay,
             set_overlay_size,
-            set_overlay_opacity,
             hf::hf_search_models,
             hf::hf_model_details,
             hf::hf_piper_voices,

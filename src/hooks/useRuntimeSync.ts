@@ -4,7 +4,6 @@ import {
   updateRuntimeConfig,
   setHotkey,
   setActiveMode,
-  setOverlayOpacity,
   setTextReplacements,
   setBehavior,
   setAppProfiles,
@@ -68,7 +67,6 @@ export function useRuntimeSync() {
   const ttsVoice = useSettingsStore((s) => s.settings.active_tts_voice);
   const ttsHotkey = useSettingsStore((s) => s.settings.tts_hotkey);
   const autoStart = useSettingsStore((s) => s.settings.auto_start);
-  const overlayOpacity = useSettingsStore((s) => s.settings.overlay_opacity);
   const setSettings = useSettingsStore((s) => s.setSettings);
 
   useEffect(() => {
@@ -97,10 +95,6 @@ export function useRuntimeSync() {
       unsubPromise.then((unsub) => unsub());
     };
   }, [setSettings]);
-
-  useEffect(() => {
-    setOverlayOpacity(overlayOpacity);
-  }, [overlayOpacity]);
 
   useEffect(() => {
     const sttProvider = sttCloudProviderId

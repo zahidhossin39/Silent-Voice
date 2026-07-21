@@ -1,26 +1,59 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 const ROW_H = 26; // px per number row
+const COLLAPSED_H = 36; // matches the height of a <select> in the same row
 const HALF = 2; // rows rendered above/below the centre (visible span = 5)
 const BUFFER = 8; // extra rows kept off-screen so a slide never shows a gap
 const WHEEL_STEP = 34; // px of wheel travel per number
 
-// A short, quiet tick so a value change is felt as well as seen. Built once
-// on first use — an AudioContext created before any user gesture is blocked.
+// A deep mechanical detent — the muted thunk of a ratchet, not a UI blip.
+// Two layers: a low body tone that pitch-drops fast, plus a tiny filtered
+// noise burst for the mechanical "knock" transient. Everything is lowpassed
+// so nothing bright survives. Built lazily — an AudioContext created before
+// any user gesture is blocked.
 let audioCtx: AudioContext | null = null;
+let noiseBuffer: AudioBuffer | null = null;
+
 function tick() {
   try {
     audioCtx ??= new AudioContext();
-    if (audioCtx.state === "suspended") void audioCtx.resume();
-    const t = audioCtx.currentTime;
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    osc.frequency.setValueAtTime(1500, t);
-    gain.gain.setValueAtTime(0.05, t);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.03);
-    osc.connect(gain).connect(audioCtx.destination);
+    const ctx = audioCtx;
+    if (ctx.state === "suspended") void ctx.resume();
+    const t = ctx.currentTime;
+
+    const lowpass = ctx.createBiquadFilter();
+    lowpass.type = "lowpass";
+    lowpass.frequency.setValueAtTime(320, t);
+    lowpass.connect(ctx.destination);
+
+    // Body: 130Hz collapsing to 45Hz in 35ms reads as a solid, weighty click.
+    const osc = ctx.createOscillator();
+    osc.type = "triangle";
+    osc.frequency.setValueAtTime(130, t);
+    osc.frequency.exponentialRampToValueAtTime(45, t + 0.035);
+    const oscGain = ctx.createGain();
+    oscGain.gain.setValueAtTime(0.16, t);
+    oscGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.055);
+    osc.connect(oscGain).connect(lowpass);
     osc.start(t);
-    osc.stop(t + 0.03);
+    osc.stop(t + 0.06);
+
+    // Knock transient: 12ms of lowpassed noise gives it a mechanical edge.
+    if (!noiseBuffer) {
+      const len = Math.floor(ctx.sampleRate * 0.012);
+      noiseBuffer = ctx.createBuffer(1, len, ctx.sampleRate);
+      const data = noiseBuffer.getChannelData(0);
+      for (let i = 0; i < len; i++) {
+        data[i] = (Math.random() * 2 - 1) * (1 - i / len);
+      }
+    }
+    const noise = ctx.createBufferSource();
+    noise.buffer = noiseBuffer;
+    const noiseGain = ctx.createGain();
+    noiseGain.gain.setValueAtTime(0.06, t);
+    noiseGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.02);
+    noise.connect(noiseGain).connect(lowpass);
+    noise.start(t);
   } catch {
     // Audio is a nicety — never let it break the picker.
   }
@@ -142,7 +175,7 @@ export default function ScrollNumberPicker({
     return (
       <button
         onClick={() => setOpen(true)}
-        style={{ width, height: ROW_H + 12 }}
+        style={{ width, height: COLLAPSED_H }}
         className="rounded-lg border border-sv-border bg-sv-bg text-sm font-semibold tabular-nums text-sv-text transition hover:border-sv-accent/60"
         title="Click to change"
       >
@@ -158,7 +191,7 @@ export default function ScrollNumberPicker({
   const height = ROW_H * (HALF * 2 + 1);
 
   return (
-    <div style={{ width, height: ROW_H + 12 }} className="relative">
+    <div style={{ width, height: COLLAPSED_H }} className="relative">
       <div
         ref={wrapRef}
         role="spinbutton"
@@ -185,7 +218,7 @@ export default function ScrollNumberPicker({
         style={{
           width,
           height,
-          top: -(height - (ROW_H + 12)) / 2,
+          top: -(height - COLLAPSED_H) / 2,
           // Fades the top/bottom rows out instead of cutting them off.
           maskImage:
             "linear-gradient(to bottom, transparent, #000 22%, #000 78%, transparent)",
