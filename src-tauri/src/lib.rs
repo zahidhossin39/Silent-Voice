@@ -713,6 +713,17 @@ fn paste_text(text: String) -> Result<(), String> {
     paste::paste_at_cursor(&text)
 }
 
+// The webview's navigator.clipboard.writeText() needs a clipboard permission
+// WebView2 has no prompt UI for in a desktop app, so it can silently fail.
+// Going through arboard (already a dependency for paste) writes to the OS
+// clipboard directly and always works.
+#[tauri::command]
+fn copy_to_clipboard(text: String) -> Result<(), String> {
+    arboard::Clipboard::new()
+        .and_then(|mut c| c.set_text(text))
+        .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 fn quit_app(app: AppHandle) {
     app.exit(0);
@@ -926,6 +937,7 @@ pub fn run() {
             start_recording,
             stop_and_transcribe,
             paste_text,
+            copy_to_clipboard,
             quit_app,
             hide_overlay,
             show_overlay,

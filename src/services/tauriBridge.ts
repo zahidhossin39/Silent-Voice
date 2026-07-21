@@ -477,6 +477,18 @@ export async function ollamaGenerate(
   });
 }
 
+// Writes to the OS clipboard via Rust (arboard) — the webview's
+// navigator.clipboard.writeText() has no permission-prompt UI in a desktop
+// WebView2 window and can silently fail. Falls back to the browser API
+// outside Tauri (dev preview).
+export async function copyToClipboard(text: string): Promise<void> {
+  if (!isTauri()) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  await invoke<void>("copy_to_clipboard", { text });
+}
+
 // ---------------- History (local JSON file via Rust) ----------------
 
 export async function loadHistory(): Promise<HistoryEntry[] | null> {

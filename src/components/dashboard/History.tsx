@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import Page from "../shared/Page";
 import { useHistoryStore } from "../../stores/historyStore";
 import { useSettingsStore } from "../../stores/settingsStore";
+import { copyToClipboard } from "../../services/tauriBridge";
+import ScrollNumberPicker from "../shared/ScrollNumberPicker";
 import type { Settings } from "../../types";
 
 // Proofreading squiggles were removed from History at the user's request;
@@ -60,6 +62,17 @@ export default function History() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [draft, setDraft] = useState("");
   const [learnedMsg, setLearnedMsg] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<number | null>(null);
+
+  async function copyEntry(id: number, text: string) {
+    try {
+      await copyToClipboard(text);
+      setCopiedId(id);
+      setTimeout(() => setCopiedId((cur) => (cur === id ? null : cur)), 1500);
+    } catch (e) {
+      console.warn("copy failed", e);
+    }
+  }
 
   // Re-apply the count/age caps whenever any of them change.
   useEffect(() => {
@@ -136,17 +149,11 @@ export default function History() {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <input
-                type="number"
+              <ScrollNumberPicker
+                value={historyLimit}
+                onChange={(v) => setSettings({ history_limit: v })}
                 min={1}
                 max={10000}
-                value={historyLimit}
-                onChange={(e) =>
-                  setSettings({
-                    history_limit: Math.max(1, Math.min(10000, Number(e.target.value) || 1)),
-                  })
-                }
-                className="w-20 rounded-lg border border-sv-border bg-sv-bg px-3 py-1.5 text-right text-sm focus:outline-none focus:ring-1 focus:ring-sv-accent"
               />
               <span className="text-xs text-sv-muted">entries</span>
             </div>
@@ -176,20 +183,12 @@ export default function History() {
               </select>
               {historyRetention === "custom" && (
                 <>
-                  <input
-                    type="number"
+                  <ScrollNumberPicker
+                    value={customValue}
+                    onChange={(v) => setSettings({ history_retention_custom_value: v })}
                     min={1}
                     max={999}
-                    value={customValue}
-                    onChange={(e) =>
-                      setSettings({
-                        history_retention_custom_value: Math.max(
-                          1,
-                          Math.min(999, Number(e.target.value) || 1)
-                        ),
-                      })
-                    }
-                    className="w-16 rounded-lg border border-sv-border bg-sv-bg px-2 py-1.5 text-right text-sm focus:outline-none focus:ring-1 focus:ring-sv-accent"
+                    width={56}
                   />
                   <select
                     value={customUnit}
@@ -259,12 +258,10 @@ export default function History() {
                       </button>
                     )}
                     <button
-                      onClick={() =>
-                        navigator.clipboard.writeText(displayed)
-                      }
-                      className="hover:text-sv-text"
+                      onClick={() => copyEntry(e.id, displayed)}
+                      className={copiedId === e.id ? "text-sv-good" : "hover:text-sv-text"}
                     >
-                      Copy
+                      {copiedId === e.id ? "Copied" : "Copy"}
                     </button>
                     <button
                       onClick={() => remove(e.id)}

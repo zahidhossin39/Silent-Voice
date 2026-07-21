@@ -11,6 +11,7 @@ import { formatMB, formatGB } from "../../../services/format";
 import SimpleMarkdown from "./SimpleMarkdown";
 import { STT_MODELS, sttLanguage } from "../../../services/catalog";
 import { accuracyScore, speedScore, deviceRealtimeLabel } from "../../../services/modelMetrics";
+import { copyToClipboard } from "../../../services/tauriBridge";
 
 // --- Helpers ---
 function formatNdaysAgo(isoDate: string) {
@@ -794,8 +795,14 @@ function HfDetail({ details, hardware, track }: { details: HfModelDetails; hardw
     return base.replace(/\.gguf$/i, "").toLowerCase();
   };
 
+  const [idCopied, setIdCopied] = useState(false);
   const handleCopyId = () => {
-    navigator.clipboard.writeText(details.id);
+    copyToClipboard(details.id)
+      .then(() => {
+        setIdCopied(true);
+        setTimeout(() => setIdCopied(false), 1500);
+      })
+      .catch((e) => console.warn("copy failed", e));
   };
 
   const [readmeExpanded, setReadmeExpanded] = useState(false);
@@ -808,8 +815,12 @@ function HfDetail({ details, hardware, track }: { details: HfModelDetails; hardw
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-3">
               <h2 className="truncate text-xl font-semibold">{name}</h2>
-              <button onClick={handleCopyId} className="shrink-0 text-sv-muted hover:text-sv-text" title="Copy Repo ID">
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+              <button onClick={handleCopyId} className={`shrink-0 ${idCopied ? "text-sv-good" : "text-sv-muted hover:text-sv-text"}`} title={idCopied ? "Copied" : "Copy Repo ID"}>
+                {idCopied ? (
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                ) : (
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                )}
               </button>
             </div>
             <p className="mt-1 flex items-center gap-3 text-sm text-sv-muted">
