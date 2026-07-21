@@ -15,7 +15,8 @@ use crate::proofread;
 use crate::AppState;
 use enigo::{Direction::Release, Enigo, Key, Keyboard, Settings as EnigoSettings};
 use std::collections::HashSet;
-use std::sync::mpsc::channel;
+use std::sync::mpsc::{channel, Sender};
+use std::sync::Mutex;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 use windows::core::{implement, Interface};
@@ -57,13 +58,25 @@ const IGNORE_EXES: &[&str] = &[
 const MAX_TEXT: i32 = 6000;
 const POLL_MS: u64 = 250;
 // While squiggles are on screen, poll faster so they track typing/scrolling
-// closely — this is what keeps the "stale trail" short.
+// closely — this is what keeps the "stale trail" short. There is no reliable
+// UIA event for scroll/window-move, so this path stays a poll on purpose.
 const ACTIVE_POLL_MS: u64 = 100;
-// Backoff when nothing has changed for IDLE_AFTER_POLLS cycles (~2s):
-// squiggle positions and text are stable, so poll gently until the focused
-// window changes or something moves again.
-const IDLE_POLL_MS: u64 = 1200;
-const IDLE_AFTER_POLLS: u32 = 8;
+// Editable field focused but stable (no new errors): poll gently — still
+// catches typing within ~800ms, far cheaper than 250ms forever.
+const FIELD_IDLE_MS: u64 = 800;
+const STABLE_AFTER_POLLS: u32 = 6;
+// No editable field focused at all: sleep deep. A UIA focus-changed event
+// (FocusHandler → Wake::Uia) wakes the loop the instant focus lands on a
+// real field, so this long timeout is just a safety-net heartbeat.
+const DEEP_IDLE_MS: u64 = 3000;
+
+// Watcher inbox: overlay actions (fix/dismiss/add-vocab) plus UIA focus
+// events, unified onto one channel so the watcher blocks on a single inbox
+// and wakes on real changes instead of blind timer polling.
+enum Wake {
+    Action(OverlayAction),
+    Uia,
+}
 
 pub fn start(app: AppHandle) {
     std::thread::spawn(move || watcher(app));
@@ -92,10 +105,25 @@ fn watcher(app: AppHandle) {
                     return;
                 }
             };
-        let handler: IUIAutomationFocusChangedEventHandler = FocusHandler.into();
+        let (wake_tx, wake_rx) = channel::<Wake>();
+        let handler: IUIAutomationFocusChangedEventHandler =
+            FocusHandler { tx: Mutex::new(wake_tx.clone()) }.into();
 
+        // The overlay speaks OverlayActions on its own channel; forward them
+        // onto the unified wake channel so the watcher blocks on ONE inbox
+        // that also carries UIA focus events.
         let (action_tx, action_rx) = channel::<OverlayAction>();
         let overlay_tx = super::squiggle::spawn(action_tx);
+        {
+            let wake_tx = wake_tx.clone();
+            std::thread::spawn(move || {
+                while let Ok(a) = action_rx.recv() {
+                    if wake_tx.send(Wake::Action(a)).is_err() {
+                        break;
+                    }
+                }
+            });
+        }
         let my_pid = GetCurrentProcessId();
 
         let mut dismissed_words = HashSet::<String>::new();
@@ -104,11 +132,12 @@ fn watcher(app: AppHandle) {
         let mut last_rules: Vec<String> = Vec::new();
         let mut last_sensitivity = String::new();
         let mut issues: Vec<proofread::ProofIssue> = Vec::new();
-        // Adaptive backoff: after several polls with nothing changing, slow
-        // down to save CPU; snap back to fast on any change or focus switch.
-        let mut idle_polls: u32 = 0;
+        // Event-driven pacing: a UIA focus event wakes the loop instantly, so
+        // we can sleep deeply when no editable field is focused. stable_polls
+        // backs off the rate once a focused field stops changing.
+        let mut stable_polls: u32 = 0;
+        let mut last_field_focused = false;
         let mut last_squiggles: Vec<SquiggleInfo> = Vec::new();
-        let mut last_fg: isize = 0;
         let mut was_active = false;
         // The screen-reader flag + focus handler make every Chromium/Electron
         // app build accessibility trees (needed for WebView2 apps like
@@ -118,33 +147,35 @@ fn watcher(app: AppHandle) {
         loop {
             let timeout = Duration::from_millis(if !last_squiggles.is_empty() {
                 ACTIVE_POLL_MS
-            } else if idle_polls >= IDLE_AFTER_POLLS {
-                IDLE_POLL_MS
+            } else if last_field_focused {
+                if stable_polls >= STABLE_AFTER_POLLS { FIELD_IDLE_MS } else { POLL_MS }
             } else {
-                POLL_MS
+                DEEP_IDLE_MS
             });
 
             let mut actions = Vec::new();
-            match action_rx.recv_timeout(timeout) {
-                Ok(action) => {
-                    actions.push(action);
-                    while let Ok(a) = action_rx.try_recv() {
-                        actions.push(a);
+            let mut woke_on_event = false;
+            match wake_rx.recv_timeout(timeout) {
+                Ok(msg) => {
+                    let mut take = |m| match m {
+                        Wake::Action(a) => actions.push(a),
+                        Wake::Uia => woke_on_event = true,
+                    };
+                    take(msg);
+                    while let Ok(m) = wake_rx.try_recv() {
+                        take(m);
                     }
                 }
-                // Overlay thread gone → recv_timeout returns Disconnected
-                // instantly; sleep instead or this loop busy-spins a core.
+                // wake_tx is held for the whole watcher lifetime, so this only
+                // fires if every sender is dropped; sleep rather than spin.
                 Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
                     std::thread::sleep(timeout);
                 }
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
             }
-
-            // Focus moved to another window → wake up immediately.
-            let fg_now = GetForegroundWindow().0 as isize;
-            if fg_now != last_fg {
-                last_fg = fg_now;
-                idle_polls = 0;
+            // A focus event means the target likely changed — poll fast again.
+            if woke_on_event {
+                stable_polls = 0;
             }
 
             // Process any incoming overlay actions.
@@ -259,14 +290,20 @@ fn watcher(app: AppHandle) {
                     (Vec::new(), "panic")
                 }
             };
-            // Only back off while nothing is on screen — backing off with
-            // squiggles visible risks a stale trail lingering up to
-            // IDLE_POLL_MS after the underlying text changes.
-            idle_polls = if squiggles == last_squiggles && !check_needed && squiggles.is_empty() {
-                idle_polls.saturating_add(1)
+            // Is an editable field currently focused? (These reasons all mean
+            // a real text target was reached, just with nothing to squiggle.)
+            // Governs whether we back off to FIELD_IDLE_MS or sleep deep.
+            let field_focused =
+                matches!(reason, "active" | "empty text" | "no visible issue rects");
+            // Back off only when nothing changed. Squiggles-visible always
+            // polls fast (ACTIVE_POLL_MS above), so this only relaxes the
+            // error-free focused-field case — no stale-trail risk.
+            stable_polls = if squiggles == last_squiggles && !check_needed {
+                stable_polls.saturating_add(1)
             } else {
                 0
             };
+            last_field_focused = field_focused;
             last_squiggles = squiggles.clone();
             let active = !squiggles.is_empty();
             let _ = reason;
@@ -652,10 +689,18 @@ fn process_name(pid: u32) -> String {
 }
 
 #[implement(IUIAutomationFocusChangedEventHandler)]
-struct FocusHandler;
+struct FocusHandler {
+    tx: Mutex<Sender<Wake>>,
+}
 
 impl IUIAutomationFocusChangedEventHandler_Impl for FocusHandler_Impl {
     fn HandleFocusChangedEvent(&self, _sender: Option<&IUIAutomationElement>) -> windows::core::Result<()> {
+        // COM apartment rule: only the watcher thread may touch UIA. This
+        // handler fires on a UIA thread, so it just nudges the watcher awake
+        // (Wake::Uia) — the watcher then does the actual UIA read itself.
+        if let Ok(tx) = self.tx.lock() {
+            let _ = tx.send(Wake::Uia);
+        }
         Ok(())
     }
 }
