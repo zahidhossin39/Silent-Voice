@@ -196,7 +196,9 @@ export interface Settings {
   pinned_tts: string[];
   hf_show_incompatible: boolean;
   history_limit: number; // max transcriptions to keep (hard count cap)
-  history_retention: "never" | "3d" | "2w" | "3m"; // auto-delete entries older than this
+  history_retention: "never" | "3d" | "2w" | "3m" | "custom"; // auto-delete entries older than this
+  history_retention_custom_value: number; // used when history_retention === "custom"
+  history_retention_custom_unit: "hours" | "days" | "weeks" | "months";
 }
 
 // ---------- Hugging Face ----------

@@ -48,7 +48,7 @@ function isSupportedMain(main: string): boolean {
   );
 }
 
-function buildAccelerator(e: KeyboardEvent): string | null {
+export function buildAccelerator(e: KeyboardEvent): string | null {
   if (IGNORED_AS_MAIN.has(e.key)) return null;
 
   const parts: string[] = [];

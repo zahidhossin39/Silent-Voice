@@ -66,6 +66,8 @@ const DEFAULT_SETTINGS: Settings = {
   hf_show_incompatible: false,
   history_limit: 100,
   history_retention: "never",
+  history_retention_custom_value: 7,
+  history_retention_custom_unit: "days",
 };
 
 interface SettingsState {

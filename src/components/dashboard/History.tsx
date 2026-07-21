@@ -33,6 +33,14 @@ const RETENTION_OPTIONS: { value: Settings["history_retention"]; label: string }
   { value: "3d", label: "After 3 days" },
   { value: "2w", label: "After 2 weeks" },
   { value: "3m", label: "After 3 months" },
+  { value: "custom", label: "Custom…" },
+];
+
+const RETENTION_UNITS: Settings["history_retention_custom_unit"][] = [
+  "hours",
+  "days",
+  "weeks",
+  "months",
 ];
 
 export default function History() {
@@ -44,6 +52,8 @@ export default function History() {
   const vocabulary = useSettingsStore((s) => s.settings.custom_vocabulary);
   const historyLimit = useSettingsStore((s) => s.settings.history_limit);
   const historyRetention = useSettingsStore((s) => s.settings.history_retention);
+  const customValue = useSettingsStore((s) => s.settings.history_retention_custom_value);
+  const customUnit = useSettingsStore((s) => s.settings.history_retention_custom_unit);
   const setSettings = useSettingsStore((s) => s.setSettings);
 
   const [query, setQuery] = useState("");
@@ -51,10 +61,10 @@ export default function History() {
   const [draft, setDraft] = useState("");
   const [learnedMsg, setLearnedMsg] = useState<string | null>(null);
 
-  // Re-apply the count/age caps whenever either setting changes.
+  // Re-apply the count/age caps whenever any of them change.
   useEffect(() => {
     reprune();
-  }, [historyLimit, historyRetention, reprune]);
+  }, [historyLimit, historyRetention, customValue, customUnit, reprune]);
 
   const filtered = entries.filter((e) =>
     (e.processed_text + e.raw_text)
@@ -148,21 +158,58 @@ export default function History() {
                 Remove entries older than
               </div>
             </div>
-            <select
-              value={historyRetention}
-              onChange={(e) =>
-                setSettings({
-                  history_retention: e.target.value as Settings["history_retention"],
-                })
-              }
-              className="rounded-lg border border-sv-border bg-sv-bg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-sv-accent"
-            >
-              {RETENTION_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
+            <div className="flex items-center gap-2">
+              <select
+                value={historyRetention}
+                onChange={(e) =>
+                  setSettings({
+                    history_retention: e.target.value as Settings["history_retention"],
+                  })
+                }
+                className="rounded-lg border border-sv-border bg-sv-bg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-sv-accent"
+              >
+                {RETENTION_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+              {historyRetention === "custom" && (
+                <>
+                  <input
+                    type="number"
+                    min={1}
+                    max={999}
+                    value={customValue}
+                    onChange={(e) =>
+                      setSettings({
+                        history_retention_custom_value: Math.max(
+                          1,
+                          Math.min(999, Number(e.target.value) || 1)
+                        ),
+                      })
+                    }
+                    className="w-16 rounded-lg border border-sv-border bg-sv-bg px-2 py-1.5 text-right text-sm focus:outline-none focus:ring-1 focus:ring-sv-accent"
+                  />
+                  <select
+                    value={customUnit}
+                    onChange={(e) =>
+                      setSettings({
+                        history_retention_custom_unit: e.target
+                          .value as Settings["history_retention_custom_unit"],
+                      })
+                    }
+                    className="rounded-lg border border-sv-border bg-sv-bg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-sv-accent"
+                  >
+                    {RETENTION_UNITS.map((u) => (
+                      <option key={u} value={u}>
+                        {u}
+                      </option>
+                    ))}
+                  </select>
+                </>
+              )}
+            </div>
           </div>
         </div>
       </div>

@@ -9,11 +9,18 @@ import {
 } from "../services/tauriBridge";
 import { useSettingsStore } from "./settingsStore";
 
+const HOUR_MS = 3_600_000;
 const DAY_MS = 86_400_000;
 const RETENTION_MS: Record<string, number> = {
   "3d": 3 * DAY_MS,
   "2w": 14 * DAY_MS,
   "3m": 90 * DAY_MS,
+};
+const UNIT_MS: Record<string, number> = {
+  hours: HOUR_MS,
+  days: DAY_MS,
+  weeks: 7 * DAY_MS,
+  months: 30 * DAY_MS,
 };
 
 // Apply the user's history-limit (count cap) and retention window (age cap).
@@ -21,8 +28,12 @@ const RETENTION_MS: Record<string, number> = {
 function prune(entries: HistoryEntry[]): HistoryEntry[] {
   const s = useSettingsStore.getState().settings;
   let out = entries;
-  const window = RETENTION_MS[s.history_retention];
-  if (window) {
+  const window =
+    s.history_retention === "custom"
+      ? (Number(s.history_retention_custom_value) || 0) *
+        (UNIT_MS[s.history_retention_custom_unit] ?? DAY_MS)
+      : RETENTION_MS[s.history_retention];
+  if (window > 0) {
     const now = Date.now();
     out = out.filter((e) => now - e.timestamp <= window);
   }

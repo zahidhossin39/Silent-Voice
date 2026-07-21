@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Page from "../shared/Page";
 import WaveformVisualizer from "../shared/WaveformVisualizer";
-import HotkeyRecorder from "../shared/HotkeyRecorder";
+import { buildAccelerator } from "../shared/HotkeyRecorder";
+import { STT_MODELS, LANGUAGES } from "../../services/catalog";
 import { useHardwareInfo } from "../../hooks/useHardwareInfo";
 import { useSettingsStore } from "../../stores/settingsStore";
-import { useHistoryStore } from "../../stores/historyStore";
 import { useModelStore } from "../../stores/modelStore";
 import { useUiStore } from "../../stores/uiStore";
 import { isTauri } from "../../services/tauriBridge";
@@ -33,8 +33,7 @@ export default function Home() {
   const settings = useSettingsStore((s) => s.settings);
   const setSettings = useSettingsStore((s) => s.setSettings);
   const modes = useSettingsStore((s) => s.modes);
-  const [editingHotkey, setEditingHotkey] = useState(false);
-  const entries = useHistoryStore((s) => s.entries);
+  const downloadedStt = useModelStore((s) => s.downloaded);
   const downloadedCount = useModelStore(
     (s) => s.downloaded.size + s.downloadedLlm.size + s.downloadedTts.size
   );
@@ -43,6 +42,10 @@ export default function Home() {
 
   const activeMode =
     modes.find((m) => m.id === settings.active_mode_id)?.name ?? "Raw";
+
+  // Only downloaded models are selectable — you can't dictate with one that
+  // isn't on disk.
+  const downloadedModels = STT_MODELS.filter((m) => downloadedStt.has(m.id));
 
   return (
     <Page
@@ -85,42 +88,10 @@ export default function Home() {
             <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wider text-sv-muted">
               Push-to-talk hotkey
             </div>
-            {editingHotkey ? (
-              <div className="flex flex-col items-end gap-2">
-                <HotkeyRecorder
-                  value={settings.hotkey}
-                  onChange={(hk) => setSettings({ hotkey: hk })}
-                />
-                <button
-                  onClick={() => setEditingHotkey(false)}
-                  className="rounded-lg bg-sv-accent px-3 py-1 text-xs font-medium text-white hover:bg-sv-accent-hover"
-                >
-                  Done
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={() => setEditingHotkey(true)}
-                className="group flex items-center gap-2 rounded-lg border border-sv-border bg-sv-bg px-2.5 py-1.5 transition hover:border-sv-accent/50"
-                title="Click to change your push-to-talk hotkey"
-              >
-                <span className="flex items-center gap-1">
-                  {settings.hotkey.split("+").map((k, i, arr) => (
-                    <span key={i} className="flex items-center gap-1">
-                      <kbd className="rounded-md border border-sv-border bg-sv-surface-2 px-2 py-0.5 text-xs font-medium text-sv-text shadow-sm">
-                        {k}
-                      </kbd>
-                      {i < arr.length - 1 && (
-                        <span className="text-xs text-sv-muted">+</span>
-                      )}
-                    </span>
-                  ))}
-                </span>
-                <span className="text-[10px] text-sv-muted transition group-hover:text-sv-accent">
-                  Change
-                </span>
-              </button>
-            )}
+            <InlineHotkey
+              value={settings.hotkey}
+              onChange={(hk) => setSettings({ hotkey: hk })}
+            />
             <p className="mt-2 max-w-[15rem] text-right text-[11px] leading-relaxed text-sv-muted">
               <span className="font-medium text-sv-text">Hold</span> it to speak,{" "}
               <span className="font-medium text-sv-text">release</span> to drop
@@ -196,27 +167,153 @@ export default function Home() {
         )}
       </div>
 
-      {/* Recent transcriptions */}
+      {/* Quick controls — same settings as the Settings tab, surfaced here */}
       <div className="rounded-xl border border-sv-border bg-sv-surface p-5">
-        <h2 className="mb-3 text-sm font-semibold">Recent transcriptions</h2>
-        {entries.length === 0 ? (
-          <p className="text-sm text-sv-muted">
-            Nothing yet. Your dictations will appear here.
-          </p>
-        ) : (
-          <ul className="space-y-2">
-            {entries.slice(0, 5).map((e) => (
-              <li
-                key={e.id}
-                className="truncate rounded-lg bg-sv-surface-2 px-3 py-2 text-sm"
-              >
-                {e.processed_text || e.raw_text}
-              </li>
-            ))}
-          </ul>
-        )}
+        <h2 className="mb-4 text-sm font-semibold">Quick controls</h2>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <QuickControl
+            label="Speech model"
+            hint={
+              downloadedModels.length === 0
+                ? "No models downloaded yet — get one in Model Store"
+                : "Which model transcribes your voice"
+            }
+          >
+            <select
+              value={settings.active_stt_model}
+              onChange={(e) =>
+                setSettings({
+                  active_stt_model: e.target.value,
+                  stt_cloud_provider_id: null,
+                })
+              }
+              disabled={downloadedModels.length === 0}
+              className="w-full rounded-lg border border-sv-border bg-sv-bg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-sv-accent disabled:opacity-50"
+            >
+              {downloadedModels.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.label}
+                </option>
+              ))}
+              {!downloadedModels.some((m) => m.id === settings.active_stt_model) && (
+                <option value={settings.active_stt_model}>
+                  {settings.active_stt_model}
+                </option>
+              )}
+            </select>
+          </QuickControl>
+
+          <QuickControl label="Language" hint="What language you dictate in">
+            <select
+              value={settings.language}
+              onChange={(e) => setSettings({ language: e.target.value })}
+              className="w-full rounded-lg border border-sv-border bg-sv-bg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-sv-accent"
+            >
+              {LANGUAGES.map((l) => (
+                <option key={l.code} value={l.code}>
+                  {l.name}
+                </option>
+              ))}
+            </select>
+          </QuickControl>
+        </div>
       </div>
     </Page>
+  );
+}
+
+// One-click hotkey control: click the keys → it listens immediately → the
+// next combo you press replaces it. No intermediate "Change"/"Done" steps.
+function InlineHotkey({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (accelerator: string) => void;
+}) {
+  const [recording, setRecording] = useState(false);
+  const [rejected, setRejected] = useState<string | null>(null);
+
+  const stop = useCallback(() => {
+    setRecording(false);
+    setRejected(null);
+  }, []);
+
+  useEffect(() => {
+    if (!recording) return;
+
+    function onKeyDown(e: KeyboardEvent) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.key === "Escape") {
+        stop();
+        return;
+      }
+      // Modifier-only presses just keep waiting for the real key.
+      if (["Control", "Meta", "Alt", "Shift"].includes(e.key)) return;
+
+      const accel = buildAccelerator(e);
+      if (accel) {
+        onChange(accel);
+        stop();
+      } else {
+        setRejected(`${e.key} can't be used`);
+      }
+    }
+
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [recording, onChange, stop]);
+
+  if (recording) {
+    return (
+      <button
+        onClick={stop}
+        className="flex items-center gap-2 rounded-lg border border-sv-accent bg-sv-accent/10 px-3 py-1.5 ring-1 ring-sv-accent"
+      >
+        <span className="animate-pulse text-xs text-sv-accent">
+          {rejected ?? "Press any key combo…"}
+        </span>
+        <span className="text-[10px] text-sv-muted">Esc</span>
+      </button>
+    );
+  }
+
+  return (
+    <button
+      onClick={() => setRecording(true)}
+      className="flex items-center gap-1 rounded-lg border border-sv-border bg-sv-bg px-2.5 py-1.5 transition hover:border-sv-accent/60"
+      title="Click to record a new push-to-talk hotkey"
+    >
+      {value.split("+").map((k, i, arr) => (
+        <span key={i} className="flex items-center gap-1">
+          <kbd className="rounded-md border border-sv-border bg-sv-surface-2 px-2 py-0.5 text-xs font-medium text-sv-text shadow-sm">
+            {k}
+          </kbd>
+          {i < arr.length - 1 && <span className="text-xs text-sv-muted">+</span>}
+        </span>
+      ))}
+    </button>
+  );
+}
+
+function QuickControl({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <div className="mb-1.5">
+        <div className="text-sm font-medium">{label}</div>
+        {hint && <div className="text-[11px] text-sv-muted">{hint}</div>}
+      </div>
+      {children}
+    </div>
   );
 }
 
