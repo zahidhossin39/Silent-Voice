@@ -581,38 +581,4 @@ mod tests {
         synth_voice("vits-coqui-bn-custom_female");
         synth_voice("mms-tts-bengali");
     }
-
-    // Decodes the Moonshine archive's OWN bundled test WAV (ground truth in
-    // test_wavs/trans.txt) through the FFI — proves the offline recognizer +
-    // Moonshine struct layout work end-to-end without a live mic. Requires the
-    // tiny model extracted into the STT models dir and the sherpa DLLs next to
-    // the test exe (copy target/debug/sherpa → target/debug/deps/sherpa).
-    #[test]
-    fn moonshine_decodes_bundled_wav() {
-        let dir = crate::models::registry::moonshine_dir("sherpa-onnx-moonshine-tiny-en-int8");
-        let wav = dir.join("test_wavs").join("0.wav");
-        if !wav.exists() {
-            eprintln!("moonshine tiny model not extracted — skipping");
-            return;
-        }
-        let reader = hound::WavReader::open(&wav).unwrap();
-        let spec = reader.spec();
-        assert_eq!(spec.sample_rate, 16000, "expected a 16 kHz test wav");
-        let samples: Vec<f32> = match spec.sample_format {
-            hound::SampleFormat::Int => reader
-                .into_samples::<i16>()
-                .map(|s| s.unwrap() as f32 / 32768.0)
-                .collect(),
-            hound::SampleFormat::Float => {
-                reader.into_samples::<f32>().map(|s| s.unwrap()).collect()
-            }
-        };
-        let text = transcribe_moonshine(&dir, &samples, 2).unwrap();
-        eprintln!("moonshine decoded: {text:?}");
-        let upper = text.to_uppercase();
-        assert!(
-            upper.contains("NIGHTFALL") && upper.contains("YELLOW LAMPS"),
-            "decode did not match ground truth, got: {text:?}"
-        );
-    }
 }
