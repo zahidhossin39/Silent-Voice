@@ -250,16 +250,7 @@ export async function deleteTtsModel(voiceId: string): Promise<void> {
   await invoke<void>("delete_tts_model", { voiceId });
 }
 
-/** Read the current text selection aloud (same as pressing the TTS hotkey). */
-export async function ttsReadSelection(): Promise<void> {
-  if (!isTauri()) return;
-  await invoke<void>("tts_read_selection");
-}
 
-export async function ttsStop(): Promise<void> {
-  if (!isTauri()) return;
-  await invoke<void>("tts_stop");
-}
 
 /** Speak an explicit string with the active voice (Settings "Test voice"). */
 export async function ttsSpeakText(text: string): Promise<void> {
@@ -277,12 +268,7 @@ export interface ProofIssue {
   suggestions: string[];
 }
 
-/** Check text for spelling/grammar issues (offline, Harper). Custom
- * vocabulary words are never flagged. */
-export async function proofreadText(text: string): Promise<ProofIssue[]> {
-  if (!isTauri()) return [];
-  return invoke<ProofIssue[]>("proofread_text", { text });
-}
+
 
 // Push per-app profile rules, fully resolved (mode → prompt/model/keys) so the
 // Rust pipeline never needs the frontend's mode/provider tables.
@@ -306,41 +292,7 @@ export async function setAppProfiles(
   }
 }
 
-// ---------------- Storage location ----------------
 
-export interface DataLocation {
-  models_root: string | null;
-  history_root: string | null;
-}
-
-export async function getDataLocation(): Promise<DataLocation> {
-  if (!isTauri()) return { models_root: null, history_root: null };
-  return invoke<DataLocation>("get_data_location");
-}
-
-export async function setDataLocation(loc: DataLocation): Promise<void> {
-  if (!isTauri()) return;
-  await invoke<void>("set_data_location", {
-    modelsRoot: loc.models_root,
-    historyRoot: loc.history_root,
-  });
-}
-
-export async function pickFolder(): Promise<string | null> {
-  if (!isTauri()) return null;
-  const result = await invoke<string | null>("pick_folder");
-  return result;
-}
-
-/** Open the current models or history folder in the OS file explorer. */
-export async function openDataFolder(kind: "models" | "history"): Promise<void> {
-  if (!isTauri()) return;
-  try {
-    await invoke<void>("open_data_folder", { kind });
-  } catch (e) {
-    console.warn("open_data_folder failed", e);
-  }
-}
 
 // ---------------- Local LLM (bundled llama.cpp) ----------------
 

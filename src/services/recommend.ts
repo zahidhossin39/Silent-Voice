@@ -86,13 +86,4 @@ export function llmCompatibility(
   };
 }
 
-export function badgeText(level: CompatibilityLevel): string {
-  switch (level) {
-    case "good":
-      return "Recommended";
-    case "warn":
-      return "Compatible";
-    case "bad":
-      return "Not recommended";
-  }
-}
+
