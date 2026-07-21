@@ -447,14 +447,17 @@ type DecodeFn = unsafe extern "C" fn(Cptr, Cptr);
 type GetResultFn = unsafe extern "C" fn(Cptr) -> *const OfflineRecognizerResult;
 type DestroyResultFn = unsafe extern "C" fn(*const OfflineRecognizerResult);
 
-/// Find the first file in `dir` whose name contains all of `needles` and ends
-/// with `.onnx` (case-insensitive). Moonshine archives use e.g.
-/// `encode.int8.onnx`, `uncached_decode.int8.onnx`.
-fn find_onnx(dir: &Path, needles: &[&str]) -> Option<std::path::PathBuf> {
+/// Find the first `.onnx` in `dir` whose name contains `needle` but none of
+/// `exclude` (case-insensitive). The exclude list is what keeps the
+/// `cached_decode` lookup from matching `uncached_decode.int8.onnx`.
+fn find_onnx(dir: &Path, needle: &str, exclude: &[&str]) -> Option<std::path::PathBuf> {
     let entries = std::fs::read_dir(dir).ok()?;
     for e in entries.flatten() {
         let name = e.file_name().to_string_lossy().to_lowercase();
-        if name.ends_with(".onnx") && needles.iter().all(|n| name.contains(n)) {
+        if name.ends_with(".onnx")
+            && name.contains(needle)
+            && !exclude.iter().any(|x| name.contains(x))
+        {
             return Some(e.path());
         }
     }
@@ -471,10 +474,10 @@ pub fn transcribe_moonshine(
 ) -> Result<String, String> {
     let lib = lib()?;
 
-    let pre = find_onnx(dir, &["preprocess"]).ok_or("moonshine: preprocess model missing")?;
-    let enc = find_onnx(dir, &["encode"]).ok_or("moonshine: encode model missing")?;
-    let unc = find_onnx(dir, &["uncached_decode"]).ok_or("moonshine: uncached_decode model missing")?;
-    let cac = find_onnx(dir, &["cached_decode"]).ok_or("moonshine: cached_decode model missing")?;
+    let pre = find_onnx(dir, "preprocess", &[]).ok_or("moonshine: preprocess model missing")?;
+    let enc = find_onnx(dir, "encode", &["preprocess", "decode"]).ok_or("moonshine: encode model missing")?;
+    let unc = find_onnx(dir, "uncached_decode", &[]).ok_or("moonshine: uncached_decode model missing")?;
+    let cac = find_onnx(dir, "cached_decode", &["uncached"]).ok_or("moonshine: cached_decode model missing")?;
     let tokens = dir.join("tokens.txt");
     if !tokens.exists() {
         return Err("moonshine: tokens.txt missing".into());

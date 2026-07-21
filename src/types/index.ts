@@ -37,6 +37,7 @@ export interface SttModel {
   preset: SttPreset;
   best_for: string;
   url?: string; // Optional full download URL (overrides WHISPER_BASE_URL + file)
+  engine?: "whisper" | "moonshine"; // default whisper; moonshine runs on sherpa-onnx (url is a .tar.bz2 archive)
 }
 
 // ---------- LLM models (for AI processing) ----------

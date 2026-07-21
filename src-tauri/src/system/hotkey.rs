@@ -550,27 +550,52 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
 
     let threads = resolve_thread_count(high_performance, performance_threads);
 
-    let raw_text = match whisper::transcribe_dispatch(
-        &app,
-        &wav_path,
-        &model_id,
-        threads,
-        &language,
-        &vocabulary,
-        use_gpu,
-        &stt_source,
-        &stt_base_url,
-        &stt_api_key,
-        &stt_cloud_model,
-    )
-    .await
-    {
-        Ok(t) => t,
-        Err(e) => {
-            report_error(&app, "stt", &e);
-            // pill stays visible; just return to idle state
-            go_idle(&app);
-            return;
+    // Moonshine models (sherpa-onnx) bypass the whisper sidecar entirely: the
+    // captured samples are already mono 16 kHz f32, exactly what the offline
+    // recognizer wants. The FFI call is blocking, so run it off the async
+    // runtime thread.
+    let raw_text = if let Some(dir) = registry::moonshine_complete_dir(&model_id) {
+        let samples_owned = samples.clone();
+        let res = tokio::task::spawn_blocking(move || {
+            crate::system::sherpa::transcribe_moonshine(&dir, &samples_owned, threads as i32)
+        })
+        .await;
+        match res {
+            Ok(Ok(t)) => t,
+            Ok(Err(e)) => {
+                report_error(&app, "stt", &e);
+                go_idle(&app);
+                return;
+            }
+            Err(e) => {
+                report_error(&app, "stt", &e.to_string());
+                go_idle(&app);
+                return;
+            }
+        }
+    } else {
+        match whisper::transcribe_dispatch(
+            &app,
+            &wav_path,
+            &model_id,
+            threads,
+            &language,
+            &vocabulary,
+            use_gpu,
+            &stt_source,
+            &stt_base_url,
+            &stt_api_key,
+            &stt_cloud_model,
+        )
+        .await
+        {
+            Ok(t) => t,
+            Err(e) => {
+                report_error(&app, "stt", &e);
+                // pill stays visible; just return to idle state
+                go_idle(&app);
+                return;
+            }
         }
     };
 

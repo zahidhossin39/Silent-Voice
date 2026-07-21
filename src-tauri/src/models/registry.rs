@@ -167,13 +167,39 @@ pub fn model_path(model_id: &str) -> PathBuf {
     models_dir().join(model_file_name(model_id))
 }
 
-/// List downloaded Whisper model ids.
+/// Directory of a Moonshine (sherpa-onnx) STT model — a whole folder of
+/// .onnx parts + tokens.txt, stored alongside the ggml .bin files.
+pub fn moonshine_dir(model_id: &str) -> PathBuf {
+    models_dir().join(model_id)
+}
+
+/// The Moonshine model dir IF it's fully downloaded (tokens.txt + a
+/// preprocess .onnx present). Used both to list downloads and to route the
+/// transcription pipeline to sherpa instead of whisper.
+pub fn moonshine_complete_dir(model_id: &str) -> Option<PathBuf> {
+    let dir = moonshine_dir(model_id);
+    if !dir.join("tokens.txt").exists() {
+        return None;
+    }
+    let has_preprocess = std::fs::read_dir(&dir).ok()?.flatten().any(|e| {
+        let n = e.file_name().to_string_lossy().to_lowercase();
+        n.ends_with(".onnx") && n.contains("preprocess")
+    });
+    has_preprocess.then_some(dir)
+}
+
+/// List downloaded STT model ids: Whisper ggml .bin files AND Moonshine
+/// directories.
 pub fn list_downloaded() -> Vec<String> {
     let mut ids = Vec::new();
     if let Ok(entries) = std::fs::read_dir(models_dir()) {
         for entry in entries.flatten() {
             if let Some(name) = entry.file_name().to_str() {
-                if let Some(rest) = name.strip_prefix("ggml-") {
+                if entry.path().is_dir() {
+                    if moonshine_complete_dir(name).is_some() {
+                        ids.push(name.to_string());
+                    }
+                } else if let Some(rest) = name.strip_prefix("ggml-") {
                     if let Some(id) = rest.strip_suffix(".bin") {
                         ids.push(id.to_string());
                     }
