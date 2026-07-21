@@ -1,5 +1,7 @@
+import { useState } from "react";
 import Page from "../shared/Page";
 import WaveformVisualizer from "../shared/WaveformVisualizer";
+import HotkeyRecorder from "../shared/HotkeyRecorder";
 import { useHardwareInfo } from "../../hooks/useHardwareInfo";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useHistoryStore } from "../../stores/historyStore";
@@ -29,7 +31,9 @@ function tidyCpuName(raw: string): string {
 export default function Home() {
   const { hardware, loading } = useHardwareInfo();
   const settings = useSettingsStore((s) => s.settings);
+  const setSettings = useSettingsStore((s) => s.setSettings);
   const modes = useSettingsStore((s) => s.modes);
+  const [editingHotkey, setEditingHotkey] = useState(false);
   const entries = useHistoryStore((s) => s.entries);
   const downloadedCount = useModelStore(
     (s) => s.downloaded.size + s.downloadedLlm.size + s.downloadedTts.size
@@ -77,16 +81,51 @@ export default function Home() {
               />
             </div>
           </div>
-          <div className="text-right text-xs text-sv-muted">
-            <div>
-              Hotkey:{" "}
-              <kbd className="rounded bg-sv-surface-2 px-1.5 py-0.5 text-sv-text">
-                {settings.hotkey}
-              </kbd>
+          <div className="flex flex-col items-end">
+            <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wider text-sv-muted">
+              Push-to-talk hotkey
             </div>
-            <div className="mt-1">
-              Hold to talk · release to transcribe &amp; paste
-            </div>
+            {editingHotkey ? (
+              <div className="flex flex-col items-end gap-2">
+                <HotkeyRecorder
+                  value={settings.hotkey}
+                  onChange={(hk) => setSettings({ hotkey: hk })}
+                />
+                <button
+                  onClick={() => setEditingHotkey(false)}
+                  className="rounded-lg bg-sv-accent px-3 py-1 text-xs font-medium text-white hover:bg-sv-accent-hover"
+                >
+                  Done
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setEditingHotkey(true)}
+                className="group flex items-center gap-2 rounded-lg border border-sv-border bg-sv-bg px-2.5 py-1.5 transition hover:border-sv-accent/50"
+                title="Click to change your push-to-talk hotkey"
+              >
+                <span className="flex items-center gap-1">
+                  {settings.hotkey.split("+").map((k, i, arr) => (
+                    <span key={i} className="flex items-center gap-1">
+                      <kbd className="rounded-md border border-sv-border bg-sv-surface-2 px-2 py-0.5 text-xs font-medium text-sv-text shadow-sm">
+                        {k}
+                      </kbd>
+                      {i < arr.length - 1 && (
+                        <span className="text-xs text-sv-muted">+</span>
+                      )}
+                    </span>
+                  ))}
+                </span>
+                <span className="text-[10px] text-sv-muted transition group-hover:text-sv-accent">
+                  Change
+                </span>
+              </button>
+            )}
+            <p className="mt-2 max-w-[15rem] text-right text-[11px] leading-relaxed text-sv-muted">
+              <span className="font-medium text-sv-text">Hold</span> it to speak,{" "}
+              <span className="font-medium text-sv-text">release</span> to drop
+              the text right at your cursor.
+            </p>
           </div>
         </div>
       </div>
