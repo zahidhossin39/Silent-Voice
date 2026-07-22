@@ -2,6 +2,7 @@ mod audio;
 mod history;
 mod proofread;
 mod gector;
+mod coedit;
 mod llm;
 mod logging;
 mod models;
@@ -58,6 +59,7 @@ pub struct RuntimeConfig {
     // Inline proofreading: squiggles under spelling/grammar errors in ANY
     // app's focused text field (system/inline_check.rs). English-only.
     pub inline_proofread: bool,
+    pub coedit_enabled: bool,
     pub high_performance: bool,
     // Thread count when high_performance is on. 0 = auto (all cores). Otherwise
     // the user's chosen count, clamped to [default, all cores] in hotkey.rs.
@@ -120,6 +122,7 @@ impl Default for RuntimeConfig {
             toggle_mode: true,
             input_sensitivity: 50,
             inline_proofread: true,
+            coedit_enabled: true,
             high_performance: false,
             performance_threads: 0,
             proofread_disabled_rules: Vec::new(),
@@ -273,6 +276,7 @@ fn set_behavior(
     proofread_ignore_apps: Vec<String>,
     pill_auto_hide: bool,
     append_trailing_space: bool,
+    coedit_enabled: bool,
 ) -> Result<(), String> {
     let mut cfg = state.config.lock().map_err(|e| e.to_string())?;
     cfg.toggle_mode = toggle_mode;
@@ -289,6 +293,7 @@ fn set_behavior(
         .collect();
     cfg.pill_auto_hide = pill_auto_hide;
     cfg.append_trailing_space = append_trailing_space;
+    cfg.coedit_enabled = coedit_enabled;
     Ok(())
 }
 
@@ -819,6 +824,7 @@ pub fn run() {
                 loop {
                     tokio::time::sleep(std::time::Duration::from_secs(60)).await;
                     gector::unload_if_idle(idle);
+                    coedit::unload_if_idle(std::time::Duration::from_secs(180));
                 }
             });
             Ok(())

@@ -297,6 +297,13 @@ pub fn start_capture(app: &AppHandle) {
             overlay::show_overlay(app);
             overlay::mark_active(app); // cancel any pending auto-hide from before
             emit_state(app, "recording");
+
+            // Pre-warm the grammar model while the user speaks so it's ready before
+            // transcription finishes (no cold-start stall before paste).
+            let prewarm = state.config.lock().map(|c| c.coedit_enabled).unwrap_or(false);
+            if prewarm {
+                std::thread::spawn(|| crate::coedit::prewarm());
+            }
         }
         Err(e) => {
             report_error(app, "audio", &e);
@@ -472,6 +479,7 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
         input_sensitivity,
         replacements,
         app_profiles,
+        coedit_enabled,
         mode_id,
         mut mode_source,
         mut mode_prompt,
@@ -495,6 +503,7 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
             cfg.input_sensitivity,
             cfg.replacements.clone(),
             cfg.app_profiles.clone(),
+            cfg.coedit_enabled,
             cfg.mode_id.clone(),
             cfg.mode_source.clone(),
             cfg.mode_prompt.clone(),
@@ -576,13 +585,24 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
 
     let raw_text = textfmt::collapse_repeated_words(&raw_text);
 
-    // Optional AI processing: run the active mode's prompt through the
-    // bundled llama-server. On any failure, fall back to the raw
-    // transcription so the user never loses their words.
-    let processed_text = if !raw_text.is_empty()
+    let will_run_llm = !raw_text.is_empty()
         && !mode_prompt.is_empty()
-        && (mode_source == "local" || mode_source == "api")
-    {
+        && (mode_source == "local" || mode_source == "api");
+
+    // Meaning-aware grammar correction of the raw transcript. Only when no AI
+    // mode LLM will run (an LLM already fixes grammar). Runs on a blocking
+    // thread (CPU inference). correct() returns the text unchanged if the model
+    // is disabled/not installed or on any failure — the user never loses words.
+    let grammar_text = if coedit_enabled && !will_run_llm && !raw_text.is_empty() {
+        let t = raw_text.clone();
+        tokio::task::spawn_blocking(move || crate::coedit::correct(&t))
+            .await
+            .unwrap_or_else(|_| raw_text.clone())
+    } else {
+        raw_text.clone()
+    };
+
+    let processed_text = if will_run_llm {
         let result = match mode_source.as_str() {
             "local" => {
                 crate::run_local_llm(&app, &mode_model, &mode_prompt, &raw_text).await
@@ -608,7 +628,7 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
             }
         }
     } else {
-        raw_text.clone()
+        grammar_text
     };
 
     // Apply user text-replacement snippets (spoken trigger → inserted text)
