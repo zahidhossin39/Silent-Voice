@@ -222,13 +222,28 @@ export async function getAutostart(): Promise<boolean> {
 // ---------------- Read aloud (TTS) ----------------
 
 /** Push the active read-aloud voice + hotkey to Rust (registers the hotkey). */
-export async function setTts(voiceId: string, hotkey: string): Promise<void> {
+export async function setTts(voiceId: string, hotkey: string, enabled: boolean): Promise<void> {
   if (!isTauri()) return;
   try {
-    await invoke<void>("set_tts", { voiceId, hotkey });
+    await invoke<void>("set_tts", { voiceId, hotkey, enabled });
   } catch (e) {
     console.warn("set_tts failed", e);
   }
+}
+
+export async function ttsStop(): Promise<void> {
+  if (!isTauri()) return;
+  await invoke<void>("tts_stop");
+}
+
+export async function ttsPause(): Promise<void> {
+  if (!isTauri()) return;
+  await invoke<void>("tts_pause");
+}
+
+export async function ttsResume(): Promise<void> {
+  if (!isTauri()) return;
+  await invoke<void>("tts_resume");
 }
 
 export async function listDownloadedTts(): Promise<string[]> {

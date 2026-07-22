@@ -332,60 +332,71 @@ export default function Settings() {
           title="Read aloud (text-to-speech)"
           desc="Select text in any app, press the hotkey, and hear it spoken. Press again to stop. Voices are downloaded in Model Store → Text-to-Speech."
         >
-          <div className="border-b border-sv-border/60 py-3.5">
-            <div className="text-sm">Read-aloud hotkey</div>
-            <div className="mt-3">
-              <HotkeyRecorder
-                value={settings.tts_hotkey}
-                onChange={(accelerator) =>
-                  setSettings({ tts_hotkey: accelerator })
-                }
-              />
-            </div>
-          </div>
           <Row
-            label="Voice"
-            hint={
-              downloadedTts.size === 0
-                ? "No voices downloaded yet — get one in Model Store → Text-to-Speech"
-                : undefined
-            }
+            label="Enable read-aloud"
+            hint="Turn the read-aloud hotkey on or off"
           >
-            <select
-              value={settings.active_tts_voice ?? ""}
-              onChange={(e) =>
-                setSettings({ active_tts_voice: e.target.value || null })
+            <Toggle
+              checked={settings.tts_enabled}
+              onChange={(v) => setSettings({ tts_enabled: v })}
+            />
+          </Row>
+          <div className={settings.tts_enabled ? "" : "opacity-40 pointer-events-none"}>
+            <div className="border-b border-sv-border/60 py-3.5">
+              <div className="text-sm">Read-aloud hotkey</div>
+              <div className="mt-3">
+                <HotkeyRecorder
+                  value={settings.tts_hotkey}
+                  onChange={(accelerator) =>
+                    setSettings({ tts_hotkey: accelerator })
+                  }
+                />
+              </div>
+            </div>
+            <Row
+              label="Voice"
+              hint={
+                downloadedTts.size === 0
+                  ? "No voices downloaded yet — get one in Model Store → Text-to-Speech"
+                  : undefined
               }
-              className="w-56 rounded-lg border border-sv-border bg-sv-bg px-3 py-2 text-sm"
             >
-              <option value="">None selected</option>
-              {TTS_MODELS.filter((v) => downloadedTts.has(v.id)).map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.label}
-                </option>
-              ))}
-            </select>
-          </Row>
-          <Row label="Test voice" hint="Speaks a short sample sentence">
-            <button
-              onClick={() => {
-                // A voice can only pronounce its own language — use a sample
-                // sentence in the voice's language (English text through e.g.
-                // a Bangla model comes out as gibberish).
-                const voice = TTS_MODELS.find(
-                  (v) => v.id === settings.active_tts_voice
-                );
-                ttsSpeakText(
-                  TTS_SAMPLE_TEXT[voice?.language ?? ""] ??
-                    TTS_SAMPLE_TEXT.default
-                );
-              }}
-              disabled={!settings.active_tts_voice}
-              className="rounded-lg border border-sv-border px-3 py-1.5 text-xs hover:border-sv-accent hover:text-sv-accent disabled:opacity-40"
-            >
-              ▶ Play sample
-            </button>
-          </Row>
+              <select
+                value={settings.active_tts_voice ?? ""}
+                onChange={(e) =>
+                  setSettings({ active_tts_voice: e.target.value || null })
+                }
+                className="w-56 rounded-lg border border-sv-border bg-sv-bg px-3 py-2 text-sm"
+              >
+                <option value="">None selected</option>
+                {TTS_MODELS.filter((v) => downloadedTts.has(v.id)).map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.label}
+                  </option>
+                ))}
+              </select>
+            </Row>
+            <Row label="Test voice" hint="Speaks a short sample sentence">
+              <button
+                onClick={() => {
+                  // A voice can only pronounce its own language — use a sample
+                  // sentence in the voice's language (English text through e.g.
+                  // a Bangla model comes out as gibberish).
+                  const voice = TTS_MODELS.find(
+                    (v) => v.id === settings.active_tts_voice
+                  );
+                  ttsSpeakText(
+                    TTS_SAMPLE_TEXT[voice?.language ?? ""] ??
+                      TTS_SAMPLE_TEXT.default
+                  );
+                }}
+                disabled={!settings.active_tts_voice}
+                className="rounded-lg border border-sv-border px-3 py-1.5 text-xs hover:border-sv-accent hover:text-sv-accent disabled:opacity-40"
+              >
+                ▶ Play sample
+              </button>
+            </Row>
+          </div>
         </Section>
 
         <Section

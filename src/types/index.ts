@@ -189,6 +189,7 @@ export interface Settings {
   append_trailing_space: boolean; // add a space after pasted text so the next dictation has a gap
   active_tts_voice: string | null; // Piper voice id for read-aloud; null = none selected
   tts_hotkey: string; // global hotkey that reads the current text selection aloud
+  tts_enabled: boolean; // read-aloud on/off; when false the hotkey is unregistered
   onboarded: boolean; // true once the first-launch setup wizard has been completed/skipped
   pinned_stt: string[];
   pinned_llm: string[];

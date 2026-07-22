@@ -5,11 +5,14 @@ import {
   setOverlaySize,
   hideSelfWindow,
   quitApp,
+  ttsPause,
+  ttsResume,
+  ttsStop,
 } from "../../services/tauriBridge";
 import type { RecordingState } from "../../types";
 
 // Read-aloud playback state (mirrors the Rust `tts://state` event).
-export type TtsState = "idle" | "synthesizing" | "speaking";
+export type TtsState = "idle" | "synthesizing" | "speaking" | "paused";
 
 // Opaque pill window (matches overlay.rs). The window stays a FIXED size for
 // all dictation states — resizing a WebView2 window is unavoidably janky on
@@ -17,6 +20,7 @@ export type TtsState = "idle" | "synthesizing" | "speaking";
 // inside the pill instead. Only the right-click menu changes the window size.
 const PILL = { w: 58, h: 22 };
 const MENU = { w: 190, h: 152 };
+const TTS_BAR = { w: 132, h: 30 };
 
 // Near-black pill fill (darker than the app surface) — matches the reference
 // look: compact dark capsule + subtle outline + orange waveform.
@@ -26,6 +30,8 @@ export default function OverlayApp() {
   const [state, setState] = useState<RecordingState>("idle");
   const [tts, setTts] = useState<TtsState>("idle");
   const [menuOpen, setMenuOpen] = useState(false);
+
+  const ttsControls = (tts === "speaking" || tts === "paused") && state === "idle";
 
   // Opaque dark fill (this window is the pill; DWM rounds its corners).
   useEffect(() => {
@@ -56,8 +62,9 @@ export default function OverlayApp() {
   // Window resize only when the menu opens/closes — never for state changes.
   useEffect(() => {
     if (menuOpen) setOverlaySize(MENU.w, MENU.h);
+    else if (ttsControls) setOverlaySize(TTS_BAR.w, TTS_BAR.h);
     else setOverlaySize(PILL.w, PILL.h);
-  }, [menuOpen]);
+  }, [menuOpen, ttsControls]);
 
   return (
     <div
@@ -79,9 +86,33 @@ export default function OverlayApp() {
           onQuit={quitApp}
           onClose={() => setMenuOpen(false)}
         />
+      ) : ttsControls ? (
+        <TtsControlBar tts={tts} />
       ) : (
         <RecordingOverlay state={state} tts={tts} />
       )}
+    </div>
+  );
+}
+
+function TtsControlBar({ tts }: { tts: TtsState }) {
+  const paused = tts === "paused";
+  return (
+    <div className="flex h-full w-full items-center justify-center gap-1.5 px-2">
+      <button
+        onClick={() => (paused ? ttsResume() : ttsPause())}
+        title={paused ? "Resume" : "Pause"}
+        className="flex h-5 w-5 items-center justify-center rounded-full text-[11px] text-[#38bdf8] hover:bg-white/10"
+      >
+        {paused ? "▶" : "❚❚"}
+      </button>
+      <button
+        onClick={() => ttsStop()}
+        title="Stop"
+        className="flex h-5 w-5 items-center justify-center rounded-full text-[11px] text-sv-bad hover:bg-white/10"
+      >
+        ■
+      </button>
     </div>
   );
 }

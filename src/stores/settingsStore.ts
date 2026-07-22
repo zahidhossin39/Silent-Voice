@@ -58,6 +58,7 @@ const DEFAULT_SETTINGS: Settings = {
   append_trailing_space: false,
   active_tts_voice: null,
   tts_hotkey: "Ctrl+Alt+S",
+  tts_enabled: true,
   onboarded: false,
   pinned_stt: [],
   pinned_llm: [],

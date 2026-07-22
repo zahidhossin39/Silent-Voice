@@ -66,6 +66,7 @@ export function useRuntimeSync() {
   const appendTrailingSpace = useSettingsStore((s) => s.settings.append_trailing_space);
   const ttsVoice = useSettingsStore((s) => s.settings.active_tts_voice);
   const ttsHotkey = useSettingsStore((s) => s.settings.tts_hotkey);
+  const ttsEnabled = useSettingsStore((s) => s.settings.tts_enabled);
   const autoStart = useSettingsStore((s) => s.settings.auto_start);
   const setSettings = useSettingsStore((s) => s.setSettings);
 
@@ -141,8 +142,8 @@ export function useRuntimeSync() {
   }, [autoStart]);
 
   useEffect(() => {
-    setTts(ttsVoice ?? "", ttsHotkey);
-  }, [ttsVoice, ttsHotkey]);
+    setTts(ttsVoice ?? "", ttsHotkey, ttsEnabled);
+  }, [ttsVoice, ttsHotkey, ttsEnabled]);
 
   // Resolve per-app profile rules to full mode configs and push to Rust.
   useEffect(() => {
