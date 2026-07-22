@@ -71,6 +71,7 @@ pub struct RuntimeConfig {
     // current text selection. See system/tts.rs.
     pub tts_voice_id: String,
     pub tts_hotkey: String,
+    pub tts_enabled: bool,
     // Per-app profiles: when the focused app matches, that profile's AI mode
     // overrides the globally active one. Resolved by the frontend (like
     // set_active_mode) so Rust never needs the mode/provider tables.
@@ -126,6 +127,7 @@ impl Default for RuntimeConfig {
             proofread_ignore_apps: Vec::new(),
             tts_voice_id: String::new(),
             tts_hotkey: "Ctrl+Alt+S".into(),
+            tts_enabled: true,
             app_profiles: Vec::new(),
             pill_auto_hide: false,
             append_trailing_space: false,
@@ -329,7 +331,7 @@ fn set_hotkey(app: AppHandle, state: State<AppState>, accelerator: String) -> Re
 // ---------------- Read aloud (TTS) ----------------
 
 #[tauri::command]
-fn set_tts(app: AppHandle, state: State<AppState>, voice_id: String, hotkey: String) -> Result<(), String> {
+fn set_tts(app: AppHandle, state: State<AppState>, voice_id: String, hotkey: String, enabled: bool) -> Result<(), String> {
     // Store the voice FIRST, unconditionally — a hotkey problem must never
     // leave the voice unset (that bug made every TTS action report
     // "No voice downloaded" even with voices installed).
@@ -338,32 +340,40 @@ fn set_tts(app: AppHandle, state: State<AppState>, voice_id: String, hotkey: Str
         cfg.tts_voice_id = voice_id;
         cfg.tts_hotkey.clone()
     };
-    if prev != hotkey {
-        // Parse the new hotkey BEFORE touching the old registration, so a
-        // bad accelerator can't leave read-aloud with no hotkey at all.
-        let shortcut = match Shortcut::from_str(&hotkey) {
-            Ok(s) => s,
-            Err(_) => {
-                let msg = format!("Read-aloud hotkey '{hotkey}' is not valid — keeping '{prev}'.");
+    let prev_enabled = { let c = state.config.lock().map_err(|e| e.to_string())?; c.tts_enabled };
+    let was_registered = prev_enabled;              // prev hotkey was registered iff it was enabled (and valid)
+    let want_registered = enabled;
+    if prev != hotkey || prev_enabled != enabled {
+        // Validate the new hotkey up-front only if we intend to register it.
+        let new_shortcut = if want_registered {
+            match Shortcut::from_str(&hotkey) {
+                Ok(s) => Some(s),
+                Err(_) => {
+                    let msg = format!("Read-aloud hotkey '{hotkey}' is not valid — keeping '{prev}'.");
+                    crate::logging::log_error("tts", &msg);
+                    let _ = app.emit("pipeline://error", msg.clone());
+                    return Err(msg);
+                }
+            }
+        } else { None };
+        // Unregister the previously-registered hotkey.
+        if was_registered {
+            if let Ok(s) = Shortcut::from_str(&prev) { let _ = app.global_shortcut().unregister(s); }
+        }
+        // Register the new one if enabled.
+        if let Some(s) = new_shortcut {
+            if let Err(e) = app.global_shortcut().register(s) {
+                // Roll back to the previous registration.
+                if was_registered { if let Ok(ps) = Shortcut::from_str(&prev) { let _ = app.global_shortcut().register(ps); } }
+                let msg = format!("Could not register read-aloud hotkey '{hotkey}' ({e}) — keeping '{prev}'.");
                 crate::logging::log_error("tts", &msg);
                 let _ = app.emit("pipeline://error", msg.clone());
                 return Err(msg);
             }
-        };
-        if let Ok(s) = Shortcut::from_str(&prev) {
-            let _ = app.global_shortcut().unregister(s);
         }
-        if let Err(e) = app.global_shortcut().register(shortcut) {
-            // Roll back so the previous hotkey keeps working.
-            if let Ok(s) = Shortcut::from_str(&prev) {
-                let _ = app.global_shortcut().register(s);
-            }
-            let msg = format!("Could not register read-aloud hotkey '{hotkey}' ({e}) — keeping '{prev}'.");
-            crate::logging::log_error("tts", &msg);
-            let _ = app.emit("pipeline://error", msg.clone());
-            return Err(msg);
-        }
-        state.config.lock().map_err(|e| e.to_string())?.tts_hotkey = hotkey;
+        let mut cfg = state.config.lock().map_err(|e| e.to_string())?;
+        cfg.tts_hotkey = hotkey;
+        cfg.tts_enabled = enabled;
     }
     Ok(())
 }
@@ -376,6 +386,16 @@ fn tts_read_selection(app: AppHandle) {
 #[tauri::command]
 fn tts_stop(app: AppHandle) {
     system::tts::stop(&app);
+}
+
+#[tauri::command]
+fn tts_pause(app: AppHandle) {
+    system::tts::pause(&app);
+}
+
+#[tauri::command]
+fn tts_resume(app: AppHandle) {
+    system::tts::resume(&app);
 }
 
 #[tauri::command]
@@ -769,8 +789,10 @@ pub fn run() {
             if let Ok(shortcut) = Shortcut::from_str(&defaults.hotkey) {
                 let _ = app.global_shortcut().register(shortcut);
             }
-            if let Ok(shortcut) = Shortcut::from_str(&defaults.tts_hotkey) {
-                let _ = app.global_shortcut().register(shortcut);
+            if defaults.tts_enabled {
+                if let Ok(shortcut) = Shortcut::from_str(&defaults.tts_hotkey) {
+                    let _ = app.global_shortcut().register(shortcut);
+                }
             }
 
             // Inline proofreading watcher (squiggles in any app's text field).
@@ -814,6 +836,8 @@ pub fn run() {
             set_tts,
             tts_read_selection,
             tts_stop,
+            tts_pause,
+            tts_resume,
             tts_speak_text,
             list_downloaded_tts,
             proofread_text,

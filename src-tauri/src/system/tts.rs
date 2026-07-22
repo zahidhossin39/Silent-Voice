@@ -26,13 +26,21 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 
+pub enum TtsCmd {
+    Pause,
+    Resume,
+    Stop,
+}
+
 /// Playback bookkeeping stored in AppState.
 #[derive(Default)]
 pub struct TtsState {
-    /// Send () (or drop) to stop the active playback thread.
-    pub cancel: Mutex<Option<Sender<()>>>,
+    /// Send a command to the active playback thread (Pause/Resume/Stop).
+    pub ctrl: Mutex<Option<Sender<TtsCmd>>>,
     /// True while a playback thread is synthesizing/speaking.
     pub speaking: Arc<AtomicBool>,
+    /// True while playback is paused (subset of speaking).
+    pub paused: Arc<AtomicBool>,
 }
 
 fn exe_dir() -> PathBuf {
@@ -114,9 +122,9 @@ pub fn read_selection(app: &AppHandle) {
 
     // Toggle off if currently speaking.
     if state.tts.speaking.load(Ordering::SeqCst) {
-        if let Ok(mut slot) = state.tts.cancel.lock() {
+        if let Ok(mut slot) = state.tts.ctrl.lock() {
             if let Some(tx) = slot.take() {
-                let _ = tx.send(());
+                let _ = tx.send(TtsCmd::Stop);
             }
         }
         return;
@@ -208,17 +216,20 @@ fn resolve_voice(voice_id: &str) -> Option<Voice> {
 fn spawn_playback(app: &AppHandle, voice: Voice, text: String) {
     let state = app.state::<AppState>();
     // Register a fresh cancel channel (replacing any stale one).
-    let (tx, rx) = std::sync::mpsc::channel::<()>();
-    if let Ok(mut slot) = state.tts.cancel.lock() {
+    let (tx, rx) = std::sync::mpsc::channel::<TtsCmd>();
+    if let Ok(mut slot) = state.tts.ctrl.lock() {
         *slot = Some(tx);
     }
     let speaking = state.tts.speaking.clone();
     speaking.store(true, Ordering::SeqCst);
+    state.tts.paused.store(false, Ordering::SeqCst);
 
+    let paused = state.tts.paused.clone();
     let app = app.clone();
     std::thread::spawn(move || {
         let result = synth_and_play(&app, &voice, &text, &rx);
         speaking.store(false, Ordering::SeqCst);
+        paused.store(false, Ordering::SeqCst);
         let _ = app.emit("tts://state", "idle");
         if let Err(e) = result {
             report(&app, &format!("Read aloud failed: {e}"));
@@ -229,10 +240,32 @@ fn spawn_playback(app: &AppHandle, voice: Voice, text: String) {
 /// Explicit stop (command / future UI button).
 pub fn stop(app: &AppHandle) {
     let state = app.state::<AppState>();
-    let tx = state.tts.cancel.lock().ok().and_then(|mut slot| slot.take());
+    let tx = state.tts.ctrl.lock().ok().and_then(|mut slot| slot.take());
     if let Some(tx) = tx {
-        let _ = tx.send(());
+        let _ = tx.send(TtsCmd::Stop);
     }
+}
+
+/// Pause the current read-aloud (no-op if not speaking).
+pub fn pause(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    if !state.tts.speaking.load(Ordering::SeqCst) { return; }
+    if let Ok(slot) = state.tts.ctrl.lock() {
+        if let Some(tx) = slot.as_ref() { let _ = tx.send(TtsCmd::Pause); }
+    }
+    state.tts.paused.store(true, Ordering::SeqCst);
+    let _ = app.emit("tts://state", "paused");
+}
+
+/// Resume a paused read-aloud.
+pub fn resume(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    if !state.tts.speaking.load(Ordering::SeqCst) { return; }
+    if let Ok(slot) = state.tts.ctrl.lock() {
+        if let Some(tx) = slot.as_ref() { let _ = tx.send(TtsCmd::Resume); }
+    }
+    state.tts.paused.store(false, Ordering::SeqCst);
+    let _ = app.emit("tts://state", "speaking");
 }
 
 fn synthesize(voice: &Voice, text: &str, wav: &std::path::Path, num_threads: i32) -> Result<(), String> {
@@ -285,7 +318,7 @@ fn synth_and_play(
     app: &AppHandle,
     voice: &Voice,
     text: &str,
-    rx: &Receiver<()>,
+    rx: &Receiver<TtsCmd>,
 ) -> Result<(), String> {
     let (high_performance, performance_threads) = app
         .state::<AppState>()
@@ -302,7 +335,7 @@ fn synth_and_play(
     synthesize(voice, text, &wav, threads)?;
 
     // Cancelled while synthesizing?
-    if matches!(rx.try_recv(), Ok(()) | Err(TryRecvError::Disconnected)) {
+    if matches!(rx.try_recv(), Ok(TtsCmd::Stop) | Err(TryRecvError::Disconnected)) {
         return Ok(());
     }
 
@@ -318,10 +351,12 @@ fn synth_and_play(
 
     loop {
         match rx.try_recv() {
-            Ok(()) | Err(TryRecvError::Disconnected) => {
+            Ok(TtsCmd::Stop) | Err(TryRecvError::Disconnected) => {
                 sink.stop();
                 break;
             }
+            Ok(TtsCmd::Pause) => sink.pause(),
+            Ok(TtsCmd::Resume) => sink.play(),
             Err(TryRecvError::Empty) => {}
         }
         if sink.empty() {
