@@ -708,6 +708,16 @@ fn set_webview_memory_low(app: &AppHandle, low: bool) {
     let _ = (app, low);
 }
 
+#[tauri::command]
+async fn download_coedit_model(app: AppHandle) -> Result<(), String> {
+    models::downloader::download_coedit_model(app).await
+}
+#[tauri::command]
+fn coedit_installed() -> bool { models::registry::coedit_installed() }
+#[tauri::command]
+fn delete_coedit_model() -> Result<(), String> { models::downloader::delete_coedit_model() }
+
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     logging::log_info("app", &format!("Silent Voice starting (v{})", env!("CARGO_PKG_VERSION")));
@@ -875,6 +885,9 @@ pub fn run() {
             hf::hf_search_models,
             hf::hf_model_details,
             hf::hf_piper_voices,
+            download_coedit_model,
+            coedit_installed,
+            delete_coedit_model,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Silent Voice")

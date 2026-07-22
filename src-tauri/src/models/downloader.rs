@@ -4,6 +4,13 @@ use serde::Serialize;
 use std::io::Write;
 use tauri::{AppHandle, Emitter};
 
+// CoEdIT-large grammar model, INT8 ONNX. Hosted on Hugging Face — upload the
+// three files from coedit-work/coedit_onnx/ to this repo (see release notes).
+// If the HF username differs from the GitHub one, update the repo path here.
+const COEDIT_ENCODER_URL: &str = "https://huggingface.co/zahidhossin39/coedit-large-int8-onnx/resolve/main/encoder_model_int8.onnx";
+const COEDIT_DECODER_URL: &str = "https://huggingface.co/zahidhossin39/coedit-large-int8-onnx/resolve/main/decoder_model_int8.onnx";
+const COEDIT_TOKENIZER_URL: &str = "https://huggingface.co/zahidhossin39/coedit-large-int8-onnx/resolve/main/tokenizer.json";
+
 #[derive(Serialize, Clone)]
 pub struct DownloadProgress {
     pub model_id: String,
@@ -154,6 +161,26 @@ pub fn delete_tts_model(voice_id: &str) -> Result<(), String> {
             std::fs::remove_file(&path).map_err(|e| e.to_string())?;
         }
     }
+    Ok(())
+}
+
+pub async fn download_coedit_model(app: AppHandle) -> Result<(), String> {
+    registry::ensure_dirs().map_err(|e| e.to_string())?;
+    let dir = registry::coedit_dir();
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    for (name, url) in [
+        ("encoder_model_int8.onnx", COEDIT_ENCODER_URL),
+        ("decoder_model_int8.onnx", COEDIT_DECODER_URL),
+        ("tokenizer.json", COEDIT_TOKENIZER_URL),
+    ] {
+        download_to(app.clone(), "coedit".into(), url.into(), dir.join(name)).await?;
+    }
+    Ok(())
+}
+
+pub fn delete_coedit_model() -> Result<(), String> {
+    let dir = registry::coedit_dir();
+    if dir.is_dir() { std::fs::remove_dir_all(&dir).map_err(|e| e.to_string())?; }
     Ok(())
 }
 

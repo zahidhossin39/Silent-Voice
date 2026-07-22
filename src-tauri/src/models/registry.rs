@@ -191,3 +191,14 @@ pub fn list_downloaded_llm() -> Vec<String> {
     }
     ids
 }
+
+pub fn coedit_dir() -> PathBuf {
+    models_dir().join("coedit")
+}
+
+pub fn coedit_installed() -> bool {
+    let d = coedit_dir();
+    d.join("encoder_model_int8.onnx").exists()
+        && d.join("decoder_model_int8.onnx").exists()
+        && d.join("tokenizer.json").exists()
+}

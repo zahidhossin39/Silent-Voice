@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -17,7 +16,8 @@ struct Coedit {
 static COEDIT: Mutex<Option<Arc<Coedit>>> = Mutex::new(None);
 static LAST_USED: Mutex<Option<Instant>> = Mutex::new(None);
 
-pub fn is_loaded() -> bool {
+#[cfg(test)]
+fn is_loaded() -> bool {
     COEDIT.lock().map(|g| g.is_some()).unwrap_or(false)
 }
 
@@ -41,11 +41,7 @@ pub fn unload_if_idle(max_idle: Duration) {
 }
 
 fn init_coedit() -> Option<Coedit> {
-    let base_dir = dirs::config_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("SilentVoice")
-        .join("models")
-        .join("coedit");
+    let base_dir = crate::models::registry::coedit_dir();
 
     let encoder_path = base_dir.join("encoder_model_int8.onnx");
     let decoder_path = base_dir.join("decoder_model_int8.onnx");
