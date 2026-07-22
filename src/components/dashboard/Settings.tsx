@@ -223,6 +223,15 @@ export default function Settings() {
             />
           </Row>
           <Row
+            label="Grammar correction"
+            hint="Fix grammar in dictated text before pasting (Raw mode). Skipped when an AI mode is active."
+          >
+            <Toggle
+              checked={settings.coedit_enabled}
+              onChange={(v) => setSettings({ coedit_enabled: v })}
+            />
+          </Row>
+          <Row
             label="Inline proofreading"
             hint="Red/blue underlines beneath spelling & grammar mistakes as you type in any app (English only)"
           >

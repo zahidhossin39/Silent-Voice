@@ -178,7 +178,8 @@ export async function setBehavior(
   gectorSensitivity: string,
   proofreadIgnoreApps: string[],
   pillAutoHide: boolean,
-  appendTrailingSpace: boolean
+  appendTrailingSpace: boolean,
+  coeditEnabled: boolean
 ): Promise<void> {
   if (!isTauri()) return;
   try {
@@ -193,6 +194,7 @@ export async function setBehavior(
       proofreadIgnoreApps,
       pillAutoHide,
       appendTrailingSpace,
+      coeditEnabled,
     });
   } catch (e) {
     console.warn("set_behavior failed", e);

@@ -64,6 +64,7 @@ export function useRuntimeSync() {
   const proofreadIgnoreApps = useSettingsStore((s) => s.settings.proofread_ignore_apps);
   const pillAutoHide = useSettingsStore((s) => s.settings.pill_auto_hide);
   const appendTrailingSpace = useSettingsStore((s) => s.settings.append_trailing_space);
+  const coeditEnabled = useSettingsStore((s) => s.settings.coedit_enabled);
   const ttsVoice = useSettingsStore((s) => s.settings.active_tts_voice);
   const ttsHotkey = useSettingsStore((s) => s.settings.tts_hotkey);
   const ttsEnabled = useSettingsStore((s) => s.settings.tts_enabled);
@@ -133,9 +134,10 @@ export function useRuntimeSync() {
       gectorSensitivity,
       proofreadIgnoreApps.split(",").map((a) => a.trim()).filter(Boolean),
       pillAutoHide,
-      appendTrailingSpace
+      appendTrailingSpace,
+      coeditEnabled
     );
-  }, [toggleMode, inputSensitivity, inlineProofread, highPerformance, performanceThreads, proofreadDisabledRules, gectorSensitivity, proofreadIgnoreApps, pillAutoHide, appendTrailingSpace]);
+  }, [toggleMode, inputSensitivity, inlineProofread, highPerformance, performanceThreads, proofreadDisabledRules, gectorSensitivity, proofreadIgnoreApps, pillAutoHide, appendTrailingSpace, coeditEnabled]);
 
   useEffect(() => {
     setAutostart(autoStart);

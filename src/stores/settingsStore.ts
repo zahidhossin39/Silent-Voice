@@ -51,6 +51,7 @@ const DEFAULT_SETTINGS: Settings = {
   toggle_mode: true,
   input_sensitivity: 50,
   inline_proofread: true,
+  coedit_enabled: true,
   proofread_disabled_rules: [],
   gector_sensitivity: "balanced",
   proofread_ignore_apps: "",

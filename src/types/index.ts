@@ -182,6 +182,7 @@ export interface Settings {
   toggle_mode: boolean; // double-tap the hotkey to lock recording on; single press stops
   input_sensitivity: number; // 0-100 (Discord-style): how loud a sound must be to count as speech
   inline_proofread: boolean; // squiggles under spelling/grammar errors in any app's text field (English)
+  coedit_enabled: boolean; // AI grammar correction of dictated text (CoEdIT); off = raw transcript
   proofread_disabled_rules: string[]; // Harper rule ids the user turned off (plus our "Filler" pseudo-rule)
   gector_sensitivity: "relaxed" | "balanced" | "aggressive";
   proofread_ignore_apps: string; // comma-separated exe-name substrings where squiggles are suppressed
