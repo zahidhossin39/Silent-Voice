@@ -9,6 +9,8 @@ import {
   setHotkey,
   getAutostart,
   ttsSpeakText,
+  downloadCoeditModel,
+  coeditInstalled,
 } from "../../services/tauriBridge";
 import HotkeyRecorder from "../shared/HotkeyRecorder";
 import { checkForUpdatesManual } from "../../services/updater";
@@ -47,6 +49,15 @@ export default function Settings() {
   const [updateMsg, setUpdateMsg] = useState("");
   const [devices, setDevices] = useState<string[]>([]);
   const [hotkeyError, setHotkeyError] = useState<string | null>(null);
+
+  const [coeditReady, setCoeditReady] = useState(false);
+  useEffect(() => { coeditInstalled().then(setCoeditReady); }, []);
+  const coeditProgress = useModelStore((s) => s.progress["coedit"]);
+  useEffect(() => {
+    if (coeditProgress?.status === "downloaded") {
+      coeditInstalled().then(setCoeditReady);
+    }
+  }, [coeditProgress?.status]);
 
   useEffect(() => {
     listInputDevices().then(setDevices);
@@ -226,10 +237,35 @@ export default function Settings() {
             label="Grammar correction"
             hint="Fix grammar in dictated text before pasting (Raw mode). Skipped when an AI mode is active."
           >
-            <Toggle
-              checked={settings.coedit_enabled}
-              onChange={(v) => setSettings({ coedit_enabled: v })}
-            />
+            {(() => {
+              if (coeditReady) {
+                return (
+                  <Toggle
+                    checked={settings.coedit_enabled}
+                    onChange={(v) => setSettings({ coedit_enabled: v })}
+                  />
+                );
+              }
+              const downloading = coeditProgress?.status === "downloading";
+              const pct = coeditProgress && coeditProgress.total_bytes > 0
+                ? Math.round((coeditProgress.downloaded_bytes / coeditProgress.total_bytes) * 100)
+                : 0;
+              if (downloading) {
+                return <span className="text-xs text-sv-muted">Downloading… {pct}%</span>;
+              }
+              return (
+                <button
+                  onClick={async () => {
+                    await downloadCoeditModel();
+                    const ok = await coeditInstalled();
+                    setCoeditReady(ok);
+                  }}
+                  className="rounded-lg border border-sv-border px-3 py-1.5 text-xs hover:border-sv-accent hover:text-sv-accent"
+                >
+                  Download · 818 MB
+                </button>
+              );
+            })()}
           </Row>
           <Row
             label="Inline proofreading"
