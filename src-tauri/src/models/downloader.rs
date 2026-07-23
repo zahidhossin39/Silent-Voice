@@ -7,9 +7,9 @@ use tauri::{AppHandle, Emitter};
 // CoEdIT-large grammar model, INT8 ONNX. Hosted on Hugging Face — upload the
 // three files from coedit-work/coedit_onnx/ to this repo (see release notes).
 // If the HF username differs from the GitHub one, update the repo path here.
-const COEDIT_ENCODER_URL: &str = "https://huggingface.co/zahidhossin39/coedit-large-int8-onnx/resolve/main/encoder_model_int8.onnx";
-const COEDIT_DECODER_URL: &str = "https://huggingface.co/zahidhossin39/coedit-large-int8-onnx/resolve/main/decoder_model_int8.onnx";
-const COEDIT_TOKENIZER_URL: &str = "https://huggingface.co/zahidhossin39/coedit-large-int8-onnx/resolve/main/tokenizer.json";
+const COEDIT_ENCODER_URL: &str = "https://huggingface.co/Zaid-Hossain/coedit-large-int8-onnx/resolve/main/encoder_model_int8.onnx";
+const COEDIT_DECODER_URL: &str = "https://huggingface.co/Zaid-Hossain/coedit-large-int8-onnx/resolve/main/decoder_model_int8.onnx";
+const COEDIT_TOKENIZER_URL: &str = "https://huggingface.co/Zaid-Hossain/coedit-large-int8-onnx/resolve/main/tokenizer.json";
 
 #[derive(Serialize, Clone)]
 pub struct DownloadProgress {
