@@ -1,4 +1,5 @@
-use std::sync::{Arc, Mutex};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use ndarray::{Array2, Array3};
@@ -15,6 +16,26 @@ struct Coedit {
 
 static COEDIT: Mutex<Option<Arc<Coedit>>> = Mutex::new(None);
 static LAST_USED: Mutex<Option<Instant>> = Mutex::new(None);
+static CACHE: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+
+fn cache_get(key: &str) -> Option<String> {
+    CACHE
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .ok()
+        .and_then(|m| m.get(key).cloned())
+}
+
+fn cache_put(key: String, value: String) {
+    if let Ok(mut m) = CACHE.get_or_init(|| Mutex::new(HashMap::new())).lock() {
+        // Crude bound: repeated dictation rarely exceeds this; clear wholesale
+        // rather than track LRU.
+        if m.len() >= 256 {
+            m.clear();
+        }
+        m.insert(key, value);
+    }
+}
 
 #[cfg(test)]
 fn is_loaded() -> bool {
@@ -61,10 +82,14 @@ fn init_coedit() -> Option<Coedit> {
         .find(|p| p.exists())?;
     let _ = init_from(dll_path.display().to_string()).commit();
 
-    let threads = std::thread::available_parallelism().map(|x| x.get()).unwrap_or(4);
+    // Using ALL logical cores thrashes BLAS on hyperthreaded CPUs — use half.
+    let cores = std::thread::available_parallelism().map(|x| x.get()).unwrap_or(4);
+    let threads = (cores / 2).max(2);
 
     let encoder = match Session::builder()
+        .and_then(|b| b.with_optimization_level(ort::session::builder::GraphOptimizationLevel::Level3))
         .and_then(|b| b.with_intra_threads(threads))
+        .and_then(|b| b.with_inter_threads(1))
         .and_then(|b| b.commit_from_file(&encoder_path))
     {
         Ok(s) => s,
@@ -75,7 +100,9 @@ fn init_coedit() -> Option<Coedit> {
     };
 
     let decoder = match Session::builder()
+        .and_then(|b| b.with_optimization_level(ort::session::builder::GraphOptimizationLevel::Level3))
         .and_then(|b| b.with_intra_threads(threads))
+        .and_then(|b| b.with_inter_threads(1))
         .and_then(|b| b.commit_from_file(&decoder_path))
     {
         Ok(s) => s,
@@ -116,6 +143,17 @@ pub fn correct(text: &str) -> String {
         return text.to_string();
     }
 
+    // Gate: single-word utterances ("yes", "okay", a command) get no useful
+    // grammar correction and risk being mangled — skip the model.
+    if text_trim.split_whitespace().count() < 2 {
+        return text.to_string();
+    }
+
+    // Cache: identical prior input returns instantly, no model call.
+    if let Some(hit) = cache_get(text_trim) {
+        return hit;
+    }
+
     let coedit = {
         let mut slot = match COEDIT.lock() {
             Ok(s) => s,
@@ -134,7 +172,7 @@ pub fn correct(text: &str) -> String {
         *t = Some(Instant::now());
     }
 
-    let prompt = format!("Fix grammatical errors in this sentence: {}", text_trim);
+    let prompt = format!("Fix grammar: {}", text_trim);
     let encoding = match c.tokenizer.encode(prompt, true) {
         Ok(e) => e,
         Err(_) => return text.to_string(),
@@ -188,7 +226,7 @@ pub fn correct(text: &str) -> String {
     }
 
     let mut dec_ids: Vec<i64> = vec![0];
-    let max_steps = (enc_len + 30).min(150);
+    let max_steps = (enc_len + 16).min(128);
 
     let vocab = 32100;
 
@@ -266,11 +304,39 @@ pub fn correct(text: &str) -> String {
     if corrected.is_empty() {
         return text.to_string();
     }
-    
+
     if corrected.chars().count() > text.chars().count() * 3 + 30 {
         return text.to_string();
     }
 
+    // Digit-preservation: the model must never alter numbers the user dictated
+    // (format_numbers handles formatting later). If the digit stream changed,
+    // reject the whole correction.
+    let in_digits: String = text_trim.chars().filter(|c| c.is_ascii_digit()).collect();
+    let out_digits: String = corrected.chars().filter(|c| c.is_ascii_digit()).collect();
+    if in_digits != out_digits {
+        cache_put(text_trim.to_string(), text.to_string());
+        return text.to_string();
+    }
+
+    // Over-rewrite guard: a real grammar fix keeps most of the original words.
+    // If the output dropped more than half the input words, it is a hallucinated
+    // rewrite — reject it.
+    let in_words: Vec<&str> = text_trim.split_whitespace().collect();
+    if in_words.len() >= 4 {
+        let out_lower: std::collections::HashSet<String> =
+            corrected.split_whitespace().map(|w| w.to_lowercase()).collect();
+        let kept = in_words
+            .iter()
+            .filter(|w| out_lower.contains(&w.to_lowercase()))
+            .count();
+        if (kept as f32) < 0.5 * in_words.len() as f32 {
+            cache_put(text_trim.to_string(), text.to_string());
+            return text.to_string();
+        }
+    }
+
+    cache_put(text_trim.to_string(), corrected.clone());
     corrected
 }
 
@@ -293,6 +359,13 @@ mod tests {
     #[test]
     fn test_empty_string() {
         assert_eq!(correct(""), "");
+    }
+
+    #[test]
+    fn test_single_word_skipped() {
+        // Gate: one-word input returns unchanged without touching the model.
+        assert_eq!(correct("hello"), "hello");
+        assert_eq!(correct("  yes  "), "  yes  ");
     }
 
     #[test]
