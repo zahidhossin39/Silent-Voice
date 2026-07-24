@@ -192,6 +192,14 @@ pub fn list_downloaded_llm() -> Vec<String> {
     ids
 }
 
+pub fn vad_dir() -> PathBuf {
+    models_dir().join("vad")
+}
+
+pub fn vad_installed() -> bool {
+    vad_dir().join("silero_vad.onnx").exists()
+}
+
 pub fn coedit_dir() -> PathBuf {
     models_dir().join("coedit")
 }

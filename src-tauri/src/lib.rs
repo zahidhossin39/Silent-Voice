@@ -722,6 +722,15 @@ fn coedit_installed() -> bool { models::registry::coedit_installed() }
 #[tauri::command]
 fn delete_coedit_model() -> Result<(), String> { models::downloader::delete_coedit_model() }
 
+#[tauri::command]
+async fn download_vad_model(app: AppHandle) -> Result<(), String> {
+    models::downloader::download_vad_model(app).await
+}
+#[tauri::command]
+fn vad_installed() -> bool { models::registry::vad_installed() }
+#[tauri::command]
+fn delete_vad_model() -> Result<(), String> { models::downloader::delete_vad_model() }
+
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -894,6 +903,9 @@ pub fn run() {
             download_coedit_model,
             coedit_installed,
             delete_coedit_model,
+            download_vad_model,
+            vad_installed,
+            delete_vad_model,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Silent Voice")

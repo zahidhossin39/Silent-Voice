@@ -7,6 +7,8 @@ use tauri::{AppHandle, Emitter};
 // CoEdIT-large grammar model, INT8 ONNX. Hosted on Hugging Face — upload the
 // three files from coedit-work/coedit_onnx/ to this repo (see release notes).
 // If the HF username differs from the GitHub one, update the repo path here.
+const VAD_URL: &str =
+    "https://huggingface.co/onnx-community/silero-vad/resolve/main/onnx/model.onnx";
 const COEDIT_ENCODER_URL: &str = "https://huggingface.co/Zaid-Hossain/coedit-large-int8-onnx/resolve/main/encoder_model_int8.onnx";
 const COEDIT_DECODER_URL: &str = "https://huggingface.co/Zaid-Hossain/coedit-large-int8-onnx/resolve/main/decoder_model_int8.onnx";
 const COEDIT_TOKENIZER_URL: &str = "https://huggingface.co/Zaid-Hossain/coedit-large-int8-onnx/resolve/main/tokenizer.json";
@@ -160,6 +162,27 @@ pub fn delete_tts_model(voice_id: &str) -> Result<(), String> {
         if path.exists() {
             std::fs::remove_file(&path).map_err(|e| e.to_string())?;
         }
+    }
+    Ok(())
+}
+
+pub async fn download_vad_model(app: AppHandle) -> Result<(), String> {
+    registry::ensure_dirs().map_err(|e| e.to_string())?;
+    let dir = registry::vad_dir();
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    download_to(
+        app,
+        "vad".into(),
+        VAD_URL.into(),
+        dir.join("silero_vad.onnx"),
+    )
+    .await
+}
+
+pub fn delete_vad_model() -> Result<(), String> {
+    let dir = registry::vad_dir();
+    if dir.is_dir() {
+        std::fs::remove_dir_all(&dir).map_err(|e| e.to_string())?;
     }
     Ok(())
 }

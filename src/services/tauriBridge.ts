@@ -529,6 +529,19 @@ export async function hfPiperVoices(): Promise<PiperVoice[]> {
   return invoke<PiperVoice[]>("hf_piper_voices");
 }
 
+export async function downloadVadModel(): Promise<void> {
+  if (!isTauri()) return;
+  await invoke<void>("download_vad_model");
+}
+export async function vadInstalled(): Promise<boolean> {
+  if (!isTauri()) return false;
+  return invoke<boolean>("vad_installed");
+}
+export async function deleteVadModel(): Promise<void> {
+  if (!isTauri()) return;
+  await invoke<void>("delete_vad_model");
+}
+
 export async function downloadCoeditModel(): Promise<void> {
   if (!isTauri()) return;
   await invoke<void>("download_coedit_model");

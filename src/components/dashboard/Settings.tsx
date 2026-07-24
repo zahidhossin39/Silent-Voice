@@ -12,6 +12,9 @@ import {
   downloadCoeditModel,
   coeditInstalled,
   deleteCoeditModel,
+  downloadVadModel,
+  vadInstalled,
+  deleteVadModel,
   recommendDeviceDefaults,
 } from "../../services/tauriBridge";
 import type { DeviceRecommendation } from "../../types";
@@ -64,6 +67,15 @@ export default function Settings() {
       coeditInstalled().then(setCoeditReady);
     }
   }, [coeditProgress?.status]);
+
+  const [vadReady, setVadReady] = useState(false);
+  useEffect(() => { vadInstalled().then(setVadReady); }, []);
+  const vadProgress = useModelStore((s) => s.progress["vad"]);
+  useEffect(() => {
+    if (vadProgress?.status === "downloaded") {
+      vadInstalled().then(setVadReady);
+    }
+  }, [vadProgress?.status]);
 
   useEffect(() => {
     listInputDevices().then(setDevices);
@@ -388,6 +400,44 @@ export default function Settings() {
               }
             />
           </div>
+          <Row
+            label="Smart voice detection"
+            hint="Uses a tiny neural model to tell your voice apart from fans, keyboards and music, instead of just going by loudness. Applies automatically once downloaded; the slider still controls how strict it is."
+          >
+            {(() => {
+              if (vadReady) {
+                return (
+                  <button
+                    onClick={async () => {
+                      await deleteVadModel();
+                      setVadReady(false);
+                    }}
+                    className="rounded-lg border border-sv-border px-2.5 py-1 text-xs text-sv-text hover:border-red-500 hover:text-red-500"
+                  >
+                    Remove
+                  </button>
+                );
+              }
+              const downloading = vadProgress?.status === "downloading";
+              const pct = vadProgress && vadProgress.total_bytes > 0
+                ? Math.round((vadProgress.downloaded_bytes / vadProgress.total_bytes) * 100)
+                : 0;
+              if (downloading) {
+                return <span className="text-xs text-sv-muted">Downloading… {pct}%</span>;
+              }
+              return (
+                <button
+                  onClick={async () => {
+                    await downloadVadModel();
+                    setVadReady(await vadInstalled());
+                  }}
+                  className="rounded-lg border border-sv-border px-3 py-1.5 text-xs hover:border-sv-accent hover:text-sv-accent"
+                >
+                  Download · 2 MB
+                </button>
+              );
+            })()}
+          </Row>
         </Section>
 
         <Section

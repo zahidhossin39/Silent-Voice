@@ -49,7 +49,8 @@
       "PowerShell(Stop-Process -Name silent-voice -Force -ErrorAction SilentlyContinue; Start-Sleep -Seconds 1; cd \"D:\\\\Vibe-coding\\\\Silent voice\\\\src-tauri\"; & \"$env:USERPROFILE\\\\.cargo\\\\bin\\\\cargo.exe\" build 2>&1 | Select-String \"error|Finished\"; Start-Process \".\\\\target\\\\debug\\\\silent-voice.exe\"; Start-Sleep -Seconds 4; & \"C:\\\\Users\\\\ZAIDHO~1\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\D--Vibe-coding-Silent-voice\\\\394f5704-7244-4f36-8404-b4553868cfb1\\\\scratchpad\\\\probe3.ps1\"; Get-Content \"$env:APPDATA\\\\SilentVoice\\\\logs\\\\silent-voice.log\" -Tail 5)",
       "PowerShell(& \"C:\\\\Users\\\\ZAIDHO~1\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\D--Vibe-coding-Silent-voice\\\\394f5704-7244-4f36-8404-b4553868cfb1\\\\scratchpad\\\\probe3.ps1\"; \"\"; \"--- LOG ---\"; Get-Content \"$env:APPDATA\\\\SilentVoice\\\\logs\\\\silent-voice.log\" -Tail 8)",
       "PowerShell(Stop-Process -Name silent-voice -Force -ErrorAction SilentlyContinue; Start-Sleep -Seconds 1; cd \"D:\\\\Vibe-coding\\\\Silent voice\\\\src-tauri\"; & \"$env:USERPROFILE\\\\.cargo\\\\bin\\\\cargo.exe\" build 2>&1 | Select-String \"error\\\\[|Finished\"; Start-Process \".\\\\target\\\\debug\\\\silent-voice.exe\"; Start-Sleep -Seconds 4; & \"C:\\\\Users\\\\ZAIDHO~1\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\D--Vibe-coding-Silent-voice\\\\394f5704-7244-4f36-8404-b4553868cfb1\\\\scratchpad\\\\probe3.ps1\"; \"\"; \"--- LOG ---\"; Get-Content \"$env:APPDATA\\\\SilentVoice\\\\logs\\\\silent-voice.log\" -Tail 10)",
-      "PowerShell(Get-Content \"$env:APPDATA\\\\SilentVoice\\\\logs\\\\silent-voice.log\" -Tail 6)"
+      "PowerShell(Get-Content \"$env:APPDATA\\\\SilentVoice\\\\logs\\\\silent-voice.log\" -Tail 6)",
+      "Bash(cat \"/c/Users/Zaid Hossain/.gemini/config/config.json\")"
     ]
   }
 }

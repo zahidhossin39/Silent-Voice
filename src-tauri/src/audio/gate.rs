@@ -8,6 +8,7 @@
 // never clears the threshold is skipped entirely ("no speech").
 
 use crate::audio::capture::WHISPER_SAMPLE_RATE;
+use crate::audio::vad;
 
 const FRAME_MS: usize = 30;
 // Words often start softly (breathy onsets like "h", "wh") and only clear the
@@ -35,22 +36,40 @@ fn frame_rms(frame: &[f32]) -> f32 {
     (sum_sq / frame.len() as f32).sqrt()
 }
 
-/// Trim leading/trailing audio quieter than the sensitivity threshold.
-/// Returns `None` when the whole clip is below threshold (no speech) or the
-/// speech that remains is too short to transcribe meaningfully.
+fn rms_bounds(samples: &[f32], sensitivity: u32) -> Option<(usize, usize)> {
+    let frame_len = WHISPER_SAMPLE_RATE as usize * FRAME_MS / 1000;
+    let threshold = threshold_for(sensitivity);
+    let frames: Vec<&[f32]> = samples.chunks(frame_len).collect();
+    let first = frames.iter().position(|f| frame_rms(f) >= threshold)?;
+    let last = frames.iter().rposition(|f| frame_rms(f) >= threshold)?;
+    Some((first * frame_len, (last + 1) * frame_len))
+}
+
+/// Trim leading/trailing audio that isn't speech. Returns `None` when the clip
+/// holds no speech at all, or when what remains is too short to transcribe
+/// meaningfully.
 pub fn trim_silence(samples: &[f32], sensitivity: u32) -> Option<Vec<f32>> {
     let frame_len = WHISPER_SAMPLE_RATE as usize * FRAME_MS / 1000;
     if samples.len() < frame_len {
         return None;
     }
-    let threshold = threshold_for(sensitivity);
 
-    let frames: Vec<&[f32]> = samples.chunks(frame_len).collect();
-    let first = frames.iter().position(|f| frame_rms(f) >= threshold)?;
-    let last = frames.iter().rposition(|f| frame_rms(f) >= threshold)?;
+    let (speech_start, speech_end) = match vad::speech_mask(samples, vad::threshold_for(sensitivity))
+    {
+        // VAD ran, so trust it — including a "nothing here was a voice"
+        // verdict. Falling back to RMS on an empty mask would re-admit exactly
+        // the loud non-speech (fan, keyboard, music) it just rejected.
+        Some(mask) => {
+            let first = mask.iter().position(|&s| s)?;
+            let last = mask.iter().rposition(|&s| s)?;
+            (first * vad::FRAME, (last + 1) * vad::FRAME)
+        }
+        // Model not installed or inference failed — fall back to the RMS scan.
+        None => rms_bounds(samples, sensitivity)?,
+    };
 
-    let start = first.saturating_sub(PAD_FRAMES_LEAD) * frame_len;
-    let end = ((last + 1 + PAD_FRAMES_TAIL) * frame_len).min(samples.len());
+    let start = speech_start.saturating_sub(PAD_FRAMES_LEAD * frame_len);
+    let end = (speech_end + PAD_FRAMES_TAIL * frame_len).min(samples.len());
 
     // Under ~0.3s of audio left → treat as no speech.
     if end.saturating_sub(start) < WHISPER_SAMPLE_RATE as usize * 3 / 10 {
@@ -69,36 +88,40 @@ mod tests {
             .collect()
     }
 
+    // These target rms_bounds rather than trim_silence: a synthetic tone is not
+    // a voice, so once Silero VAD is installed it (correctly) rejects the whole
+    // clip and the RMS path never runs. VAD itself is covered in vad.rs.
+
     #[test]
     fn silence_only_returns_none() {
         let quiet = tone(16_000, 0.001); // 1s of near-silence
-        assert!(trim_silence(&quiet, 50).is_none());
+        assert!(rms_bounds(&quiet, 50).is_none());
     }
 
     #[test]
-    fn speech_passes_through() {
-        let speech = tone(16_000, 0.2); // 1s of loud "speech"
-        let out = trim_silence(&speech, 50).expect("speech should survive");
-        assert!(out.len() >= 15_000); // nearly everything kept
+    fn loud_audio_passes_through() {
+        let loud = tone(16_000, 0.2);
+        let (start, end) = rms_bounds(&loud, 50).expect("loud audio should survive");
+        assert_eq!(start, 0);
+        assert!(end >= 15_000); // nearly everything kept
     }
 
     #[test]
     fn trailing_noise_is_trimmed() {
-        // 1s speech + 2s wind-level noise.
+        // 1s loud + 2s wind-level noise.
         let mut clip = tone(16_000, 0.2);
         clip.extend(tone(32_000, 0.004));
-        let out = trim_silence(&clip, 50).expect("speech present");
-        // Speech (1s) + padding (~0.24s) — the 2s of wind is gone.
-        assert!(out.len() < 24_000, "trailing noise not trimmed: {}", out.len());
+        let (_, end) = rms_bounds(&clip, 50).expect("loud section present");
+        assert!(end < 20_000, "trailing noise not trimmed: {end}");
     }
 
     #[test]
     fn sensitivity_extremes() {
         let soft = tone(16_000, 0.01);
-        // Very sensitive → soft audio counts as speech.
-        assert!(trim_silence(&soft, 100).is_some());
+        // Very sensitive → soft audio clears the threshold.
+        assert!(rms_bounds(&soft, 100).is_some());
         // Very strict → the same audio is treated as silence.
-        assert!(trim_silence(&soft, 0).is_none());
+        assert!(rms_bounds(&soft, 0).is_none());
     }
 
     #[test]
