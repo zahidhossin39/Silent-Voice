@@ -644,6 +644,13 @@ fn read_rects(sa: *mut SAFEARRAY) -> Vec<(f64, f64, f64, f64)> {
     }
     unsafe {
         if let Ok(ubound) = SafeArrayGetUBound(sa, 1) {
+            // Guard against a misbehaving UIA provider: negative (empty) or an
+            // absurd count would overflow/over-allocate. A text range never has
+            // more than a handful of bounding rects.
+            if !(0..=100_000).contains(&ubound) {
+                let _ = SafeArrayDestroy(sa);
+                return out;
+            }
             let count = (ubound + 1) as usize;
             let mut data: *mut std::ffi::c_void = std::ptr::null_mut();
             if SafeArrayAccessData(sa, &mut data).is_ok() {

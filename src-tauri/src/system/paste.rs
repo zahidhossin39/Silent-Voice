@@ -26,10 +26,15 @@ pub fn paste_at_cursor(text: &str) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     enigo.key(Key::Control, Release).map_err(|e| e.to_string())?;
 
-    // Restore the user's original clipboard after the paste lands.
+    // Restore the user's original clipboard after the paste lands — but only if
+    // the clipboard still holds OUR text. If the user copied something new during
+    // the paste window, restoring our saved copy would clobber their fresh one.
     if let Some(original_text) = original {
-        thread::sleep(Duration::from_millis(200));
-        let _ = clipboard.set_text(original_text);
+        thread::sleep(Duration::from_millis(250));
+        let still_ours = clipboard.get_text().ok().as_deref() == Some(text);
+        if still_ours {
+            let _ = clipboard.set_text(original_text);
+        }
     }
 
     Ok(())

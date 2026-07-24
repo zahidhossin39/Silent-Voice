@@ -488,7 +488,14 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
         mut mode_api_key,
     ) = {
         let state = app.state::<AppState>();
-        let cfg = state.config.lock().unwrap();
+        let cfg = match state.config.lock() {
+            Ok(c) => c,
+            Err(_) => {
+                report_error(&app, "config", "config mutex poisoned — skipping this dictation");
+                go_idle(&app);
+                return;
+            }
+        };
         (
             cfg.model_id.clone(),
             cfg.language.clone(),

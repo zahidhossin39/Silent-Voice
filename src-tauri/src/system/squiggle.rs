@@ -31,7 +31,7 @@ use windows::Win32::Graphics::Gdi::{
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DispatchMessageW, GetCursorPos, PeekMessageW,
+    CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetCursorPos, PeekMessageW,
     RegisterClassW, SetWindowPos, ShowWindow, TranslateMessage, UpdateLayeredWindow,
     HWND_TOPMOST, MA_NOACTIVATE, MSG, PM_REMOVE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
     SW_HIDE, SW_SHOWNOACTIVATE, ULW_ALPHA, WM_LBUTTONDOWN, WM_MOUSEACTIVATE,
@@ -460,6 +460,29 @@ impl StripState {
             bmp_w: 0,
             bmp_color: 0,
             hbitmap: None,
+        }
+    }
+}
+
+// Without this, a panic in run() drops the pool but leaks the layered windows +
+// bitmaps — they stay frozen on screen while run() restarts. Drop destroys them
+// on unwind so the restart is clean. The pool only grows (excess strips are
+// hidden, never removed), so this never fires during normal reuse.
+impl Drop for StripState {
+    fn drop(&mut self) {
+        unsafe {
+            if let Some(h) = self.hbitmap.take() {
+                let _ = DeleteObject(h);
+            }
+            let _ = DestroyWindow(self.hwnd);
+        }
+    }
+}
+
+impl Drop for Popup {
+    fn drop(&mut self) {
+        unsafe {
+            let _ = DestroyWindow(self.hwnd);
         }
     }
 }
