@@ -3,7 +3,7 @@
 // Tauri, and returns sensible mock data when running in a plain
 // browser (Vite dev preview before the Rust backend is built).
 // ============================================================
-import type { HardwareInfo, HistoryEntry, HfSearchItem, HfModelDetails, PiperVoice } from "../types";
+import type { HardwareInfo, DeviceRecommendation, HistoryEntry, HfSearchItem, HfModelDetails, PiperVoice } from "../types";
 
 export function isTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -79,6 +79,15 @@ export async function getHardwareInfo(): Promise<HardwareInfo> {
     return await invoke<HardwareInfo>("get_hardware_info");
   } catch {
     return MOCK_HARDWARE;
+  }
+}
+
+export async function recommendDeviceDefaults(): Promise<DeviceRecommendation | null> {
+  if (!isTauri()) return null;
+  try {
+    return await invoke<DeviceRecommendation>("recommend_device_defaults");
+  } catch {
+    return null;
   }
 }
 

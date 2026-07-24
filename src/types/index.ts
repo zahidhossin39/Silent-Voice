@@ -20,6 +20,16 @@ export interface HardwareInfo {
   os: string;
 }
 
+export interface DeviceRecommendation {
+  tier: "low" | "balanced" | "high";
+  stt_size: string;
+  high_performance: boolean;
+  performance_threads: number;
+  coedit_enabled: boolean;
+  use_gpu: boolean;
+  reason: string;
+}
+
 // ---------- STT (Whisper) models ----------
 export type SttPreset = "speed" | "balanced" | "accuracy" | "multilingual";
 

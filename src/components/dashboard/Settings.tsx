@@ -11,7 +11,10 @@ import {
   ttsSpeakText,
   downloadCoeditModel,
   coeditInstalled,
+  deleteCoeditModel,
+  recommendDeviceDefaults,
 } from "../../services/tauriBridge";
+import type { DeviceRecommendation } from "../../types";
 import HotkeyRecorder from "../shared/HotkeyRecorder";
 import { checkForUpdatesManual } from "../../services/updater";
 import type { SttPreset } from "../../types";
@@ -49,6 +52,9 @@ export default function Settings() {
   const [updateMsg, setUpdateMsg] = useState("");
   const [devices, setDevices] = useState<string[]>([]);
   const [hotkeyError, setHotkeyError] = useState<string | null>(null);
+
+  const [reco, setReco] = useState<DeviceRecommendation | null>(null);
+  useEffect(() => { recommendDeviceDefaults().then(setReco); }, []);
 
   const [coeditReady, setCoeditReady] = useState(false);
   useEffect(() => { coeditInstalled().then(setCoeditReady); }, []);
@@ -240,10 +246,21 @@ export default function Settings() {
             {(() => {
               if (coeditReady) {
                 return (
-                  <Toggle
-                    checked={settings.coedit_enabled}
-                    onChange={(v) => setSettings({ coedit_enabled: v })}
-                  />
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={async () => {
+                        await deleteCoeditModel();
+                        setCoeditReady(false);
+                      }}
+                      className="rounded-lg border border-sv-border px-2.5 py-1 text-xs text-sv-text hover:border-red-500 hover:text-red-500"
+                    >
+                      Remove
+                    </button>
+                    <Toggle
+                      checked={settings.coedit_enabled}
+                      onChange={(v) => setSettings({ coedit_enabled: v })}
+                    />
+                  </div>
                 );
               }
               const downloading = coeditProgress?.status === "downloading";
@@ -557,6 +574,26 @@ export default function Settings() {
         </Section>
 
         <Section title="Performance">
+          {reco && (
+            <Row
+              label={`Recommended for this device · ${reco.tier}`}
+              hint={`${reco.reason}. Suggested speech model size: ${reco.stt_size}. Applies GPU, thread, and grammar settings — not the model download.`}
+            >
+              <button
+                onClick={() =>
+                  setSettings({
+                    use_gpu: reco.use_gpu,
+                    high_performance: reco.high_performance,
+                    performance_threads: reco.performance_threads,
+                    coedit_enabled: reco.coedit_enabled,
+                  })
+                }
+                className="rounded-lg border border-sv-border px-3 py-1.5 text-xs hover:border-sv-accent hover:text-sv-accent"
+              >
+                Apply
+              </button>
+            </Row>
+          )}
           <Row
             label="Use GPU acceleration"
             hint={

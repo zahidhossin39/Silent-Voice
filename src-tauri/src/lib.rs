@@ -220,6 +220,11 @@ fn get_hardware_info() -> hardware::HardwareInfo {
 }
 
 #[tauri::command]
+fn recommend_device_defaults() -> hardware::DeviceRecommendation {
+    hardware::recommend(&hardware::detect())
+}
+
+#[tauri::command]
 fn list_input_devices() -> Vec<String> {
     capture::list_input_devices()
 }
@@ -841,6 +846,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_hardware_info,
+            recommend_device_defaults,
             list_input_devices,
             update_runtime_config,
             set_text_replacements,

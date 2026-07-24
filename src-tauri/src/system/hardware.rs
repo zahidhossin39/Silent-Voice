@@ -84,6 +84,76 @@ pub fn detect() -> HardwareInfo {
     }
 }
 
+/// A hardware-matched recommendation the UI can offer to apply. It never
+/// touches the STT model file directly (that would force a download) — `stt_size`
+/// is a hint the UI can surface; the concrete toggles are safe to apply as-is.
+#[derive(Serialize, Clone, Debug)]
+pub struct DeviceRecommendation {
+    pub tier: String,     // "low" | "balanced" | "high"
+    pub stt_size: String, // "tiny" | "base" | "small" | "large" — advisory hint
+    pub high_performance: bool,
+    pub performance_threads: u32, // 0 = auto (all cores)
+    pub coedit_enabled: bool,     // heavy grammar pass — off on weak machines
+    pub use_gpu: bool,
+    pub reason: String,
+}
+
+/// Map detected hardware to a sensible default profile. Thresholds follow the
+/// cross-device research: a weak CPU/low RAM prioritises responsiveness (small
+/// STT, no heavy grammar); a strong CPU or a real discrete GPU unlocks quality.
+/// A usable discrete GPU = non-Intel vendor with >= 3 GB dedicated VRAM (Intel
+/// entries here are integrated and not worth offloading these small models to).
+pub fn recommend(hw: &HardwareInfo) -> DeviceRecommendation {
+    let cores = hw.physical_cores.max(1);
+    let ram = hw.total_ram_gb;
+    let has_dgpu = hw.gpu_vram_gb.unwrap_or(0.0) >= 3.0
+        && hw
+            .gpu_vendor
+            .as_deref()
+            .map(|v| v != "Intel")
+            .unwrap_or(false);
+
+    if cores <= 4 || ram < 8.0 {
+        return DeviceRecommendation {
+            tier: "low".into(),
+            stt_size: "base".into(),
+            high_performance: false,
+            performance_threads: 0,
+            coedit_enabled: false,
+            use_gpu: has_dgpu,
+            reason: format!(
+                "{cores} cores / {ram:.0} GB RAM — keeping dictation responsive; \
+                 grammar correction off by default"
+            ),
+        };
+    }
+
+    if (cores >= 8 && ram >= 16.0) || has_dgpu {
+        return DeviceRecommendation {
+            tier: "high".into(),
+            stt_size: "large".into(),
+            high_performance: true,
+            performance_threads: 0,
+            coedit_enabled: true,
+            use_gpu: has_dgpu,
+            reason: format!(
+                "{cores} cores / {ram:.0} GB RAM{} — full quality",
+                if has_dgpu { " + discrete GPU" } else { "" }
+            ),
+        };
+    }
+
+    DeviceRecommendation {
+        tier: "balanced".into(),
+        stt_size: "small".into(),
+        high_performance: false,
+        performance_threads: 0,
+        coedit_enabled: true,
+        use_gpu: has_dgpu,
+        reason: format!("{cores} cores / {ram:.0} GB RAM — balanced quality and speed"),
+    }
+}
+
 #[cfg(windows)]
 fn detect_gpu() -> (Option<String>, Option<String>, Option<f64>) {
     use windows::Win32::Graphics::Dxgi::{
