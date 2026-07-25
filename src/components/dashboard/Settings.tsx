@@ -12,6 +12,9 @@ import {
   downloadCoeditModel,
   coeditInstalled,
   deleteCoeditModel,
+  downloadGectorModel,
+  gectorInstalled,
+  deleteGectorModel,
   downloadVadModel,
   vadInstalled,
   deleteVadModel,
@@ -76,6 +79,20 @@ export default function Settings() {
       vadInstalled().then(setVadReady);
     }
   }, [vadProgress?.status]);
+
+  const [gectorReady, setGectorReady] = useState(false);
+  useEffect(() => { gectorInstalled().then(setGectorReady); }, []);
+  const gectorProgress = useModelStore((s) => s.progress["gector"]);
+  useEffect(() => {
+    if (gectorProgress?.status === "downloaded") {
+      gectorInstalled().then(setGectorReady);
+    }
+  }, [gectorProgress?.status]);
+  const [gectorVariant, setGectorVariant] = useState("int8");
+  // GECToR is 5 separate files and download_to emits "downloaded" after each
+  // one, so the progress event alone leaves a gap between files where the
+  // Download button would reappear and a second fetch could be started.
+  const [gectorFetching, setGectorFetching] = useState(false);
 
   useEffect(() => {
     listInputDevices().then(setDevices);
@@ -327,14 +344,64 @@ export default function Settings() {
               </Row>
               <Row
                 label="Context grammar (neural)"
-                hint="AI pass that catches correctly-spelled wrong words (needs the GECToR model installed)"
+                hint="AI pass that catches correctly-spelled wrong words"
               >
-                <Toggle
-                  checked={!settings.proofread_disabled_rules.includes("Gector")}
-                  onChange={(v) => toggleProofreadRule("Gector", v)}
-                />
+                {(() => {
+                  if (gectorReady) {
+                    return (
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={async () => {
+                            await deleteGectorModel();
+                            setGectorReady(false);
+                          }}
+                          className="rounded-lg border border-sv-border px-2.5 py-1 text-xs text-sv-text hover:border-red-500 hover:text-red-500"
+                        >
+                          Remove
+                        </button>
+                        <Toggle
+                          checked={!settings.proofread_disabled_rules.includes("Gector")}
+                          onChange={(v) => toggleProofreadRule("Gector", v)}
+                        />
+                      </div>
+                    );
+                  }
+                  const downloading = gectorFetching || gectorProgress?.status === "downloading";
+                  const pct = gectorProgress && gectorProgress.total_bytes > 0
+                    ? Math.round((gectorProgress.downloaded_bytes / gectorProgress.total_bytes) * 100)
+                    : 0;
+                  if (downloading) {
+                    return <span className="text-xs text-sv-muted">Downloading… {pct}%</span>;
+                  }
+                  return (
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={gectorVariant}
+                        onChange={(e) => setGectorVariant(e.target.value)}
+                        className="w-40 rounded-lg border border-sv-border bg-sv-bg px-3 py-2 text-sm"
+                      >
+                        <option value="int8">Balanced · 122 MB</option>
+                        <option value="fp32">Best quality · 512 MB</option>
+                      </select>
+                      <button
+                        onClick={async () => {
+                          setGectorFetching(true);
+                          try {
+                            await downloadGectorModel(gectorVariant);
+                            setGectorReady(await gectorInstalled());
+                          } finally {
+                            setGectorFetching(false);
+                          }
+                        }}
+                        className="rounded-lg border border-sv-border px-3 py-1.5 text-xs hover:border-sv-accent hover:text-sv-accent"
+                      >
+                        Download
+                      </button>
+                    </div>
+                  );
+                })()}
               </Row>
-              {!settings.proofread_disabled_rules.includes("Gector") && (
+              {gectorReady && !settings.proofread_disabled_rules.includes("Gector") && (
                 <Row
                   label="Sensitivity"
                   hint="How eager the grammar AI is to flag mistakes. Aggressive finds more but makes more false alarms."

@@ -537,7 +537,6 @@ async fn api_test_stt(base_url: String, api_key: String, model: String) -> Resul
 // ---------------- Storage location ----------------
 
 
-
 // ---------------- Local LLM (bundled llama.cpp) ----------------
 
 #[tauri::command]
@@ -743,6 +742,15 @@ fn coedit_installed() -> bool { models::registry::coedit_installed() }
 fn delete_coedit_model() -> Result<(), String> { models::downloader::delete_coedit_model() }
 
 #[tauri::command]
+async fn download_gector_model(app: AppHandle, variant: String) -> Result<(), String> {
+    models::downloader::download_gector_model(app, variant).await
+}
+#[tauri::command]
+fn gector_installed() -> bool { models::registry::gector_installed() }
+#[tauri::command]
+fn delete_gector_model() -> Result<(), String> { models::downloader::delete_gector_model() }
+
+#[tauri::command]
 async fn download_vad_model(app: AppHandle) -> Result<(), String> {
     models::downloader::download_vad_model(app).await
 }
@@ -925,6 +933,9 @@ pub fn run() {
             download_coedit_model,
             coedit_installed,
             delete_coedit_model,
+            download_gector_model,
+            gector_installed,
+            delete_gector_model,
             download_vad_model,
             vad_installed,
             delete_vad_model,

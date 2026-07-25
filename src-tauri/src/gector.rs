@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use ort::init_from;
@@ -63,13 +62,9 @@ fn parse_verb_vocab(text: &str) -> HashMap<(String, String), String> {
 }
 
 fn init_gector() -> Option<Gector> {
-    let base_dir = dirs::config_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("SilentVoice")
-        .join("models")
-        .join("gector");
+    let base_dir = crate::models::registry::gector_dir();
 
-    let model_path = base_dir.join("gector-int8.onnx");
+    let model_path = crate::models::registry::gector_model_path()?;
     let tokenizer_path = base_dir.join("tokenizer.json");
     let labels_path = base_dir.join("labels.txt");
     let verbs_path = base_dir.join("verb-form-vocab.txt");

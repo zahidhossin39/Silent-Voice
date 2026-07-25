@@ -12,6 +12,8 @@ const VAD_URL: &str =
 const COEDIT_ENCODER_URL: &str = "https://huggingface.co/Zaid-Hossain/coedit-large-int8-onnx/resolve/main/encoder_model_int8.onnx";
 const COEDIT_DECODER_URL: &str = "https://huggingface.co/Zaid-Hossain/coedit-large-int8-onnx/resolve/main/decoder_model_int8.onnx";
 const COEDIT_TOKENIZER_URL: &str = "https://huggingface.co/Zaid-Hossain/coedit-large-int8-onnx/resolve/main/tokenizer.json";
+const GECTOR_BASE_URL: &str =
+    "https://huggingface.co/Zaid-Hossain/gector-roberta-onnx/resolve/main/";
 
 #[derive(Serialize, Clone)]
 pub struct DownloadProgress {
@@ -204,6 +206,50 @@ pub async fn download_coedit_model(app: AppHandle) -> Result<(), String> {
 pub fn delete_coedit_model() -> Result<(), String> {
     let dir = registry::coedit_dir();
     if dir.is_dir() { std::fs::remove_dir_all(&dir).map_err(|e| e.to_string())?; }
+    Ok(())
+}
+
+pub async fn download_gector_model(app: AppHandle, variant: String) -> Result<(), String> {
+    registry::ensure_dirs().map_err(|e| e.to_string())?;
+    let dir = registry::gector_dir();
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+
+    // Both variants present would be ~630MB on disk and gector_model_path would silently prefer fp32, so the user's choice would not take effect.
+    match variant.as_str() {
+        "int8" => {
+            let _ = std::fs::remove_file(dir.join("gector.onnx"));
+            let _ = std::fs::remove_file(dir.join("gector.onnx.data"));
+        }
+        "fp32" => {
+            let _ = std::fs::remove_file(dir.join("gector-int8.onnx"));
+        }
+        _ => return Err(format!("unknown gector variant: {variant}")),
+    }
+
+    let mut files = match variant.as_str() {
+        "int8" => vec!["gector-int8.onnx"],
+        "fp32" => vec!["gector.onnx", "gector.onnx.data"],
+        _ => unreachable!(),
+    };
+    files.extend(["tokenizer.json", "labels.txt", "verb-form-vocab.txt"]);
+
+    for name in files {
+        download_to(
+            app.clone(),
+            "gector".into(),
+            format!("{GECTOR_BASE_URL}{name}"),
+            dir.join(name),
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+pub fn delete_gector_model() -> Result<(), String> {
+    let dir = registry::gector_dir();
+    if dir.is_dir() {
+        std::fs::remove_dir_all(&dir).map_err(|e| e.to_string())?;
+    }
     Ok(())
 }
 

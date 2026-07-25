@@ -563,3 +563,17 @@ export async function deleteCoeditModel(): Promise<void> {
   if (!isTauri()) return;
   await invoke<void>("delete_coedit_model");
 }
+
+export async function downloadGectorModel(variant: string): Promise<void> {
+  if (!isTauri()) return;
+  await invoke<void>("download_gector_model", { variant });
+}
+export async function gectorInstalled(): Promise<boolean> {
+  if (!isTauri()) return false;
+  return invoke<boolean>("gector_installed");
+}
+export async function deleteGectorModel(): Promise<void> {
+  if (!isTauri()) return;
+  await invoke<void>("delete_gector_model");
+}
+

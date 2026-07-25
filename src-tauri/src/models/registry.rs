@@ -33,7 +33,6 @@ pub fn load_data_location() -> DataLocation {
 }
 
 
-
 // ── Resolved paths (honour overrides, fall back to bootstrap_dir) ──
 
 /// Root data directory (fallback when no override is set).
@@ -210,3 +209,30 @@ pub fn coedit_installed() -> bool {
         && d.join("decoder_model_int8.onnx").exists()
         && d.join("tokenizer.json").exists()
 }
+
+pub fn gector_dir() -> PathBuf {
+    models_dir().join("gector")
+}
+
+// ORT auto-loads the sibling gector.onnx.data external-data file, so only the .onnx path is returned.
+pub fn gector_model_path() -> Option<PathBuf> {
+    let dir = gector_dir();
+    let fp32 = dir.join("gector.onnx");
+    if fp32.exists() {
+        return Some(fp32);
+    }
+    let int8 = dir.join("gector-int8.onnx");
+    if int8.exists() {
+        return Some(int8);
+    }
+    None
+}
+
+pub fn gector_installed() -> bool {
+    let dir = gector_dir();
+    gector_model_path().is_some()
+        && dir.join("tokenizer.json").exists()
+        && dir.join("labels.txt").exists()
+        && dir.join("verb-form-vocab.txt").exists()
+}
+
