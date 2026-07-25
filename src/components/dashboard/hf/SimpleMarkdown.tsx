@@ -1,12 +1,14 @@
 import { useMemo, useState } from "react";
 
+function escapeHtml(str: string): string {
+  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 export default function SimpleMarkdown({ content }: { content: string }) {
   const [expanded, setExpanded] = useState(false);
 
   const html = useMemo(() => {
-    let md = content || "";
-    // Remove HTML tags entirely
-    md = md.replace(/<[^>]+>/g, "");
+    let md = escapeHtml(content || "");
     
     // Remove images: ![alt](url)
     md = md.replace(/!\[([^\]]*)\]\([^)]+\)/g, "");
@@ -14,8 +16,8 @@ export default function SimpleMarkdown({ content }: { content: string }) {
     // Tables: roughly strip lines starting with | and containing |
     md = md.replace(/^\|.*\|$/gm, "");
 
-    // Blockquotes: > text -> strip >
-    md = md.replace(/^>\s?(.*)$/gm, "$1");
+    // Blockquotes: > text -> strip > (matches &gt; because raw text was HTML-escaped first)
+    md = md.replace(/^&gt;\s?(.*)$/gm, "$1");
 
     // Process blocks: split by lines
     const lines = md.split('\n');
