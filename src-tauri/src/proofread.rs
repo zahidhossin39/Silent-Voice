@@ -50,6 +50,10 @@ fn looks_like_code(text: &str) -> bool {
     }
     // Prose rarely exceeds a couple percent of structural punctuation;
     // code/JSON bodies are dense with it.
+    // A ratio alone is too volatile on short text, where 2 symbols in a sentence is already over 6%.
+    if code_punct < 3 {
+        return false;
+    }
     code_punct as f64 / chars.len() as f64 > 0.06
 }
 
@@ -480,5 +484,20 @@ mod tests {
         assert_eq!(filler_issues.len(), 1);
         assert_eq!(filler_issues[0].start, 0);
         assert_eq!(filler_issues[0].end, 2);
+    }
+
+    #[test]
+    fn prose_with_a_few_symbols_is_not_code() {
+        assert!(!looks_like_code("Press <Enter> to continue ok"));
+        assert!(!looks_like_code("he said x=1 and y=2 fine"));
+        assert!(!looks_like_code("yes | no | maybe pick one"));
+        assert!(!looks_like_code("a > b > c ordering"));
+    }
+
+    #[test]
+    fn real_code_is_still_detected() {
+        assert!(looks_like_code(r#"{"key": "value", "key2": 42}"#));
+        assert!(looks_like_code("Hello {{ name }}"));
+        assert!(looks_like_code("const result = [1, 2, 3].map(x => x * 2);"));
     }
 }
