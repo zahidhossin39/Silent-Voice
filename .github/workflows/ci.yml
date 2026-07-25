@@ -1,0 +1,32 @@
+name: CI
+
+# Run continuous integration checks (frontend typecheck and Rust tests) on push to main or pull request targeting main.
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  ci:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install frontend deps
+        run: npm ci
+
+      - name: Typecheck frontend
+        run: npx tsc --noEmit
+
+      - name: Rust tests
+        run: cargo test --lib --manifest-path src-tauri/Cargo.toml
