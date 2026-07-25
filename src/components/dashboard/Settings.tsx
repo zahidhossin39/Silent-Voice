@@ -121,7 +121,7 @@ export default function Settings() {
   return (
     <Page title="Settings" subtitle="Dictation, audio, and appearance">
       <div className="gap-5 lg:columns-2 lg:gap-5">
-        <Section title="Dictation">
+        <Section title="Dictation" accent="var(--color-sv-sec-dictation)" icon={<MicrophoneIcon />}>
           <Row
             label="Speed / accuracy preset"
             hint="Picks a Whisper model that matches the tradeoff"
@@ -516,6 +516,8 @@ export default function Settings() {
         <Section
           title="Read aloud (text-to-speech)"
           desc="Select text in any app, press the hotkey, and hear it spoken. Press again to stop. Voices are downloaded in Model Store → Text-to-Speech."
+          accent="var(--color-sv-sec-tts)"
+          icon={<SpeakerIcon />}
         >
           <Row
             label="Enable read-aloud"
@@ -587,6 +589,8 @@ export default function Settings() {
         <Section
           title="Custom vocabulary"
           desc="Names or jargon Whisper mishears — fed to the model as a hint so it spells them right. Not AI; it does not rewrite your text. Comma-separated, most important first."
+          accent="var(--color-sv-sec-vocab)"
+          icon={<BookIcon />}
         >
           <div className="py-4">
             <textarea
@@ -602,6 +606,8 @@ export default function Settings() {
         <Section
           title="Text replacements"
           desc="Say a short trigger and have it typed out in full — e.g. “my email” → your address. Applied to the final text just before pasting. Case-insensitive."
+          accent="var(--color-sv-sec-replace)"
+          icon={<ArrowsSwapIcon />}
         >
           <div className="py-4">
             {snippets.length > 0 && (
@@ -648,6 +654,8 @@ export default function Settings() {
         <Section
           title="Per-app profiles"
           desc="Automatically switch AI mode based on the app you're dictating into. Match is on the program's file name — e.g. “code” for VS Code, “chrome” for Chrome, “outlook” for Outlook."
+          accent="var(--color-sv-sec-profiles)"
+          icon={<LayersIcon />}
         >
           <div className="py-4">
             {appProfiles.length > 0 && (
@@ -696,7 +704,7 @@ export default function Settings() {
           </div>
         </Section>
 
-        <Section title="Performance">
+        <Section title="Performance" accent="var(--color-sv-sec-perf)" icon={<GaugeIcon />}>
           {reco && (
             <Row
               label={`Recommended for this device · ${reco.tier}`}
@@ -786,7 +794,7 @@ export default function Settings() {
             })()}
         </Section>
 
-        <Section title="System">
+        <Section title="System" accent="var(--color-sv-sec-system)" icon={<CogIcon />}>
           <Row label="Launch at startup">
             <Toggle
               checked={settings.auto_start}
@@ -831,17 +839,34 @@ export default function Settings() {
 function Section({
   title,
   desc,
+  accent,
+  icon,
   children,
 }: {
   title: string;
   desc?: string;
+  accent?: string;
+  icon?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <div className="mb-5 break-inside-avoid overflow-hidden rounded-xl border border-sv-border bg-sv-surface">
-      <div className="border-b border-sv-border px-5 py-3.5">
-        <h2 className="text-sm font-semibold">{title}</h2>
-        {desc && <p className="mt-0.5 text-xs text-sv-muted">{desc}</p>}
+      <div
+        className="flex items-center gap-3 border-b border-sv-border px-5 py-3.5"
+        style={accent ? { borderLeft: `3px solid ${accent}`, background: `linear-gradient(to right, color-mix(in srgb, ${accent} 12%, transparent), transparent 60%)` } : undefined}
+      >
+        {icon && (
+          <span
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
+            style={accent ? { background: `color-mix(in srgb, ${accent} 16%, transparent)`, color: accent } : undefined}
+          >
+            {icon}
+          </span>
+        )}
+        <div className="min-w-0">
+          <h2 className="text-sm font-semibold">{title}</h2>
+          {desc && <p className="mt-0.5 text-xs text-sv-muted">{desc}</p>}
+        </div>
       </div>
       <div className="px-5">{children}</div>
     </div>
@@ -936,5 +961,70 @@ function Toggle({
         }`}
       />
     </button>
+  );
+}
+
+function MicrophoneIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+      <path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8" />
+    </svg>
+  );
+}
+
+function SpeakerIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+      <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+      <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+    </svg>
+  );
+}
+
+function BookIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" />
+    </svg>
+  );
+}
+
+function ArrowsSwapIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="7 10 3 6 7 2" />
+      <path d="M21 6H3" />
+      <polyline points="17 14 21 18 17 22" />
+      <path d="M3 18h18" />
+    </svg>
+  );
+}
+
+function LayersIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <polygon points="12 2 2 7 12 12 22 7 12 2" />
+      <polyline points="2 12 12 17 22 12" />
+      <polyline points="2 17 12 22 22 17" />
+    </svg>
+  );
+}
+
+function GaugeIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+    </svg>
+  );
+}
+
+function CogIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+    </svg>
   );
 }

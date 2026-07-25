@@ -13,6 +13,15 @@
   --color-sv-good: #22c55e;
   --color-sv-warn: #eab308;
   --color-sv-bad: #ef4444;
+
+  /* Settings per-section accents */
+  --color-sv-sec-dictation: #3b82f6;
+  --color-sv-sec-tts: #a855f7;
+  --color-sv-sec-vocab: #06b6d4;
+  --color-sv-sec-replace: #ec4899;
+  --color-sv-sec-profiles: #10b981;
+  --color-sv-sec-perf: #f59e0b;
+  --color-sv-sec-system: #6366f1;
 }
 
 /* Light theme — overrides the @theme :root tokens when <html> has .theme-light.
@@ -26,6 +35,15 @@ html.theme-light {
   --color-sv-muted: #5c6473;
   --color-sv-accent: #ea580c;
   --color-sv-accent-hover: #c2410c;
+
+  /* Settings per-section accents */
+  --color-sv-sec-dictation: #2563eb;
+  --color-sv-sec-tts: #9333ea;
+  --color-sv-sec-vocab: #0891b2;
+  --color-sv-sec-replace: #db2777;
+  --color-sv-sec-profiles: #059669;
+  --color-sv-sec-perf: #d97706;
+  --color-sv-sec-system: #4f46e5;
 }
 
 html,
