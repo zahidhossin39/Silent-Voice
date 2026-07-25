@@ -229,6 +229,26 @@ fn list_input_devices() -> Vec<String> {
     capture::list_input_devices()
 }
 
+static MIC_PROBE: Mutex<Option<std::sync::mpsc::Sender<capture::Control>>> = Mutex::new(None);
+
+#[tauri::command]
+fn start_mic_probe(app: AppHandle, device: Option<String>) -> Result<(), String> {
+    stop_mic_probe()?;
+    let tx = capture::start_level_probe(device, move |level| {
+        let _ = app.emit("mic://level", level);
+    });
+    *MIC_PROBE.lock().map_err(|e| e.to_string())? = Some(tx);
+    Ok(())
+}
+
+#[tauri::command]
+fn stop_mic_probe() -> Result<(), String> {
+    if let Some(tx) = MIC_PROBE.lock().map_err(|e| e.to_string())?.take() {
+        let _ = tx.send(capture::Control::Stop);
+    }
+    Ok(())
+}
+
 // ---------------- Runtime config ----------------
 
 #[tauri::command]
@@ -857,6 +877,8 @@ pub fn run() {
             get_hardware_info,
             recommend_device_defaults,
             list_input_devices,
+            start_mic_probe,
+            stop_mic_probe,
             update_runtime_config,
             set_text_replacements,
             set_behavior,

@@ -6,7 +6,7 @@ use std::thread;
 /// Target sample rate Whisper expects.
 pub const WHISPER_SAMPLE_RATE: u32 = 16_000;
 
-enum Control {
+pub enum Control {
     Stop,
 }
 
@@ -163,6 +163,104 @@ pub fn write_wav(path: &std::path::Path, samples: &[f32]) -> Result<(), String> 
             .map_err(|e| e.to_string())?;
     }
     writer.finalize().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Open the input device by name, or the system default when `None`.
+fn open_device(device_name: Option<String>) -> Result<cpal::Device, String> {
+    let host = cpal::default_host();
+    match device_name {
+        Some(name) => host
+            .input_devices()
+            .map_err(|e| e.to_string())?
+            .find(|d| d.name().map(|n| n == name).unwrap_or(false))
+            .ok_or_else(|| format!("input device '{name}' not found")),
+        None => host
+            .default_input_device()
+            .ok_or_else(|| "no default input device".to_string()),
+    }
+}
+
+/// Loudness of a buffer as a 0–100 meter value. Speech sits around RMS
+/// 0.05–0.2, so it's scaled up to fill a visible bar.
+fn level_of(data: &[f32]) -> f32 {
+    if data.is_empty() {
+        return 0.0;
+    }
+    let sum_sq: f32 = data.iter().map(|s| s * s).sum();
+    let rms = (sum_sq / data.len() as f32).sqrt();
+    (rms * 300.0).min(100.0)
+}
+
+/// Stream live input loudness to `on_level` until `Control::Stop` is sent on
+/// the returned channel. Used by the onboarding mic check — no resampling and
+/// no buffering, since only the level matters.
+pub fn start_level_probe(
+    device_name: Option<String>,
+    on_level: impl Fn(f32) + Send + Sync + 'static,
+) -> Sender<Control> {
+    let (ctrl_tx, ctrl_rx) = mpsc::channel::<Control>();
+    thread::spawn(move || {
+        if let Err(e) = probe_loop(device_name, ctrl_rx, on_level) {
+            eprintln!("[audio] level probe error: {e}");
+        }
+    });
+    ctrl_tx
+}
+
+fn probe_loop(
+    device_name: Option<String>,
+    ctrl_rx: Receiver<Control>,
+    on_level: impl Fn(f32) + Send + Sync + 'static,
+) -> Result<(), String> {
+    let device = open_device(device_name)?;
+    let config = device.default_input_config().map_err(|e| e.to_string())?;
+    let cb = Arc::new(on_level);
+    let err_fn = |e| eprintln!("[audio] probe stream error: {e}");
+
+    let stream = match config.sample_format() {
+        cpal::SampleFormat::F32 => {
+            let cb = cb.clone();
+            device.build_input_stream(
+                &config.into(),
+                move |data: &[f32], _| cb(level_of(data)),
+                err_fn,
+                None,
+            )
+        }
+        cpal::SampleFormat::I16 => {
+            let cb = cb.clone();
+            device.build_input_stream(
+                &config.into(),
+                move |data: &[i16], _| {
+                    let floats: Vec<f32> = data.iter().map(|s| *s as f32 / 32768.0).collect();
+                    cb(level_of(&floats));
+                },
+                err_fn,
+                None,
+            )
+        }
+        cpal::SampleFormat::U16 => {
+            let cb = cb.clone();
+            device.build_input_stream(
+                &config.into(),
+                move |data: &[u16], _| {
+                    let floats: Vec<f32> = data
+                        .iter()
+                        .map(|s| (*s as f32 - 32768.0) / 32768.0)
+                        .collect();
+                    cb(level_of(&floats));
+                },
+                err_fn,
+                None,
+            )
+        }
+        fmt => return Err(format!("unsupported sample format: {fmt:?}")),
+    }
+    .map_err(|e| e.to_string())?;
+
+    stream.play().map_err(|e| e.to_string())?;
+    let _ = ctrl_rx.recv();
     Ok(())
 }
 

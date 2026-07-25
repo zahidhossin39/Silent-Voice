@@ -1,11 +1,18 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useHardwareInfo } from "../../hooks/useHardwareInfo";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useModelStore } from "../../stores/modelStore";
 import { STT_MODELS } from "../../services/catalog";
+import {
+  listInputDevices,
+  listenEvent,
+  recommendDeviceDefaults,
+  startMicProbe,
+  stopMicProbe,
+} from "../../services/tauriBridge";
 import HotkeyRecorder from "../shared/HotkeyRecorder";
 import ProviderLogo from "../shared/ProviderLogo";
-import type { HardwareInfo, SttPreset } from "../../types";
+import type { DeviceRecommendation, HardwareInfo, SttPreset } from "../../types";
 
 // Curated starter choices — one per speed/accuracy tier plus a multilingual
 // option. The user picks; we only mark a recommendation.
@@ -30,7 +37,15 @@ function recommendId(hw: HardwareInfo | null): string {
   return "tiny.en";
 }
 
-const STEPS = ["Welcome", "Pick a model", "Set your hotkey", "Done"] as const;
+const STEPS = [
+  "Welcome",
+  "Pick a model",
+  "Check your mic",
+  "Set your hotkey",
+  "Done",
+] as const;
+
+const MIC_STEP = 2;
 
 export default function Onboarding() {
   const { hardware, loading } = useHardwareInfo();
@@ -47,7 +62,37 @@ export default function Onboarding() {
   const [choice, setChoice] = useState<string | null>(null);
   const selectedId = choice ?? recommendedId;
 
+  const [reco, setReco] = useState<DeviceRecommendation | null>(null);
+  useEffect(() => {
+    recommendDeviceDefaults().then(setReco);
+  }, []);
+
+  const [devices, setDevices] = useState<string[]>([]);
+  const [micLevel, setMicLevel] = useState(0);
+  useEffect(() => {
+    listInputDevices().then(setDevices);
+  }, []);
+
+  // The probe holds the mic open, so it runs only while this step is showing.
+  useEffect(() => {
+    if (step !== MIC_STEP) return;
+    startMicProbe(settings.audio_device);
+    const unlisten = listenEvent<number>("mic://level", setMicLevel);
+    return () => {
+      stopMicProbe();
+      unlisten.then((f) => f());
+    };
+  }, [step, settings.audio_device]);
+
   function finish() {
+    if (reco) {
+      setSettings({
+        use_gpu: reco.use_gpu,
+        high_performance: reco.high_performance,
+        performance_threads: reco.performance_threads,
+        coedit_enabled: reco.coedit_enabled,
+      });
+    }
     setSettings({ onboarded: true });
   }
 
@@ -124,6 +169,20 @@ export default function Onboarding() {
                 better on a machine without a dedicated GPU. You can switch
                 anytime in the Model Store.
               </p>
+
+              {reco && (
+                <div className="mt-4 rounded-xl border border-sv-border bg-sv-surface-2 p-4 text-sm">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-medium uppercase tracking-wide text-sv-muted">
+                      Your device
+                    </span>
+                    <span className="rounded-full bg-sv-accent px-2 py-0.5 text-[10px] font-medium text-white">
+                      {reco.tier}
+                    </span>
+                  </div>
+                  <p className="mt-1.5 text-xs text-sv-muted">{reco.reason}</p>
+                </div>
+              )}
 
               <div className="mt-4 space-y-2">
                 {loading ? (
@@ -233,21 +292,37 @@ export default function Onboarding() {
 
           {step === 2 && (
             <div>
-              <h2 className="text-lg font-semibold">Set your push-to-talk key</h2>
+              <h2 className="text-lg font-semibold">Check your microphone</h2>
               <p className="mt-1 text-sm text-sv-muted">
-                Hold this key while you speak, release to paste. Pick
-                something you won't hit by accident while typing.
+                Pick the mic you'll dictate with, then speak — the bar should
+                move. If it doesn't, try another device.
               </p>
-              <div className="mt-5">
-                <HotkeyRecorder
-                  value={settings.hotkey}
-                  onChange={(accelerator) => {
-                    setHotkeyError(null);
-                    setSettings({ hotkey: accelerator });
-                  }}
-                  error={hotkeyError}
+
+              <select
+                value={settings.audio_device ?? ""}
+                onChange={(e) =>
+                  setSettings({ audio_device: e.target.value || null })
+                }
+                className="mt-4 w-full rounded-lg border border-sv-border bg-sv-bg px-3 py-2 text-sm"
+              >
+                <option value="">System default</option>
+                {devices.map((d) => (
+                  <option key={d} value={d}>
+                    {d}
+                  </option>
+                ))}
+              </select>
+
+              <div className="mt-4 h-2.5 w-full overflow-hidden rounded-full bg-sv-surface-2">
+                <div
+                  className="h-full rounded-full bg-sv-accent transition-[width] duration-75"
+                  style={{ width: `${Math.min(micLevel, 100)}%` }}
                 />
               </div>
+              <p className="mt-1.5 text-[11px] text-sv-muted">
+                Speak now — the bar should move.
+              </p>
+
               <div className="mt-6 flex gap-2">
                 <button
                   onClick={() => setStep(1)}
@@ -266,6 +341,40 @@ export default function Onboarding() {
           )}
 
           {step === 3 && (
+            <div>
+              <h2 className="text-lg font-semibold">Set your push-to-talk key</h2>
+              <p className="mt-1 text-sm text-sv-muted">
+                Hold this key while you speak, release to paste. Pick
+                something you won't hit by accident while typing.
+              </p>
+              <div className="mt-5">
+                <HotkeyRecorder
+                  value={settings.hotkey}
+                  onChange={(accelerator) => {
+                    setHotkeyError(null);
+                    setSettings({ hotkey: accelerator });
+                  }}
+                  error={hotkeyError}
+                />
+              </div>
+              <div className="mt-6 flex gap-2">
+                <button
+                  onClick={() => setStep(2)}
+                  className="rounded-lg border border-sv-border px-4 py-2 text-sm text-sv-muted hover:text-sv-text"
+                >
+                  Back
+                </button>
+                <button
+                  onClick={() => setStep(4)}
+                  className="flex-1 rounded-lg bg-sv-accent px-4 py-2 text-sm font-medium text-white hover:bg-sv-accent-hover"
+                >
+                  Continue
+                </button>
+              </div>
+            </div>
+          )}
+
+          {step === 4 && (
             <div className="text-center">
               <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-sv-good/15 text-sv-good">
                 <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -289,7 +398,7 @@ export default function Onboarding() {
           )}
         </div>
 
-        {step > 0 && step < 3 && (
+        {step > 0 && step < 4 && (
           <button
             onClick={finish}
             className="mx-auto mt-4 block text-xs text-sv-muted hover:text-sv-text"

@@ -91,6 +91,15 @@ export async function recommendDeviceDefaults(): Promise<DeviceRecommendation | 
   }
 }
 
+export async function startMicProbe(device: string | null): Promise<void> {
+  if (!isTauri()) return;
+  await invoke<void>("start_mic_probe", { device });
+}
+export async function stopMicProbe(): Promise<void> {
+  if (!isTauri()) return;
+  await invoke<void>("stop_mic_probe");
+}
+
 export async function listInputDevices(): Promise<string[]> {
   if (!isTauri()) return ["Default microphone (preview)"];
   try {
