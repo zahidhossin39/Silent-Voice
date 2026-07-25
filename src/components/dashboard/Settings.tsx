@@ -63,6 +63,7 @@ export default function Settings() {
   useEffect(() => { recommendDeviceDefaults().then(setReco); }, []);
 
   const [coeditReady, setCoeditReady] = useState(false);
+  const [coeditFetching, setCoeditFetching] = useState(false);
   useEffect(() => { coeditInstalled().then(setCoeditReady); }, []);
   const coeditProgress = useModelStore((s) => s.progress["coedit"]);
   useEffect(() => {
@@ -292,7 +293,7 @@ export default function Settings() {
                   </div>
                 );
               }
-              const downloading = coeditProgress?.status === "downloading";
+              const downloading = coeditFetching || coeditProgress?.status === "downloading";
               const pct = coeditProgress && coeditProgress.total_bytes > 0
                 ? Math.round((coeditProgress.downloaded_bytes / coeditProgress.total_bytes) * 100)
                 : 0;
@@ -302,9 +303,14 @@ export default function Settings() {
               return (
                 <button
                   onClick={async () => {
-                    await downloadCoeditModel();
-                    const ok = await coeditInstalled();
-                    setCoeditReady(ok);
+                    setCoeditFetching(true);
+                    try {
+                      await downloadCoeditModel();
+                      const ok = await coeditInstalled();
+                      setCoeditReady(ok);
+                    } finally {
+                      setCoeditFetching(false);
+                    }
                   }}
                   className="rounded-lg border border-sv-border px-3 py-1.5 text-xs hover:border-sv-accent hover:text-sv-accent"
                 >
