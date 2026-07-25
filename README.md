@@ -79,3 +79,30 @@ cloud provider. Everything works fully offline once a model is downloaded.
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+### Model licences
+
+The MIT licence covers **this application's code only**. Models are not bundled —
+you download the ones you want from inside the app, and each carries its own
+licence from its original author.
+
+| Model | Licence |
+|---|---|
+| Whisper (speech-to-text) | MIT for OpenAI's models; community fine-tunes in the catalogue vary — check the model's page |
+| LLM models (AI modes) | Varies per model (Llama, Qwen, Mistral… each has its own terms) |
+| Piper voices (read-aloud) | MIT |
+| Other TTS voices | Varies per voice |
+| Silero VAD | MIT |
+| **CoEdIT** (grammar correction) | **CC BY-NC 4.0 — non-commercial use only** |
+| **GECToR** (context grammar) | **Non-commercial use only** |
+
+⚠️ **The two grammar models are restricted to non-commercial use.** CoEdIT is
+[CC BY-NC 4.0](https://huggingface.co/grammarly/coedit-large), and the GECToR
+checkpoint is an [unofficial reimplementation](https://huggingface.co/gotutiyan/gector-roberta-base-5k)
+whose author states "Only non-commercial purposes". If you use Silent Voice
+commercially, do not download those two models — everything else keeps working
+without them.
+
+GECToR is [GECToR – Grammatical Error Correction: Tag, Not Rewrite](https://aclanthology.org/2020.bea-1.16/)
+(Omelianchuk et al., BEA 2020); the ONNX build Silent Voice downloads is
+[here](https://huggingface.co/Zaid-Hossain/gector-roberta-onnx).
