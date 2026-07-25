@@ -3,7 +3,6 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use ndarray::{Array2, Array3};
-use ort::init_from;
 use ort::session::Session;
 use ort::value::Tensor;
 use tokenizers::Tokenizer;
@@ -72,15 +71,7 @@ fn init_coedit() -> Option<Coedit> {
         return None;
     }
 
-    let exe_dir = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|d| d.to_path_buf()))?;
-    let dll_path = [Some(exe_dir.as_path()), exe_dir.parent()]
-        .into_iter()
-        .flatten()
-        .map(|d| d.join("sherpa").join("onnxruntime.dll"))
-        .find(|p| p.exists())?;
-    let _ = init_from(dll_path.display().to_string()).commit();
+    crate::onnx::ensure_runtime()?;
 
     // Using ALL logical cores thrashes BLAS on hyperthreaded CPUs — use half.
     let cores = std::thread::available_parallelism().map(|x| x.get()).unwrap_or(4);

@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
-use ort::init_from;
 use ort::session::Session;
 use ort::value::Tensor;
 use tokenizers::Tokenizer;
@@ -73,19 +72,7 @@ fn init_gector() -> Option<Gector> {
         return None;
     }
 
-    // Reuse sherpa's onnxruntime.dll (see sherpa.rs on why absolute paths).
-    // ort PANICS if the dylib can't be loaded, so verify existence first —
-    // a panic here would kill the inline-check watcher thread.
-    // Test exes live in target\debug\deps\, one level below the DLL dir.
-    let exe_dir = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|d| d.to_path_buf()))?;
-    let dll_path = [Some(exe_dir.as_path()), exe_dir.parent()]
-        .into_iter()
-        .flatten()
-        .map(|d| d.join("sherpa").join("onnxruntime.dll"))
-        .find(|p| p.exists())?;
-    let _ = init_from(dll_path.display().to_string()).commit();
+    crate::onnx::ensure_runtime()?;
 
     let session = match Session::builder()
         .and_then(|b| b.with_intra_threads(1))

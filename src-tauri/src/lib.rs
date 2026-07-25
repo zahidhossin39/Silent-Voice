@@ -1,11 +1,12 @@
 mod audio;
-mod history;
-mod proofread;
-mod gector;
 mod coedit;
+mod gector;
+mod history;
 mod llm;
 mod logging;
 mod models;
+mod onnx;
+mod proofread;
 mod system;
 mod transcription;
 
