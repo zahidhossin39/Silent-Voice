@@ -78,4 +78,4 @@ cloud provider. Everything works fully offline once a model is downloaded.
 
 ## License
 
-MIT (planned).
+MIT — see [LICENSE](LICENSE).
