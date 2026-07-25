@@ -6,23 +6,28 @@ Hold a hotkey, speak, release → your words are transcribed by a local Whisper 
 
 ## Status
 
-🚧 **In active development.**
+**Usable day to day.** Everything below works except always-listening.
 
 | Phase | Goal | State |
 |-------|------|-------|
-| 1 | Foundation: record → transcribe → clipboard, tray, model downloader, hardware detection | ✅ Code complete |
-| 2 | Core UX: paste-at-cursor, recording overlay, history (SQLite), STT presets | 🔜 |
-| 3 | AI processing modes (Ollama / llama.cpp) | 🔜 |
-| 4 | Model store + hardware recommendations | ✅ UI done · backend wired |
-| 5 | Always-listening (Silero VAD + openWakeWord) | 🔜 |
-| 6 | Cloud API integration | 🟡 UI done |
-| 7 | Polish, onboarding, installer | 🔜 |
+| 1 | Foundation: record → transcribe → clipboard, tray, model downloader, hardware detection | ✅ |
+| 2 | Core UX: paste-at-cursor, recording overlay, history, STT presets | ✅ |
+| 3 | AI processing modes (bundled llama.cpp) | ✅ |
+| 4 | Model store + hardware recommendations | ✅ |
+| 5 | Always-listening (Silero VAD + wake word) | 🔜 Not started |
+| 6 | Cloud API integration (OpenAI, Anthropic, OpenRouter) | ✅ |
+| 7 | Polish, onboarding, installer, auto-update | ✅ |
+
+Also shipped beyond the original plan: read-aloud (Piper + sherpa-onnx),
+inline proofreading with live spelling/grammar underlines in any app, and
+neural grammar correction.
 
 ## Tech stack
 
 - **Tauri v2** (Rust backend + React 19 / TypeScript / Tailwind v4 frontend)
 - **whisper.cpp** as a bundled sidecar for speech-to-text (CPU, AVX2; Vulkan for iGPUs)
-- **Ollama** / **llama.cpp** for optional AI text processing
+- **llama.cpp** bundled for local AI text processing (or Ollama / cloud APIs if you prefer)
+- **Piper** + **sherpa-onnx** for read-aloud, **ONNX Runtime** for grammar models
 - `cpal` audio capture, `sysinfo` + DXGI hardware detection, `arboard` + `enigo` paste-at-cursor
 
 ## Project layout
@@ -35,13 +40,16 @@ src/                 React frontend (dashboard, model store, modes, settings…)
 src-tauri/           Rust backend
   src/audio/         cpal microphone capture → 16 kHz WAV
   src/transcription/ whisper.cpp sidecar wrapper
+  src/llm/           local llama-server + cloud providers
   src/models/        download manager + storage registry
-  src/system/        hardware detection, paste, system tray
+  src/system/        hotkey, overlay, paste, tray, TTS, inline proofreading
 ```
 
 ## Installation
 
-To install Silent Voice, download the latest installer from the [GitHub Releases](https://github.com/zahidhossin39/Silent-Voice/releases) page. Once installed, the application will automatically check for and apply updates silently in the background on startup (v0.1.4+). Note that existing installations built or installed before v0.1.4 lack update capabilities and must be manually reinstalled once to begin receiving automatic updates.
+Download the latest installer from the [GitHub Releases](https://github.com/zahidhossin39/Silent-Voice/releases) page.
+
+Silent Voice checks for updates on startup and shows an **"Update available"** button in the sidebar — updates install when you click it, never silently. You can also check manually from Settings. Installs from before v0.1.4 have no updater and need one manual reinstall to start receiving updates.
 
 ## Develop
 
