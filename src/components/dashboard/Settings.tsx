@@ -823,7 +823,10 @@ function Section({
 }) {
   return (
     <div className="mb-5 break-inside-avoid overflow-hidden rounded-xl border border-sv-border bg-sv-surface">
-      <div className="flex items-center gap-2.5 border-b border-sv-border px-5 py-3">
+      {/* items-start, not center: where the description wraps to two or three
+          lines, centring floats the icon halfway down the block instead of
+          letting it sit beside the title. */}
+      <div className="flex items-start gap-2.5 border-b border-sv-border px-5 py-3">
         {icon && (
           <span
             className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg"
