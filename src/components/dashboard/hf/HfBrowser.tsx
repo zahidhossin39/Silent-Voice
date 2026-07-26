@@ -109,7 +109,7 @@ function MetricBar({
   return (
     <div className="flex items-center gap-3">
       <div className="w-14 shrink-0 text-right text-[11px] lowercase text-sv-muted">{label}</div>
-      <div className="h-1 w-[92px] shrink-0 rounded-full bg-sv-surface-2">
+      <div className="h-1.5 w-[120px] shrink-0 overflow-hidden rounded-full bg-sv-surface-2">
         <div
           className="h-full rounded-full transition-all"
           style={{ width: `${pct}%`, backgroundColor: "color-mix(in srgb, var(--color-sv-text) 62%, transparent)" }}
@@ -456,7 +456,7 @@ function SttRow({
         </div>
       </div>
 
-      <div className="hidden xl:flex w-[330px] shrink-0 flex-col gap-1">
+      <div className="flex w-[300px] shrink-0 flex-col gap-1">
         <MetricBar label="accuracy" value={accuracyScore(model.wer)} caption={`~${model.wer.replace("~", "")} word error`} />
         <MetricBar label="speed" value={speedScore(model.speed_label, hardware)} caption={(deviceRealtimeLabel(model.speed_label, hardware) ?? model.speed_label).replace(" on your device", "").replace("~", "")} />
       </div>
@@ -566,7 +566,7 @@ function LlmRow({
         </div>
       </div>
 
-      <div className="hidden xl:block w-[290px] shrink-0"></div>
+      <div className="hidden w-[300px] shrink-0 lg:block"></div>
 
       <div className="ml-auto shrink-0 flex items-center gap-2.5">
         <div className="flex items-center gap-1.5 text-[11px]" title={level === "good" ? "Fits well" : level === "warn" ? "May be slow" : "Too heavy"}>
@@ -674,7 +674,7 @@ function HfRow({
           </div>
         </div>
 
-        <div className="hidden xl:block w-[290px] shrink-0"></div>
+        <div className="hidden w-[300px] shrink-0 lg:block"></div>
 
         <div className="ml-auto shrink-0 flex items-center gap-2.5">
           {fit && (

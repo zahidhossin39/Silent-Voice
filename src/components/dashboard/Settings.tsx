@@ -128,6 +128,35 @@ export default function Settings() {
               />
             </div>
           </div>
+          <SubGroup label="While recording">
+            <Row
+              label="Double-tap to lock recording"
+              hint="Tap the hotkey twice quickly to keep recording hands-free; press once to stop & paste"
+            >
+              <Toggle
+                checked={settings.toggle_mode}
+                onChange={(v) => setSettings({ toggle_mode: v })}
+              />
+            </Row>
+            <Row
+              label="Auto-hide the pill"
+              hint="Pill disappears ~5s after it's done, and reappears the moment you press the hotkey again"
+            >
+              <Toggle
+                checked={settings.pill_auto_hide}
+                onChange={(v) => setSettings({ pill_auto_hide: v })}
+              />
+            </Row>
+            <Row
+              label="Append trailing space"
+              hint="Add a space after each pasted transcription so the next one doesn't run into it"
+            >
+              <Toggle
+                checked={settings.append_trailing_space}
+                onChange={(v) => setSettings({ append_trailing_space: v })}
+              />
+            </Row>
+          </SubGroup>
           <Row
             label="Speech-to-text source"
             hint={
@@ -214,33 +243,7 @@ export default function Settings() {
               ))}
             </select>
           </Row>
-          <Row
-            label="Double-tap to lock recording"
-            hint="Tap the hotkey twice quickly to keep recording hands-free; press once to stop & paste"
-          >
-            <Toggle
-              checked={settings.toggle_mode}
-              onChange={(v) => setSettings({ toggle_mode: v })}
-            />
-          </Row>
-          <Row
-            label="Auto-hide the pill"
-            hint="Pill disappears ~5s after it's done, and reappears the moment you press the hotkey again"
-          >
-            <Toggle
-              checked={settings.pill_auto_hide}
-              onChange={(v) => setSettings({ pill_auto_hide: v })}
-            />
-          </Row>
-          <Row
-            label="Append trailing space"
-            hint="Add a space after each pasted transcription so the next one doesn't run into it"
-          >
-            <Toggle
-              checked={settings.append_trailing_space}
-              onChange={(v) => setSettings({ append_trailing_space: v })}
-            />
-          </Row>
+
           <Row
             label="Grammar correction"
             hint="Fix grammar in dictated text before pasting (Raw mode). Skipped when an AI mode is active."
@@ -570,7 +573,7 @@ export default function Settings() {
               onChange={(e) => setSettings({ custom_vocabulary: e.target.value })}
               placeholder="e.g. Tauri, whisper.cpp, Kubernetes"
               rows={3}
-              className="w-full resize-y rounded-lg border border-sv-border bg-sv-bg px-3 py-2 text-sm"
+              className="w-full max-w-[520px] resize-y rounded-lg border border-sv-border bg-sv-bg px-3 py-2 text-sm"
             />
           </div>
         </Section>
@@ -601,7 +604,7 @@ export default function Settings() {
                         updateSnippet(sn.id, { replacement: e.target.value })
                       }
                       placeholder="type this instead"
-                      className="flex-1 rounded-lg border border-sv-border bg-sv-bg px-3 py-2 text-sm"
+                      className="flex-1 max-w-[320px] rounded-lg border border-sv-border bg-sv-bg px-3 py-2 text-sm"
                     />
                     <button
                       onClick={() => deleteSnippet(sn.id)}
@@ -808,6 +811,15 @@ export default function Settings() {
   );
 }
 
+function SubGroup({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="my-3 rounded-lg border border-sv-border bg-sv-bg/40 px-4 py-1">
+      <div className="pb-1 pt-2 text-[10px] font-medium uppercase tracking-wider text-sv-muted">{label}</div>
+      {children}
+    </div>
+  );
+}
+
 function Section({
   title,
   desc,
@@ -826,11 +838,21 @@ function Section({
       {/* items-start, not center: where the description wraps to two or three
           lines, centring floats the icon halfway down the block instead of
           letting it sit beside the title. */}
-      <div className="flex items-start gap-2.5 border-b border-sv-border px-5 py-3">
+      <div
+        className="flex items-start gap-2.5 border-b border-sv-border px-5 py-3"
+        style={accent ? {
+          // The radial glow centres on the icon and bleeds outward, the linear layer carries that colour to the right and dissolves.
+          backgroundImage: [
+            `radial-gradient(140px 70px at 34px 50%, color-mix(in srgb, ${accent} 22%, transparent), transparent 72%)`,
+            `linear-gradient(to right, color-mix(in srgb, ${accent} 9%, transparent) 0%, color-mix(in srgb, ${accent} 4%, transparent) 38%, transparent 68%)`,
+          ].join(", "),
+          boxShadow: "inset 0 1px 0 0 color-mix(in srgb, var(--color-sv-text) 6%, transparent)"
+        } : undefined}
+      >
         {icon && (
           <span
             className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg"
-            style={accent ? { backgroundColor: `color-mix(in srgb, ${accent} 15%, transparent)`, color: accent } : undefined}
+            style={accent ? { backgroundColor: `color-mix(in srgb, ${accent} 20%, transparent)`, color: accent } : undefined}
           >
             {icon}
           </span>
