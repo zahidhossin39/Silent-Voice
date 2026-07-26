@@ -491,7 +491,7 @@ function SttRow({
                   Select
                 </button>
               )}
-              <button onClick={() => remove(model.id)} className="rounded-lg border border-transparent px-2.5 py-1.5 text-xs font-medium text-sv-muted transition-colors duration-75 hover:border-sv-bad/30 hover:bg-sv-bad/10 hover:text-sv-bad">
+              <button onClick={() => remove(model.id)} className="rounded-lg border border-sv-border px-2.5 py-1.5 text-xs font-medium text-sv-muted transition-colors duration-75 hover:border-sv-bad/40 hover:bg-sv-bad/10 hover:text-sv-bad">
                 Remove
               </button>
             </div>
@@ -594,7 +594,7 @@ function LlmRow({
           ) : downloaded ? (
             <div className="flex items-center gap-2">
               <span className="text-[11px] font-medium text-sv-good">{inUse ? "In use" : "Installed"}</span>
-              <button onClick={() => remove(model.id)} className="rounded-lg border border-transparent px-2.5 py-1.5 text-xs font-medium text-sv-muted transition-colors duration-75 hover:border-sv-bad/30 hover:bg-sv-bad/10 hover:text-sv-bad">
+              <button onClick={() => remove(model.id)} className="rounded-lg border border-sv-border px-2.5 py-1.5 text-xs font-medium text-sv-muted transition-colors duration-75 hover:border-sv-bad/40 hover:bg-sv-bad/10 hover:text-sv-bad">
                 Remove
               </button>
             </div>
@@ -887,7 +887,7 @@ function HfDetail({ details, hardware, track }: { details: HfModelDetails; hardw
                             <span className="text-xs font-medium text-sv-good">Installed</span>
                           )
                         )}
-                        <button onClick={() => track === "stt" ? removeStt(mId) : removeLlm(mId)} className="rounded-lg border border-transparent px-2.5 py-1.5 text-xs font-medium text-sv-muted transition-colors duration-75 hover:border-sv-bad/30 hover:bg-sv-bad/10 hover:text-sv-bad">
+                        <button onClick={() => track === "stt" ? removeStt(mId) : removeLlm(mId)} className="rounded-lg border border-sv-border px-2.5 py-1.5 text-xs font-medium text-sv-muted transition-colors duration-75 hover:border-sv-bad/40 hover:bg-sv-bad/10 hover:text-sv-bad">
                           Remove
                         </button>
                       </div>
