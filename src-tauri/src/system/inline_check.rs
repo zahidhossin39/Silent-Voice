@@ -408,10 +408,13 @@ fn poll_once(
         }
         // Re-lint only when the text actually changed; rects refresh every poll.
         if text != *last_text {
-            // The old squiggles point at text that no longer exists — hide
-            // them NOW, before the re-lint (Harper + GECToR can take a while),
-            // instead of leaving a stale trail until it finishes.
-            if was_active {
+            // Clearing on every keystroke made the underlines blink: the
+            // overlay hid every strip, then redrew it once the re-lint
+            // finished. apply() already diffs the new list against what is
+            // drawn, so only an edit big enough to move the old positions
+            // visibly wrong — a paste, a select-all delete — needs the wipe.
+            let big_edit = text.chars().count().abs_diff(last_chars.len()) > 8;
+            if was_active && big_edit {
                 let _ = overlay_tx.send(Vec::new());
             }
             *issues = proofread::check(&text, vocabulary, disabled_rules, gector_sensitivity);
