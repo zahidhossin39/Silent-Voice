@@ -9,167 +9,201 @@ export default function Guide() {
       title="How to use Silent Voice"
       subtitle="Master local-first dictation in minutes."
     >
-      <div className="max-w-[1400px] w-full space-y-8 pb-12 animate-in fade-in duration-500">
+      <div className="max-w-[1180px] w-full pb-16 animate-in fade-in duration-500">
         
         {/* HERO SECTION / QUICK START */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2">
-            <Card title="Quick Start" className="h-full bg-gradient-to-br from-sv-surface to-sv-bg border-sv-border/80">
-               <div className="flex flex-col sm:flex-row items-center justify-between gap-8 py-2">
-                  <div className="flex-1 space-y-6">
-                    <Step n={1} title="Click any input">
-                      Focus on any text field (chat, code, email).
-                    </Step>
-                    <Step n={2} title={<>Hold <Kbd>{hotkey}</Kbd> and speak</>}>
-                      The pill turns orange. Speak naturally.
-                    </Step>
-                    <Step n={3} title="Release to paste">
-                      Your words are instantly typed at the cursor.
-                    </Step>
-                  </div>
-                  <div className="w-full sm:w-auto flex justify-center mt-6 sm:mt-0">
-                    <HeroVisual />
-                  </div>
-               </div>
-            </Card>
-          </div>
-
-          <div className="lg:col-span-1">
-            <Card title="The Floating Pill" className="h-full">
-              <p className="mb-6 text-sm text-sv-muted">
-                Your always-on-top companion. Drag to move, right-click for options.
-              </p>
-              <div className="flex flex-col gap-4">
-                <PillRow label="Idle — waiting" active={false}>
-                  <span className="h-[2px] w-4 rounded-full bg-sv-muted" />
-                </PillRow>
-                <PillRow label="Recording" active={true}>
-                  <MiniBars className="bg-sv-accent" />
-                </PillRow>
-                <PillRow label="Processing" active={true}>
-                  <MiniBars className="bg-sv-muted" />
-                </PillRow>
+        <section className="mb-20">
+          <div className="rounded-2xl border border-sv-border bg-sv-surface p-8 lg:p-12">
+            <h2 className="mb-10 text-2xl font-bold text-sv-text">Quick Start</h2>
+            <div className="flex flex-col lg:flex-row items-center justify-between gap-12">
+              <div className="flex-1 space-y-8">
+                <Step n={1} title="Click any input">
+                  Focus on any text field (chat, code, email).
+                </Step>
+                <Step n={2} title={<>Hold <Kbd>{hotkey}</Kbd> and speak</>}>
+                  The pill turns orange. Speak naturally.
+                </Step>
+                <Step n={3} title="Release to paste">
+                  Your words are instantly typed at the cursor.
+                </Step>
               </div>
-            </Card>
-          </div>
-        </div>
-
-        {/* FEATURES GRID */}
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-          
-          <Card title="Hands-free Dictation" className="flex flex-col">
-            <div className="flex-1">
-              <div className="mb-4 flex justify-center py-6 bg-sv-surface-2/20 rounded-xl border border-sv-border/30">
-                <KeyboardDoubleTapVisual hotkey={hotkey} />
+              <div className="w-full lg:w-auto flex justify-center">
+                <HeroVisual />
               </div>
-              <p className="text-sm text-sv-muted">
-                Tap <Kbd>{hotkey}</Kbd> <strong className="text-sv-text">twice quickly</strong> to lock recording on. Let go of the keyboard and speak freely. Press once more to stop and paste.
-              </p>
             </div>
-          </Card>
+          </div>
+        </section>
 
-          <Card title="AI Rewrite Modes" className="flex flex-col">
-             <div className="flex-1">
-               <div className="mb-4 flex justify-center py-6 bg-sv-surface-2/20 rounded-xl border border-sv-border/30">
-                 <AIModeVisual />
-               </div>
-               <p className="text-sm text-sv-muted">
-                 In the <strong className="text-sv-text">Modes</strong> tab, have AI instantly format your speech. Turn raw thoughts into formal emails, bullet points, or clean code comments.
-               </p>
-             </div>
-          </Card>
-
-          <Card title="Choosing a Model" className="flex flex-col">
-             <div className="flex-1">
-               <div className="mb-4 flex justify-center py-6 bg-sv-surface-2/20 rounded-xl border border-sv-border/30">
-                 <ModelScaleVisual />
-               </div>
-               <p className="text-sm text-sv-muted mb-4">
-                 Without a dedicated GPU, <strong className="text-sv-text">smaller is faster</strong>.
-               </p>
-               <ul className="space-y-3 text-sm">
-                 <DotRow color="bg-sv-good" text="Recommended for your PC" />
-                 <DotRow color="bg-sv-warn" text="Works, but might lag" />
-                 <DotRow color="bg-sv-bad" text="Too heavy (needs better GPU)" />
-               </ul>
-             </div>
-          </Card>
-        </div>
-
-        {/* INLINE PROOFREADING */}
-        <Card title="Inline Proofreading" className="bg-gradient-to-br from-sv-surface to-sv-bg border-sv-border/80">
-          <div className="flex flex-col lg:flex-row items-center justify-between gap-8 py-2">
-            <div className="flex-1 space-y-6">
-              <Step n={1} title="Spelling & grammar checks">
-                Silent Voice underlines spelling errors in <span className="border-b-2 border-red-500 pb-0.5 font-medium text-sv-text">red</span> and grammar issues in <span className="border-b-2 border-blue-500 pb-0.5 font-medium text-sv-text">blue</span> as you type in almost any app's text field (English only).
-              </Step>
-              <Step n={2} title="Hover for suggestions">
-                Hover over an underline for about a quarter second to see what's wrong along with up to 3 smart suggestions.
-              </Step>
-              <Step n={3} title="Click to replace instantly">
-                Click a suggestion to replace the word instantly. Your clipboard and the app's undo history remain completely untouched.
-              </Step>
-              <div className="pt-4 border-t border-sv-border/40 space-y-2.5">
-                <p className="text-xs text-sv-muted flex items-center gap-2">
-                  <span className="text-sm">⚙️</span>
-                  <span>Can be turned off in <strong className="text-sv-text font-medium">Settings → Dictation → 'Inline proofreading'</strong>.</span>
+        {/* CORE FEATURES */}
+        <div className="flex flex-col gap-16">
+          <section>
+            <SectionTitle title="Hands-free dictation" accent="var(--color-sv-sec-dictation)" icon={<MicrophoneIcon />} />
+            <div className="flex flex-col lg:flex-row lg:items-start gap-8">
+              <div className="flex-1">
+                <p className="text-base text-sv-muted max-w-[65ch] mb-8 leading-relaxed">
+                  Tap <Kbd>{hotkey}</Kbd> <strong className="text-sv-text font-medium">twice quickly</strong> to lock recording on. Let go of the keyboard and speak freely. Press once more to stop and paste.
                 </p>
-                <p className="text-xs text-sv-muted flex items-center gap-2">
-                  <span className="text-sm">📚</span>
-                  <span>Words added to your <strong className="text-sv-text font-medium">Custom vocabulary</strong> are never flagged.</span>
+                <p className="text-sm text-sv-muted max-w-[65ch] leading-relaxed">
+                  Recording can also be started and stopped from the <strong className="text-sv-text font-medium">tray icon</strong> menu, without using the keyboard at all.
                 </p>
               </div>
+              <div className="w-full lg:max-w-[420px]">
+                <div className="p-4 rounded-2xl bg-sv-surface-2/30 w-fit flex items-center justify-center">
+                  <KeyboardDoubleTapVisual hotkey={hotkey} />
+                </div>
+              </div>
             </div>
-            <div className="w-full lg:w-auto flex justify-center mt-6 lg:mt-0">
-              <ProofreadingVisual />
+          </section>
+
+          <hr className="border-sv-border/50" />
+
+          <section>
+            <SectionTitle title="AI rewrite modes" accent="var(--color-sv-sec-replace)" icon={<BrainIcon />} />
+            <div className="flex flex-col lg:flex-row lg:items-start gap-8">
+              <div className="flex-1">
+                <p className="text-base text-sv-muted max-w-[65ch] mb-8 leading-relaxed">
+                  In the <strong className="text-sv-text font-medium">Modes</strong> tab, have AI instantly format your speech. Turn raw thoughts into formal emails, bullet points, or clean code comments.
+                </p>
+                <p className="text-sm text-sv-muted max-w-[65ch] leading-relaxed">
+                  When an AI rewrite fails for any reason, the <strong className="text-sv-text font-medium">raw transcription is pasted instead</strong> — you never lose your words.
+                </p>
+              </div>
+              <div className="w-full lg:max-w-[420px]">
+                <div className="p-4 rounded-2xl bg-sv-surface-2/30 w-fit flex items-center justify-center">
+                  <AIModeVisual />
+                </div>
+              </div>
             </div>
-          </div>
-        </Card>
+          </section>
 
-        {/* POWER FEATURES */}
-        <Card title="Power Features (Settings)">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pt-2">
-             <FeatureItem title="Custom vocabulary" icon={<BookIcon />}>
-               Teach the model names and jargon ("n8n", "Kubernetes") so it never misspells them.
-             </FeatureItem>
-             <FeatureItem title="Text replacements" icon={<ReplaceIcon />}>
-               Say a short trigger to paste full text. E.g. "my email" → you@example.com.
-             </FeatureItem>
-             <FeatureItem title="Per-app profiles" icon={<AppIcon />}>
-               Auto-switch AI modes based on the active window. Formal in Outlook, Raw in VS Code.
-             </FeatureItem>
-             <FeatureItem title="Smart Numbers" icon={<NumberIcon />}>
-               Spoken numbers turn into digits: "twenty five" → 25, "twenty twenty six" → 2026.
-             </FeatureItem>
-             <FeatureItem title="Corrections that teach" icon={<BrainIcon />}>
-               Fix mistakes in the History tab. New words are added to your vocabulary automatically.
-             </FeatureItem>
-             <FeatureItem title="Input sensitivity" icon={<SliderIcon />}>
-               Adjust the slider to filter out background noise (wind, keyboard clicks, fans).
-             </FeatureItem>
-             <FeatureItem title="Read aloud" icon={<SpeakerIcon />}>
-               Select text in any app and press the read-aloud hotkey to hear it spoken. Voices live in Model Store → Text-to-Speech.
-             </FeatureItem>
-          </div>
-        </Card>
+          <hr className="border-sv-border/50" />
 
-        {/* TROUBLESHOOTING */}
-        <Card title="Troubleshooting">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <TroubleItem q="Nothing gets pasted?">
-              Check that your model finished downloading and the correct microphone is selected in Settings.
-            </TroubleItem>
-            <TroubleItem q="Dashboard closed?">
-              The app keeps running in the tray. Click the tray icon (near the clock) to bring it back.
-            </TroubleItem>
-            <TroubleItem q="Cloud STT errors?">
-              Use "Test connection" in API Keys. If cloud fails mid-dictation, it falls back to your local model.
-            </TroubleItem>
-            <TroubleItem q="Something else broke?">
-              Errors are logged to <code className="rounded bg-sv-surface-2 px-1.5 py-0.5 text-xs text-sv-accent">%APPDATA%\SilentVoice\logs</code>.
-            </TroubleItem>
-          </div>
-        </Card>
+          <section>
+            <SectionTitle title="Inline proofreading" accent="var(--color-sv-sec-vocab)" icon={<BookIcon />} />
+            <div className="flex flex-col lg:flex-row lg:items-start gap-8">
+              <div className="flex-1">
+                <p className="text-base text-sv-muted max-w-[65ch] mb-8 leading-relaxed">
+                  Silent Voice underlines spelling errors in <span className="border-b-2 border-red-500 pb-0.5 font-medium text-sv-text">red</span> and grammar issues in <span className="border-b-2 border-blue-500 pb-0.5 font-medium text-sv-text">blue</span> as you type in almost any app's text field (English only).
+                </p>
+                <div className="max-w-[65ch] space-y-4 text-sm text-sv-muted leading-relaxed">
+                  <p>Hover over an underline for about a quarter second to see what's wrong along with up to 3 smart suggestions. Click a suggestion to replace the word instantly. Your clipboard and the app's undo history remain completely untouched.</p>
+                  <div className="pt-2 space-y-2.5">
+                    <p className="text-xs text-sv-muted flex items-center gap-2">
+                      <span className="shrink-0 text-sv-muted"><CogIcon /></span>
+                      <span>Can be turned off in <strong className="text-sv-text font-medium">Settings → Dictation → 'Inline proofreading'</strong>.</span>
+                    </p>
+                    <p className="text-xs text-sv-muted flex items-center gap-2">
+                      <span className="shrink-0 text-sv-muted"><BookIcon /></span>
+                      <span>Words added to your <strong className="text-sv-text font-medium">Custom vocabulary</strong> are never flagged.</span>
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <div className="w-full lg:max-w-[420px]">
+                <div className="w-fit flex items-center justify-center">
+                  <ProofreadingVisual />
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <hr className="border-sv-border/50" />
+
+          <section>
+            <SectionTitle title="Choosing a model" accent="var(--color-sv-sec-perf)" icon={<GaugeIcon />} />
+            <div className="flex flex-col lg:flex-row lg:items-start gap-8">
+              <div className="flex-1">
+                <p className="text-base text-sv-muted max-w-[65ch] mb-8 leading-relaxed">
+                  Without a dedicated GPU, <strong className="text-sv-text font-medium">smaller is faster</strong>. Models, voices, history and logs all live under <code className="rounded bg-sv-surface-2 px-1.5 py-0.5 text-xs text-sv-accent">%APPDATA%\SilentVoice\</code> — nothing is uploaded anywhere by default.
+                </p>
+                <ul className="space-y-3 text-sm max-w-[65ch]">
+                  <DotRow color="bg-sv-good" text="Recommended for your PC" />
+                  <DotRow color="bg-sv-warn" text="Works, but might lag" />
+                  <DotRow color="bg-sv-bad" text="Too heavy (needs better GPU)" />
+                </ul>
+              </div>
+              <div className="w-full lg:max-w-[420px]">
+                <div className="p-4 rounded-2xl bg-sv-surface-2/30 w-fit flex items-center justify-center">
+                  <ModelScaleVisual />
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <hr className="border-sv-border/50" />
+
+          <section>
+            <SectionTitle title="The floating pill" accent="var(--color-sv-sec-system)" icon={<AppIcon />} />
+            <div className="flex flex-col lg:flex-row lg:items-start gap-8">
+              <div className="flex-1">
+                <p className="text-base text-sv-muted max-w-[65ch] leading-relaxed">
+                  Your always-on-top companion. Drag to move, right-click for options.
+                </p>
+              </div>
+              <div className="w-full lg:max-w-[420px]">
+                <div className="flex flex-col gap-4 w-full max-w-[320px]">
+                  <PillRow label="Idle — waiting" active={false}>
+                    <span className="h-[2px] w-4 rounded-full bg-sv-muted" />
+                  </PillRow>
+                  <PillRow label="Recording" active={true}>
+                    <MiniBars className="bg-sv-accent" />
+                  </PillRow>
+                  <PillRow label="Processing" active={true}>
+                    <MiniBars className="bg-sv-muted" />
+                  </PillRow>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        {/* POWER FEATURES & TROUBLESHOOTING */}
+        <div className="mt-24 space-y-20 pt-16 border-t border-sv-border/50">
+          <section>
+            <h3 className="text-lg font-semibold text-sv-text mb-8">Power Features (Settings)</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <FeatureItem title="Custom vocabulary" icon={<BookIcon />}>
+                Teach the model names and jargon ("n8n", "Kubernetes") so it never misspells them.
+              </FeatureItem>
+              <FeatureItem title="Text replacements" icon={<ReplaceIcon />}>
+                Say a short trigger to paste full text. E.g. "my email" → you@example.com.
+              </FeatureItem>
+              <FeatureItem title="Per-app profiles" icon={<AppIcon />}>
+                Auto-switch AI modes based on the active window. Formal in Outlook, Raw in VS Code.
+              </FeatureItem>
+              <FeatureItem title="Smart Numbers" icon={<NumberIcon />}>
+                Spoken numbers turn into digits: "twenty five" → 25, "twenty twenty six" → 2026.
+              </FeatureItem>
+              <FeatureItem title="Corrections that teach" icon={<BrainIcon />}>
+                Fix mistakes in the History tab. New words are added to your vocabulary automatically.
+              </FeatureItem>
+              <FeatureItem title="Input sensitivity" icon={<SliderIcon />}>
+                Adjust the slider to filter out background noise (wind, keyboard clicks, fans).
+              </FeatureItem>
+              <FeatureItem title="Read aloud" icon={<SpeakerIcon />}>
+                Select text in any app and press the read-aloud hotkey to hear it spoken. Voices live in Model Store → Text-to-Speech.
+              </FeatureItem>
+            </div>
+          </section>
+
+          <section>
+            <h3 className="text-lg font-semibold text-sv-text mb-8">Troubleshooting</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <TroubleItem q="Nothing gets pasted?">
+                Check that your model finished downloading and the correct microphone is selected in Settings.
+              </TroubleItem>
+              <TroubleItem q="Dashboard closed?">
+                The app keeps running in the tray. Click the tray icon (near the clock) to bring it back.
+              </TroubleItem>
+              <TroubleItem q="Cloud STT errors?">
+                Use "Test connection" in API Keys. If cloud fails mid-dictation, it falls back to your local model.
+              </TroubleItem>
+              <TroubleItem q="Something else broke?">
+                Errors are logged to <code className="rounded bg-sv-surface-2 px-1.5 py-0.5 text-xs text-sv-accent">%APPDATA%\SilentVoice\logs</code>.
+              </TroubleItem>
+            </div>
+          </section>
+        </div>
         
       </div>
     </Page>
@@ -178,19 +212,24 @@ export default function Guide() {
 
 /* ── UI Components ─────────────────────────────────────────── */
 
-function Card({ title, className = "", children }: { title: string; className?: string; children: React.ReactNode }) {
+function SectionTitle({ title, accent, icon }: { title: string; accent: string; icon: React.ReactNode }) {
   return (
-    <section className={`rounded-2xl border border-sv-border bg-sv-surface p-6 shadow-sm hover:border-sv-border/80 transition-colors ${className}`}>
-      <h2 className="mb-5 text-lg font-semibold text-sv-text">{title}</h2>
-      {children}
-    </section>
+    <div className="flex items-center gap-3 mb-6">
+      <span
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
+        style={{ backgroundColor: `color-mix(in srgb, ${accent} 20%, transparent)`, color: accent }}
+      >
+        {icon}
+      </span>
+      <h3 className="text-xl font-semibold text-sv-text">{title}</h3>
+    </div>
   );
 }
 
 function Step({ n, title, children }: { n: number; title: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="flex gap-4 items-start">
-      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-sv-accent/10 text-sm font-bold text-sv-accent ring-1 ring-sv-accent/30 shadow-[0_0_12px_rgba(249,115,22,0.15)]">
+      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-sv-accent/10 text-sm font-bold text-sv-accent ring-1 ring-sv-accent/30">
         {n}
       </div>
       <div>
@@ -203,7 +242,7 @@ function Step({ n, title, children }: { n: number; title: React.ReactNode; child
 
 function Kbd({ children }: { children: React.ReactNode }) {
   return (
-    <kbd className="rounded-md border border-sv-border border-b-[3px] bg-sv-surface-2 px-2 py-0.5 text-xs font-mono font-bold text-sv-text shadow-sm mx-1">
+    <kbd className="rounded-md border border-sv-border border-b-[3px] bg-sv-surface-2 px-2 py-0.5 text-xs font-mono font-bold text-sv-text mx-1">
       {children}
     </kbd>
   );
@@ -213,7 +252,7 @@ function PillRow({ label, active, children }: { label: string; active: boolean; 
   return (
     <div className={`flex items-center justify-between p-3.5 rounded-xl border transition-colors ${active ? 'border-sv-accent/20 bg-sv-accent/5' : 'border-sv-border/50 bg-sv-surface-2/30'}`}>
       <span className="text-sm font-medium text-sv-text">{label}</span>
-      <div className="flex h-7 w-20 items-center justify-center gap-1 rounded-full border border-sv-border bg-[#0e1116] shadow-inner">
+      <div className="flex h-7 w-20 items-center justify-center gap-1 rounded-full bg-[#0e1116] shadow-inner">
         {children}
       </div>
     </div>
@@ -223,7 +262,7 @@ function PillRow({ label, active, children }: { label: string; active: boolean; 
 function DotRow({ color, text }: { color: string; text: string }) {
   return (
     <li className="flex items-center gap-3 p-2.5 rounded-lg bg-sv-surface-2/30 border border-sv-border/30">
-      <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${color} shadow-[0_0_8px_rgba(0,0,0,0.5)] shadow-${color}/50`} />
+      <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${color}`} />
       <span className="text-sm text-sv-text">{text}</span>
     </li>
   );
@@ -247,11 +286,11 @@ function MiniBars({ className }: { className: string }) {
 function FeatureItem({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="flex gap-4 p-4 rounded-xl border border-transparent hover:border-sv-border/50 hover:bg-sv-surface-2/30 transition-all cursor-default">
-      <div className="mt-1 shrink-0 text-sv-accent/90 flex h-9 w-9 items-center justify-center rounded-lg bg-sv-accent/10 ring-1 ring-sv-accent/20 shadow-sm">
+      <div className="mt-1 shrink-0 text-sv-accent/90 flex h-9 w-9 items-center justify-center rounded-lg bg-sv-accent/10 ring-1 ring-sv-accent/20">
         {icon}
       </div>
       <div>
-        <h3 className="text-sm font-semibold text-sv-text mb-1.5">{title}</h3>
+        <h4 className="text-sm font-semibold text-sv-text mb-1.5">{title}</h4>
         <p className="text-xs text-sv-muted leading-relaxed">{children}</p>
       </div>
     </div>
@@ -260,8 +299,7 @@ function FeatureItem({ title, icon, children }: { title: string; icon: React.Rea
 
 function TroubleItem({ q, children }: { q: string; children: React.ReactNode }) {
   return (
-    <div className="p-5 rounded-xl border border-sv-border/50 bg-sv-surface-2/20 relative overflow-hidden">
-      <div className="absolute top-0 left-0 w-1 h-full bg-sv-warn/60"></div>
+    <div className="p-5 rounded-xl border border-sv-border/50 bg-sv-surface-2/20">
       <h4 className="text-sm font-semibold text-sv-text mb-2 flex items-center gap-2">
         <span className="text-sv-warn font-bold">?</span> {q}
       </h4>
@@ -298,7 +336,7 @@ function HeroVisual() {
 
 function KeyboardDoubleTapVisual({ hotkey }: { hotkey: string }) {
   return (
-    <div className="relative flex items-center justify-center h-24 w-full">
+    <div className="relative flex items-center justify-center h-24">
        <svg width="120" height="80" viewBox="0 0 120 80" fill="none" xmlns="http://www.w3.org/2000/svg">
          {/* Key */}
          <rect x="30" y="20" width="60" height="40" rx="6" fill="#1b2030" stroke="#262c3d" strokeWidth="3"/>
@@ -361,7 +399,7 @@ function ModelScaleVisual() {
 
 function ProofreadingVisual() {
   return (
-    <div className="relative w-full max-w-[320px] rounded-2xl border border-sv-border bg-sv-surface-2/10 p-5 shadow-sm">
+    <div className="relative w-full max-w-[320px] rounded-2xl border border-sv-border p-4">
       <div className="flex items-center justify-between border-b border-sv-border/30 pb-3 mb-4">
         <div className="flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rounded-full bg-sv-accent animate-pulse" />
@@ -376,7 +414,7 @@ function ProofreadingVisual() {
         </p>
 
         {/* Hover Suggestion Box Mockup */}
-        <div className="rounded-xl border border-sv-border bg-sv-surface p-3 shadow-lg max-w-[260px] mx-auto animate-in fade-in slide-in-from-top-2 duration-300">
+        <div className="rounded-xl border border-sv-border bg-sv-surface p-3 max-w-[260px] mx-auto animate-in fade-in slide-in-from-top-2 duration-300">
           <div className="flex items-center justify-between mb-2">
             <span className="text-[9px] font-bold text-red-500 uppercase tracking-wider">Spelling Issue</span>
             <span className="text-[9px] text-sv-muted">Hovered (0.25s)</span>
@@ -420,4 +458,13 @@ function SliderIcon() {
 }
 function SpeakerIcon() {
   return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg>;
+}
+function MicrophoneIcon() {
+  return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8" /></svg>;
+}
+function GaugeIcon() {
+  return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></svg>;
+}
+function CogIcon() {
+  return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>;
 }

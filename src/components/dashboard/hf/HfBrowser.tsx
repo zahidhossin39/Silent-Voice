@@ -237,10 +237,9 @@ export default function HfBrowser({ track, categoryFilter, languageFilter }: { t
   const sortStaffPicks = (a: any, b: any) => {
     const getScore = (m: any) => {
       let score = 0;
-      // pinned outranks in-use because the control promises "pin to top"
+      if (isModelInUse(m.id, false)) score += 10000;
       if (pinnedSet.has(m.id)) score += 1000;
-      if (isModelInUse(m.id, false)) score += 100;
-      if (isModelDownloaded(m.id, false)) score += 10;
+      if (isModelDownloaded(m.id, false)) score += 100;
       return score;
     };
     return getScore(b) - getScore(a);
@@ -249,10 +248,9 @@ export default function HfBrowser({ track, categoryFilter, languageFilter }: { t
   const sortHfResults = (a: HfSearchItem, b: HfSearchItem) => {
     const getScore = (m: HfSearchItem) => {
       let score = 0;
-      // pinned outranks in-use because the control promises "pin to top"
+      if (isModelInUse(m.id, true)) score += 10000;
       if (pinnedSet.has(m.id)) score += 1000;
-      if (isModelInUse(m.id, true)) score += 100;
-      if (isModelDownloaded(m.id, true)) score += 10;
+      if (isModelDownloaded(m.id, true)) score += 100;
       return score;
     };
     return getScore(b) - getScore(a);
@@ -439,7 +437,7 @@ function SttRow({
   };
 
   return (
-    <div className="group relative rounded-xl border border-sv-border bg-sv-surface transition-colors duration-75 hover:bg-sv-surface-2/40 flex flex-wrap items-center gap-x-5 gap-y-2 px-4 py-3">
+    <div className={`group relative rounded-xl border ${isActive ? "border-sv-accent/40" : "border-sv-border"} bg-sv-surface transition-colors duration-75 hover:bg-sv-surface-2/40 flex flex-wrap items-center gap-x-5 gap-y-2 px-4 py-3`}>
       <div className="flex min-w-[230px] max-w-[420px] flex-1 items-center gap-3">
         <ProviderLogo provider={model.provider} size={32} />
         <div className="min-w-0 flex-1 flex flex-col gap-1.5">
@@ -493,7 +491,7 @@ function SttRow({
                   Select
                 </button>
               )}
-              <button onClick={() => remove(model.id)} className="rounded-lg border border-sv-border bg-sv-surface px-3 py-1.5 text-xs text-sv-bad transition-colors duration-75 hover:bg-sv-surface-2">
+              <button onClick={() => remove(model.id)} className="rounded-lg border border-transparent px-2.5 py-1.5 text-xs font-medium text-sv-muted transition-colors duration-75 hover:border-sv-bad/30 hover:bg-sv-bad/10 hover:text-sv-bad">
                 Remove
               </button>
             </div>
@@ -549,7 +547,7 @@ function LlmRow({
   };
 
   return (
-    <div className="group relative rounded-xl border border-sv-border bg-sv-surface transition-colors duration-75 hover:bg-sv-surface-2/40 flex flex-wrap items-center gap-x-5 gap-y-2 px-4 py-3">
+    <div className={`group relative rounded-xl border ${inUse ? "border-sv-accent/40" : "border-sv-border"} bg-sv-surface transition-colors duration-75 hover:bg-sv-surface-2/40 flex flex-wrap items-center gap-x-5 gap-y-2 px-4 py-3`}>
       <div className="flex min-w-[230px] max-w-[420px] flex-1 items-center gap-3">
         <ProviderLogo provider={model.provider} size={32} />
         <div className="min-w-0 flex-1 flex flex-col gap-1.5">
@@ -596,7 +594,7 @@ function LlmRow({
           ) : downloaded ? (
             <div className="flex items-center gap-2">
               <span className="text-[11px] font-medium text-sv-good">{inUse ? "In use" : "Installed"}</span>
-              <button onClick={() => remove(model.id)} className="rounded-lg border border-sv-border bg-sv-surface px-3 py-1.5 text-xs text-sv-bad transition-colors duration-75 hover:bg-sv-surface-2">
+              <button onClick={() => remove(model.id)} className="rounded-lg border border-transparent px-2.5 py-1.5 text-xs font-medium text-sv-muted transition-colors duration-75 hover:border-sv-bad/30 hover:bg-sv-bad/10 hover:text-sv-bad">
                 Remove
               </button>
             </div>
@@ -889,7 +887,7 @@ function HfDetail({ details, hardware, track }: { details: HfModelDetails; hardw
                             <span className="text-xs font-medium text-sv-good">Installed</span>
                           )
                         )}
-                        <button onClick={() => track === "stt" ? removeStt(mId) : removeLlm(mId)} className="rounded-lg border border-sv-border bg-sv-surface px-3 py-1.5 text-xs text-sv-bad hover:bg-sv-surface-2">
+                        <button onClick={() => track === "stt" ? removeStt(mId) : removeLlm(mId)} className="rounded-lg border border-transparent px-2.5 py-1.5 text-xs font-medium text-sv-muted transition-colors duration-75 hover:border-sv-bad/30 hover:bg-sv-bad/10 hover:text-sv-bad">
                           Remove
                         </button>
                       </div>
