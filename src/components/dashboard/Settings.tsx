@@ -851,21 +851,15 @@ function Section({
 }) {
   return (
     <div className="mb-5 break-inside-avoid overflow-hidden rounded-xl border border-sv-border bg-sv-surface">
-      <div
-        className="flex items-center gap-3 border-b border-sv-border px-5 py-3.5"
-        style={accent ? { borderLeft: `3px solid ${accent}`, background: `linear-gradient(to right, color-mix(in srgb, ${accent} 12%, transparent), transparent 60%)` } : undefined}
-      >
+      <div className="flex items-center gap-2.5 border-b border-sv-border px-5 py-3">
         {icon && (
-          <span
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
-            style={accent ? { background: `color-mix(in srgb, ${accent} 16%, transparent)`, color: accent } : undefined}
-          >
+          <span className="shrink-0" style={accent ? { color: accent } : undefined}>
             {icon}
           </span>
         )}
         <div className="min-w-0">
-          <h2 className="text-sm font-semibold">{title}</h2>
-          {desc && <p className="mt-0.5 text-xs text-sv-muted">{desc}</p>}
+          <h2 className="text-[13px] font-semibold">{title}</h2>
+          {desc && <p className="mt-0.5 text-[11px] leading-relaxed text-sv-muted">{desc}</p>}
         </div>
       </div>
       <div className="px-5">{children}</div>
@@ -883,10 +877,10 @@ function Row({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex items-center justify-between gap-4 border-b border-sv-border/60 py-3.5 last:border-b-0">
+    <div className="flex items-center justify-between gap-4 border-b border-sv-border/60 py-3 last:border-b-0">
       <div className="min-w-0">
-        <div className="text-sm">{label}</div>
-        {hint && <div className="mt-0.5 text-xs text-sv-muted">{hint}</div>}
+        <div className="text-[13px]">{label}</div>
+        {hint && <div className="mt-0.5 text-[11px] leading-relaxed text-sv-muted max-w-[46ch]">{hint}</div>}
       </div>
       <div className="shrink-0">{children}</div>
     </div>
@@ -966,7 +960,7 @@ function Toggle({
 
 function MicrophoneIcon() {
   return (
-    <svg viewBox="0 0 24 24" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+    <svg viewBox="0 0 24 24" width={16} height={16} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
       <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
       <path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8" />
     </svg>
@@ -975,7 +969,7 @@ function MicrophoneIcon() {
 
 function SpeakerIcon() {
   return (
-    <svg viewBox="0 0 24 24" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+    <svg viewBox="0 0 24 24" width={16} height={16} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
       <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
       <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
       <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
@@ -985,7 +979,7 @@ function SpeakerIcon() {
 
 function BookIcon() {
   return (
-    <svg viewBox="0 0 24 24" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+    <svg viewBox="0 0 24 24" width={16} height={16} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
       <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" />
     </svg>
   );
@@ -993,7 +987,7 @@ function BookIcon() {
 
 function ArrowsSwapIcon() {
   return (
-    <svg viewBox="0 0 24 24" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+    <svg viewBox="0 0 24 24" width={16} height={16} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
       <polyline points="7 10 3 6 7 2" />
       <path d="M21 6H3" />
       <polyline points="17 14 21 18 17 22" />
@@ -1004,7 +998,7 @@ function ArrowsSwapIcon() {
 
 function LayersIcon() {
   return (
-    <svg viewBox="0 0 24 24" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+    <svg viewBox="0 0 24 24" width={16} height={16} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
       <polygon points="12 2 2 7 12 12 22 7 12 2" />
       <polyline points="2 12 12 17 22 12" />
       <polyline points="2 17 12 22 22 17" />
@@ -1014,7 +1008,7 @@ function LayersIcon() {
 
 function GaugeIcon() {
   return (
-    <svg viewBox="0 0 24 24" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+    <svg viewBox="0 0 24 24" width={16} height={16} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
       <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
     </svg>
   );
@@ -1022,7 +1016,7 @@ function GaugeIcon() {
 
 function CogIcon() {
   return (
-    <svg viewBox="0 0 24 24" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+    <svg viewBox="0 0 24 24" width={16} height={16} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
       <circle cx="12" cy="12" r="3" />
       <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
     </svg>

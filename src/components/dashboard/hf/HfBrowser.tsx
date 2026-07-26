@@ -107,19 +107,17 @@ function MetricBar({
 }) {
   const pct = Math.round(Math.max(0, Math.min(1, value)) * 100);
   return (
-    <div>
-      <div className="mb-1.5 flex items-baseline justify-between">
-        <span className="text-xs font-medium text-sv-text">{label}</span>
-        {caption && (
-          <span className="text-[11px] tabular-nums text-sv-muted">{caption}</span>
-        )}
-      </div>
-      <div className="h-1 w-full overflow-hidden rounded-full bg-sv-text/10">
+    <div className="flex items-center gap-3">
+      <div className="w-16 shrink-0 text-right text-[11px] lowercase text-sv-muted">{label}</div>
+      <div className="h-1 flex-1 max-w-[220px] rounded-full bg-sv-surface-2">
         <div
-          className="h-full rounded-full bg-sv-text/80 transition-all"
-          style={{ width: `${pct}%` }}
+          className="h-full rounded-full transition-all"
+          style={{ width: `${pct}%`, backgroundColor: "color-mix(in srgb, var(--color-sv-text) 38%, transparent)" }}
         />
       </div>
+      {caption && (
+        <div className="text-[11px] tabular-nums whitespace-nowrap text-sv-muted">{caption}</div>
+      )}
     </div>
   );
 }
@@ -305,8 +303,8 @@ export default function HfBrowser({ track, categoryFilter, languageFilter }: { t
 
       <div className="flex-1 overflow-y-auto pr-2 flex flex-col gap-2">
         {!debouncedQuery && (
-          <div className="mb-4 flex flex-col gap-2">
-            <h3 className="px-1 pb-1 text-xs font-medium uppercase tracking-wide text-sv-muted">Staff Picks</h3>
+          <div className="flex flex-col gap-2">
+            <h3 className="mb-2 text-[10px] font-medium uppercase tracking-wider text-sv-muted">Staff Picks</h3>
             {staffPicksSorted.map((m: any) => {
               if (track === "stt") {
                 return (
@@ -334,15 +332,15 @@ export default function HfBrowser({ track, categoryFilter, languageFilter }: { t
         )}
 
         <div className="flex flex-col gap-2">
-          {!debouncedQuery && <h3 className="px-1 pb-1 pt-2 text-xs font-medium uppercase tracking-wide text-sv-muted">Trending on Hugging Face</h3>}
+          {!debouncedQuery && <h3 className="mt-5 mb-2 text-[10px] font-medium uppercase tracking-wider text-sv-muted">Trending on Hugging Face</h3>}
           
           {loadingSearch ? (
             [1, 2, 3, 4].map((i) => (
-              <div key={i} className="flex h-[72px] animate-pulse items-center gap-4 rounded-xl border border-sv-border bg-sv-surface p-4">
-                <div className="h-10 w-10 rounded-full bg-sv-border"></div>
-                <div className="flex-1 space-y-2">
-                  <div className="h-4 w-1/4 rounded bg-sv-border"></div>
-                  <div className="h-3 w-1/3 rounded bg-sv-border"></div>
+              <div key={i} className="flex animate-pulse items-start gap-3 rounded-xl border border-sv-border bg-sv-surface px-4 py-3">
+                <div className="h-9 w-9 shrink-0 rounded-full bg-sv-border"></div>
+                <div className="flex-1 flex flex-col gap-2 pt-1">
+                  <div className="h-3.5 w-1/4 rounded bg-sv-border"></div>
+                  <div className="h-2.5 w-1/3 rounded bg-sv-border"></div>
                 </div>
               </div>
             ))
@@ -429,67 +427,63 @@ function SttRow({
       : 0;
 
   return (
-    <div className="relative rounded-xl border border-sv-border bg-sv-surface p-4 transition hover:border-sv-accent/40">
-      <button onClick={onTogglePin} title={pinned ? "Unpin" : "Pin to top"} className={`absolute top-4 right-4 ${pinned ? "text-sv-accent" : "text-sv-muted hover:text-sv-accent"}`}>
+    <div className="group relative rounded-xl border border-sv-border bg-sv-surface px-4 py-3 transition-colors duration-75 hover:bg-sv-surface-2/40">
+      <button onClick={onTogglePin} title={pinned ? "Unpin" : "Pin to top"} className={`absolute right-3 top-3 transition-colors duration-75 ${pinned ? "text-sv-accent" : "text-sv-muted/40 hover:text-sv-accent"}`}>
         <svg viewBox="0 0 24 24" width="16" height="16" fill={pinned ? "currentColor" : "none"} stroke={pinned ? "none" : "currentColor"} strokeWidth={pinned ? undefined : "1.75"} strokeLinecap="round" strokeLinejoin="round"><path d="M12 2.5l2.9 6.2 6.6.6-5 4.6 1.4 6.6L12 17l-5.9 3.5L7.5 14l-5-4.6 6.6-.6L12 2.5z" /></svg>
       </button>
-      <div className="flex items-start gap-4 pr-6">
-        <ProviderLogo provider={model.provider} size={40} />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-4">
-            <div className="min-w-0 flex-1 flex items-center gap-2 flex-wrap">
-              <span className="truncate text-sm font-semibold">{model.label}</span>
-              <span className="shrink-0 rounded-full bg-sv-accent/10 px-1.5 py-0.5 text-[9px] font-medium text-sv-accent">Staff Pick</span>
-              {isActive && <span className="shrink-0 rounded-full bg-sv-good/10 px-1.5 py-0.5 text-[9px] font-medium text-sv-good">In use</span>}
-              {pinned && <span className="shrink-0 text-[10px] text-sv-accent">★ Pinned</span>}
+      <div className="flex items-start gap-3 pr-8">
+        <ProviderLogo provider={model.provider} size={36} />
+        <div className="min-w-0 flex-1 flex flex-col gap-1.5">
+          <div className="flex items-center">
+            <div className="flex min-w-0 items-center gap-2 pr-4">
+              <span className="truncate text-[13px] font-semibold text-sv-text">{model.label}</span>
+              <span className="shrink-0 rounded bg-sv-surface-2 px-1.5 py-0.5 text-[10px] text-sv-muted">Staff Pick</span>
+              {isActive && <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] text-sv-good">In use</span>}
+              {pinned && <span className="shrink-0 rounded bg-sv-surface-2 px-1.5 py-0.5 text-[10px] text-sv-muted">Pinned</span>}
             </div>
             
-            <div className="flex items-center gap-1.5 text-xs shrink-0">
-              <span className={`shrink-0 h-2 w-2 rounded-full ${(FIT_DOT as any)[level]}`} />
-              <span className="text-sv-text">{level === "good" ? "Fits well" : level === "warn" ? "May be slow" : "Too heavy"}</span>
-            </div>
-            
-            <div className="text-xs text-sv-muted shrink-0">
-              {formatMB(model.size_mb)} · {model.ram_mb} MB RAM
-            </div>
-            
-            <div className="shrink-0 flex items-center gap-2">
-              {isDownloading ? (
-                <div className="flex w-32 items-center gap-2">
-                  <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-sv-surface-2 border border-sv-border">
-                    <div className="h-full bg-sv-accent transition-all" style={{ width: `${pct}%` }} />
+            <div className="ml-auto flex shrink-0 items-center gap-3">
+              <div className="flex items-center gap-1.5 text-[11px]">
+                <span className={`shrink-0 h-2 w-2 rounded-full ${(FIT_DOT as any)[level]}`} />
+                <span className="text-sv-text">{level === "good" ? "Fits well" : level === "warn" ? "May be slow" : "Too heavy"}</span>
+              </div>
+              
+              <div className="flex shrink-0 items-center gap-2">
+                {isDownloading ? (
+                  <div className="flex w-32 items-center gap-2">
+                    <div className="h-1.5 flex-1 overflow-hidden rounded-full border border-sv-border bg-sv-surface-2">
+                      <div className="h-full bg-sv-accent transition-all duration-75" style={{ width: `${pct}%` }} />
+                    </div>
+                    <span className="w-8 text-right tabular-nums text-[11px] text-sv-muted">{pct}%</span>
                   </div>
-                  <span className="w-8 text-right text-xs text-sv-muted">{pct}%</span>
-                </div>
-              ) : downloaded ? (
-                <>
-                  {isActive ? (
-                    <span className="text-xs font-medium text-sv-good">In use</span>
-                  ) : (
-                    <button onClick={() => selectStt(model.id)} className="rounded-lg bg-sv-surface-2 px-3 py-1.5 text-xs font-medium hover:bg-sv-accent hover:text-white">
-                      Select
+                ) : downloaded ? (
+                  <>
+                    {!isActive && (
+                      <button onClick={() => selectStt(model.id)} className="rounded-lg bg-sv-surface-2 px-3 py-1.5 text-xs font-medium text-sv-text transition-colors duration-75 hover:bg-sv-surface-2/80">
+                        Select
+                      </button>
+                    )}
+                    <button onClick={() => remove(model.id)} className="rounded-lg border border-sv-border bg-sv-surface px-3 py-1.5 text-xs text-sv-bad transition-colors duration-75 hover:bg-sv-surface-2">
+                      Remove
                     </button>
-                  )}
-                  <button onClick={() => remove(model.id)} className="rounded-lg border border-sv-border bg-sv-surface px-3 py-1.5 text-xs text-sv-bad hover:bg-sv-surface-2">
-                    Remove
+                  </>
+                ) : (
+                  <button onClick={() => download(model.id)} className="rounded-lg bg-sv-accent px-3 py-1.5 text-xs font-medium text-white transition-colors duration-75 hover:bg-sv-accent-hover">
+                    Download
                   </button>
-                </>
-              ) : (
-                <button onClick={() => download(model.id)} className="rounded-lg bg-sv-accent px-4 py-2 text-sm font-medium text-white hover:bg-sv-accent-hover">
-                  Download
-                </button>
-              )}
+                )}
+              </div>
             </div>
           </div>
           
-          <div className="mt-0.5 text-xs text-sv-muted truncate">
-             {model.provider} · {model.best_for}
+          <div className="truncate tabular-nums text-[11px] text-sv-muted">
+             {model.provider} · {formatMB(model.size_mb)} · {model.ram_mb} MB RAM
           </div>
-          {progress?.status === "error" && <div className="mt-1 text-xs text-sv-bad">{progress.error}</div>}
+          {progress?.status === "error" && <div className="text-[11px] text-sv-bad">{progress.error}</div>}
           
-          <div className="mt-3 grid grid-cols-2 gap-4">
-            <MetricBar label="Accuracy" value={accuracyScore(model.wer)} caption={`~${model.wer.replace("~", "")} word error`} />
-            <MetricBar label="Speed" value={speedScore(model.speed_label, hardware)} caption={deviceRealtimeLabel(model.speed_label, hardware) ?? model.speed_label.replace("~", "")} />
+          <div className="mt-1 flex flex-col gap-1.5">
+            <MetricBar label="accuracy" value={accuracyScore(model.wer)} caption={`~${model.wer.replace("~", "")} word error`} />
+            <MetricBar label="speed" value={speedScore(model.speed_label, hardware)} caption={deviceRealtimeLabel(model.speed_label, hardware) ?? model.speed_label.replace("~", "")} />
           </div>
         </div>
       </div>
@@ -524,57 +518,55 @@ function LlmRow({
       : 0;
 
   return (
-    <div className="relative rounded-xl border border-sv-border bg-sv-surface p-4 transition hover:border-sv-accent/40">
-      <button onClick={onTogglePin} title={pinned ? "Unpin" : "Pin to top"} className={`absolute top-4 right-4 ${pinned ? "text-sv-accent" : "text-sv-muted hover:text-sv-accent"}`}>
+    <div className="group relative rounded-xl border border-sv-border bg-sv-surface px-4 py-3 transition-colors duration-75 hover:bg-sv-surface-2/40">
+      <button onClick={onTogglePin} title={pinned ? "Unpin" : "Pin to top"} className={`absolute right-3 top-3 transition-colors duration-75 ${pinned ? "text-sv-accent" : "text-sv-muted/40 hover:text-sv-accent"}`}>
         <svg viewBox="0 0 24 24" width="16" height="16" fill={pinned ? "currentColor" : "none"} stroke={pinned ? "none" : "currentColor"} strokeWidth={pinned ? undefined : "1.75"} strokeLinecap="round" strokeLinejoin="round"><path d="M12 2.5l2.9 6.2 6.6.6-5 4.6 1.4 6.6L12 17l-5.9 3.5L7.5 14l-5-4.6 6.6-.6L12 2.5z" /></svg>
       </button>
-      <div className="flex items-start gap-4 pr-6">
-        <ProviderLogo provider={model.provider} size={40} />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-4">
-            <div className="min-w-0 flex-1 flex items-center gap-2 flex-wrap">
-              <span className="truncate text-sm font-semibold">{model.name}</span>
-              <span className="shrink-0 rounded-full bg-sv-accent/10 px-1.5 py-0.5 text-[9px] font-medium text-sv-accent">Staff Pick</span>
-              {inUse && <span className="shrink-0 rounded-full bg-sv-good/10 px-1.5 py-0.5 text-[9px] font-medium text-sv-good">In use</span>}
-              {pinned && <span className="shrink-0 text-[10px] text-sv-accent">★ Pinned</span>}
+      <div className="flex items-start gap-3 pr-8">
+        <ProviderLogo provider={model.provider} size={36} />
+        <div className="min-w-0 flex-1 flex flex-col gap-1.5">
+          <div className="flex items-center">
+            <div className="flex min-w-0 items-center gap-2 pr-4">
+              <span className="truncate text-[13px] font-semibold text-sv-text">{model.name}</span>
+              <span className="shrink-0 rounded bg-sv-surface-2 px-1.5 py-0.5 text-[10px] text-sv-muted">Staff Pick</span>
+              {inUse && <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] text-sv-good">In use</span>}
+              {pinned && <span className="shrink-0 rounded bg-sv-surface-2 px-1.5 py-0.5 text-[10px] text-sv-muted">Pinned</span>}
             </div>
             
-            <div className="flex items-center gap-1.5 text-xs shrink-0">
-              <span className={`shrink-0 h-2 w-2 rounded-full ${(FIT_DOT as any)[level]}`} />
-              <span className="text-sv-text">{level === "good" ? "Fits well" : level === "warn" ? "May be slow" : "Too heavy"}</span>
-            </div>
-            
-            <div className="text-xs text-sv-muted shrink-0">
-              {model.params} · {formatGB(model.ram_gb)} RAM
-            </div>
-            
-            <div className="shrink-0 flex items-center gap-2">
-              {isDownloading ? (
-                <div className="flex w-32 items-center gap-2">
-                  <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-sv-surface-2 border border-sv-border">
-                    <div className="h-full bg-sv-accent transition-all" style={{ width: `${pct}%` }} />
+            <div className="ml-auto flex shrink-0 items-center gap-3">
+              <div className="flex items-center gap-1.5 text-[11px]">
+                <span className={`shrink-0 h-2 w-2 rounded-full ${(FIT_DOT as any)[level]}`} />
+                <span className="text-sv-text">{level === "good" ? "Fits well" : level === "warn" ? "May be slow" : "Too heavy"}</span>
+              </div>
+              
+              <div className="flex shrink-0 items-center gap-2">
+                {isDownloading ? (
+                  <div className="flex w-32 items-center gap-2">
+                    <div className="h-1.5 flex-1 overflow-hidden rounded-full border border-sv-border bg-sv-surface-2">
+                      <div className="h-full bg-sv-accent transition-all duration-75" style={{ width: `${pct}%` }} />
+                    </div>
+                    <span className="w-8 text-right tabular-nums text-[11px] text-sv-muted">{pct}%</span>
                   </div>
-                  <span className="w-8 text-right text-xs text-sv-muted">{pct}%</span>
-                </div>
-              ) : downloaded ? (
-                <>
-                  <span className="text-xs font-medium text-sv-good">{inUse ? "In use" : "Installed"}</span>
-                  <button onClick={() => remove(model.id)} className="rounded-lg border border-sv-border bg-sv-surface px-3 py-1.5 text-xs text-sv-bad hover:bg-sv-surface-2">
-                    Remove
+                ) : downloaded ? (
+                  <>
+                    <span className="mr-1 text-[11px] font-medium text-sv-good">{inUse ? "In use" : "Installed"}</span>
+                    <button onClick={() => remove(model.id)} className="rounded-lg border border-sv-border bg-sv-surface px-3 py-1.5 text-xs text-sv-bad transition-colors duration-75 hover:bg-sv-surface-2">
+                      Remove
+                    </button>
+                  </>
+                ) : (
+                  <button onClick={() => download(model.id)} className="rounded-lg bg-sv-accent px-3 py-1.5 text-xs font-medium text-white transition-colors duration-75 hover:bg-sv-accent-hover">
+                    Download
                   </button>
-                </>
-              ) : (
-                <button onClick={() => download(model.id)} className="rounded-lg bg-sv-accent px-4 py-2 text-sm font-medium text-white hover:bg-sv-accent-hover">
-                  Download
-                </button>
-              )}
+                )}
+              </div>
             </div>
           </div>
           
-          <div className="mt-0.5 text-xs text-sv-muted truncate">
-             {model.provider} · {model.best_for}
+          <div className="truncate tabular-nums text-[11px] text-sv-muted">
+             {model.provider} · {model.params} · {formatGB(model.ram_gb)} RAM
           </div>
-          {progress?.status === "error" && <div className="mt-1 text-xs text-sv-bad">{progress.error}</div>}
+          {progress?.status === "error" && <div className="text-[11px] text-sv-bad">{progress.error}</div>}
         </div>
       </div>
     </div>
@@ -620,47 +612,46 @@ function HfRow({
   const fit = estimateFitFromParams(item.params_b, hardware, name);
   
   return (
-    <div className="relative rounded-xl border border-sv-border bg-sv-surface p-4 transition hover:border-sv-accent/40">
-      <button onClick={onTogglePin} title={pinned ? "Unpin" : "Pin to top"} className={`absolute top-4 right-4 ${pinned ? "text-sv-accent" : "text-sv-muted hover:text-sv-accent"}`}>
+    <div className="group relative rounded-xl border border-sv-border bg-sv-surface px-4 py-3 transition-colors duration-75 hover:bg-sv-surface-2/40">
+      <button onClick={onTogglePin} title={pinned ? "Unpin" : "Pin to top"} className={`absolute right-3 top-3 transition-colors duration-75 ${pinned ? "text-sv-accent" : "text-sv-muted/40 hover:text-sv-accent"}`}>
         <svg viewBox="0 0 24 24" width="16" height="16" fill={pinned ? "currentColor" : "none"} stroke={pinned ? "none" : "currentColor"} strokeWidth={pinned ? undefined : "1.75"} strokeLinecap="round" strokeLinejoin="round"><path d="M12 2.5l2.9 6.2 6.6.6-5 4.6 1.4 6.6L12 17l-5.9 3.5L7.5 14l-5-4.6 6.6-.6L12 2.5z" /></svg>
       </button>
 
-      <div className="flex items-start gap-4 pr-6">
-        <ProviderLogo provider={owner} size={40} />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-4">
-            <div className="min-w-0 flex-1 flex items-center gap-2 flex-wrap">
-              <span className="truncate text-sm font-semibold">{name}</span>
-              {inUse && <span className="shrink-0 rounded bg-sv-good/10 px-1 py-0.5 text-[9px] text-sv-good">In use</span>}
-              {isVision && <span className="shrink-0 rounded bg-sv-surface-2 px-1 py-0.5 text-[9px] text-sv-muted">Vision</span>}
-              {isToolUse && <span className="shrink-0 rounded bg-sv-surface-2 px-1 py-0.5 text-[9px] text-sv-muted">Tools</span>}
-              {isReasoning && <span className="shrink-0 rounded bg-sv-surface-2 px-1 py-0.5 text-[9px] text-sv-muted">Think</span>}
-              {pinned && <span className="shrink-0 text-[10px] text-sv-accent">★ Pinned</span>}
+      <div className="flex items-start gap-3 pr-8">
+        <ProviderLogo provider={owner} size={36} />
+        <div className="min-w-0 flex-1 flex flex-col gap-1.5">
+          <div className="flex items-center">
+            <div className="flex min-w-0 items-center gap-2 pr-4">
+              <span className="truncate text-[13px] font-semibold text-sv-text">{name}</span>
+              {inUse && <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] text-sv-good">In use</span>}
+              {pinned && <span className="shrink-0 rounded bg-sv-surface-2 px-1.5 py-0.5 text-[10px] text-sv-muted">Pinned</span>}
             </div>
             
-            {fit && (
-              <div className="flex items-center gap-1.5 text-xs shrink-0">
-                <span className={`shrink-0 h-2 w-2 rounded-full ${(FIT_DOT as any)[fit]}`} />
-                <span className="text-sv-text">{fit === "good" ? "Fits well" : fit === "warn" ? "May be slow" : "Too heavy"}</span>
+            <div className="ml-auto flex shrink-0 items-center gap-3">
+              {fit && (
+                <div className="flex items-center gap-1.5 text-[11px]">
+                  <span className={`shrink-0 h-2 w-2 rounded-full ${(FIT_DOT as any)[fit]}`} />
+                  <span className="text-sv-text">{fit === "good" ? "Fits well" : fit === "warn" ? "May be slow" : "Too heavy"}</span>
+                </div>
+              )}
+              
+              <div className="flex shrink-0 items-center">
+                <button 
+                  onClick={onToggleExpand}
+                  className="rounded-lg bg-sv-surface-2 px-3 py-1.5 text-xs font-medium text-sv-text transition-colors duration-75 hover:bg-sv-surface-2/80"
+                >
+                  {isExpanded ? "Close" : "Choose version"}
+                </button>
               </div>
-            )}
-            
-            <div className="text-xs text-sv-muted shrink-0">
-              {parseParams(item.params_b)}
-            </div>
-            
-            <div className="shrink-0 flex items-center">
-              <button 
-                onClick={onToggleExpand}
-                className="rounded-lg bg-sv-surface-2 px-4 py-2 text-sm font-medium hover:bg-sv-surface-2/70"
-              >
-                {isExpanded ? "Close" : "Choose version"}
-              </button>
             </div>
           </div>
           
-          <div className="mt-0.5 text-xs text-sv-muted truncate">
-             {owner} · ↓{item.downloads.toLocaleString()} · {formatNdaysAgo(item.last_modified)}
+          <div className="truncate tabular-nums text-[11px] text-sv-muted">
+             {owner} · ↓{item.downloads.toLocaleString()} · {formatNdaysAgo(item.last_modified)} · {parseParams(item.params_b)}
+             {(isVision || isToolUse || isReasoning) && " · "}
+             {isVision && <span className="ml-1 rounded bg-sv-surface-2 px-1.5 py-0.5 text-[10px]">Vision</span>}
+             {isToolUse && <span className="ml-1 rounded bg-sv-surface-2 px-1.5 py-0.5 text-[10px]">Tools</span>}
+             {isReasoning && <span className="ml-1 rounded bg-sv-surface-2 px-1.5 py-0.5 text-[10px]">Think</span>}
           </div>
         </div>
       </div>
