@@ -107,9 +107,9 @@ function MetricBar({
 }) {
   const pct = Math.round(Math.max(0, Math.min(1, value)) * 100);
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex items-center gap-2.5">
       <div className="w-14 shrink-0 text-right text-[11px] lowercase text-sv-muted">{label}</div>
-      <div className="h-1.5 w-[120px] shrink-0 overflow-hidden rounded-full bg-sv-surface-2">
+      <div className="h-1.5 w-[104px] shrink-0 overflow-hidden rounded-full bg-sv-surface-2">
         <div
           className="h-full rounded-full transition-all"
           style={{ width: `${pct}%`, backgroundColor: "color-mix(in srgb, var(--color-sv-text) 62%, transparent)" }}
@@ -274,7 +274,7 @@ export default function HfBrowser({ track, categoryFilter, languageFilter }: { t
 
   return (
     <div className="flex h-[calc(100vh-140px)] w-full flex-col gap-4">
-      <div className="flex w-full flex-wrap items-center gap-x-4 gap-y-2">
+      <div className="flex w-full max-w-[1180px] flex-wrap items-center gap-x-4 gap-y-2">
         <input
           type="text"
           placeholder="Search models on Hugging Face..."
@@ -303,7 +303,7 @@ export default function HfBrowser({ track, categoryFilter, languageFilter }: { t
         </label>
       </div>
 
-      <div className="flex-1 overflow-y-auto pr-2 flex flex-col gap-2">
+      <div className="flex-1 overflow-y-auto pr-2 flex flex-col gap-2 max-w-[1180px]">
         {!debouncedQuery && (
           <div className="flex flex-col gap-2">
             <h3 className="mb-2 text-[10px] font-medium uppercase tracking-wider text-sv-muted">Staff Picks</h3>
@@ -439,15 +439,20 @@ function SttRow({
   };
 
   return (
-    <div className="group relative rounded-xl border border-sv-border bg-sv-surface px-4 py-2.5 transition-colors duration-75 hover:bg-sv-surface-2/40 flex items-center gap-4">
-      <div className="w-[320px] shrink-0 min-w-0 flex items-center gap-3">
+    <div className="group relative rounded-xl border border-sv-border bg-sv-surface transition-colors duration-75 hover:bg-sv-surface-2/40 flex flex-wrap items-center gap-x-5 gap-y-2 px-4 py-3">
+      <div className="flex min-w-[230px] max-w-[420px] flex-1 items-center gap-3">
         <ProviderLogo provider={model.provider} size={32} />
         <div className="min-w-0 flex-1 flex flex-col gap-1.5">
           <div className="flex items-center gap-2">
+            <span
+              className={`h-1.5 w-1.5 shrink-0 rounded-full ${(FIT_DOT as any)[level]}`}
+              title={level === "good" ? "Fits well" : level === "warn" ? "May be slow" : "Too heavy"}
+            />
             <span className="truncate text-[13px] font-semibold text-sv-text">{model.label}</span>
             <span className="shrink-0 rounded bg-sv-surface-2 px-1.5 py-0.5 text-[10px] text-sv-muted">Staff Pick</span>
-            {isActive && <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] text-sv-good">In use</span>}
+            {isActive && <span className="shrink-0 rounded bg-sv-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-sv-accent">In use</span>}
             {pinned && <span className="shrink-0 rounded bg-sv-surface-2 px-1.5 py-0.5 text-[10px] text-sv-muted">Pinned</span>}
+            {level !== "good" && <span className="shrink-0 rounded bg-sv-surface-2 px-1.5 py-0.5 text-[10px] text-sv-text">{level === "warn" ? "May be slow" : "Too heavy"}</span>}
           </div>
           <div className="truncate tabular-nums text-[11px] text-sv-muted">
              {model.provider} · {formatMB(model.size_mb)} · {model.ram_mb} MB RAM
@@ -461,12 +466,7 @@ function SttRow({
         <MetricBar label="speed" value={speedScore(model.speed_label, hardware)} caption={(deviceRealtimeLabel(model.speed_label, hardware) ?? model.speed_label).replace(" on your device", "").replace("~", "")} />
       </div>
 
-      <div className="ml-auto shrink-0 flex items-center gap-2.5">
-        <div className="flex items-center gap-1.5 text-[11px]" title={level === "good" ? "Fits well" : level === "warn" ? "May be slow" : "Too heavy"}>
-          <span className={`shrink-0 h-2 w-2 rounded-full ${(FIT_DOT as any)[level]}`} />
-          {level !== "good" && <span className="text-sv-text">{level === "warn" ? "May be slow" : "Too heavy"}</span>}
-        </div>
-
+      <div className="ml-auto flex shrink-0 items-center gap-2">
         <div className="flex shrink-0 items-center">
           {isBusy ? (
             <div className="flex w-32 items-center gap-2">
@@ -489,7 +489,7 @@ function SttRow({
           ) : downloaded ? (
             <div className="flex items-center gap-2">
               {!isActive && (
-                <button onClick={() => selectStt(model.id)} className="rounded-lg bg-sv-accent px-3 py-1.5 text-xs font-medium text-white transition-colors duration-75 hover:bg-sv-accent-hover">
+                <button onClick={() => selectStt(model.id)} className="rounded-lg border border-sv-border bg-sv-surface-2 px-3 py-1.5 text-xs font-medium text-sv-text transition-colors duration-75 hover:border-sv-accent hover:text-sv-accent">
                   Select
                 </button>
               )}
@@ -549,15 +549,20 @@ function LlmRow({
   };
 
   return (
-    <div className="group relative rounded-xl border border-sv-border bg-sv-surface px-4 py-2.5 transition-colors duration-75 hover:bg-sv-surface-2/40 flex items-center gap-4">
-      <div className="w-[320px] shrink-0 min-w-0 flex items-center gap-3">
+    <div className="group relative rounded-xl border border-sv-border bg-sv-surface transition-colors duration-75 hover:bg-sv-surface-2/40 flex flex-wrap items-center gap-x-5 gap-y-2 px-4 py-3">
+      <div className="flex min-w-[230px] max-w-[420px] flex-1 items-center gap-3">
         <ProviderLogo provider={model.provider} size={32} />
         <div className="min-w-0 flex-1 flex flex-col gap-1.5">
           <div className="flex items-center gap-2">
+            <span
+              className={`h-1.5 w-1.5 shrink-0 rounded-full ${(FIT_DOT as any)[level]}`}
+              title={level === "good" ? "Fits well" : level === "warn" ? "May be slow" : "Too heavy"}
+            />
             <span className="truncate text-[13px] font-semibold text-sv-text">{model.name}</span>
             <span className="shrink-0 rounded bg-sv-surface-2 px-1.5 py-0.5 text-[10px] text-sv-muted">Staff Pick</span>
-            {inUse && <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] text-sv-good">In use</span>}
+            {inUse && <span className="shrink-0 rounded bg-sv-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-sv-accent">In use</span>}
             {pinned && <span className="shrink-0 rounded bg-sv-surface-2 px-1.5 py-0.5 text-[10px] text-sv-muted">Pinned</span>}
+            {level !== "good" && <span className="shrink-0 rounded bg-sv-surface-2 px-1.5 py-0.5 text-[10px] text-sv-text">{level === "warn" ? "May be slow" : "Too heavy"}</span>}
           </div>
           <div className="truncate tabular-nums text-[11px] text-sv-muted">
              {model.provider} · {model.params} · {formatGB(model.ram_gb)} RAM
@@ -566,14 +571,9 @@ function LlmRow({
         </div>
       </div>
 
-      <div className="hidden w-[300px] shrink-0 lg:block"></div>
+      <div className="flex w-[300px] shrink-0 flex-col gap-1"></div>
 
-      <div className="ml-auto shrink-0 flex items-center gap-2.5">
-        <div className="flex items-center gap-1.5 text-[11px]" title={level === "good" ? "Fits well" : level === "warn" ? "May be slow" : "Too heavy"}>
-          <span className={`shrink-0 h-2 w-2 rounded-full ${(FIT_DOT as any)[level]}`} />
-          {level !== "good" && <span className="text-sv-text">{level === "warn" ? "May be slow" : "Too heavy"}</span>}
-        </div>
-
+      <div className="ml-auto flex shrink-0 items-center gap-2">
         <div className="flex shrink-0 items-center">
           {isBusy ? (
             <div className="flex w-32 items-center gap-2">
@@ -654,15 +654,22 @@ function HfRow({
   const fit = estimateFitFromParams(item.params_b, hardware, name);
   
   return (
-    <div className="group relative rounded-xl border border-sv-border bg-sv-surface px-4 py-2.5 transition-colors duration-75 hover:bg-sv-surface-2/40 flex flex-col">
-      <div className="flex items-center gap-4">
-        <div className="min-w-0 flex-1 flex items-center gap-3">
+    <div className="group relative rounded-xl border border-sv-border bg-sv-surface transition-colors duration-75 hover:bg-sv-surface-2/40 flex flex-col">
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-2 px-4 py-3">
+        <div className="flex min-w-[230px] max-w-[420px] flex-1 items-center gap-3">
           <ProviderLogo provider={owner} size={32} />
           <div className="min-w-0 flex-1 flex flex-col gap-1.5">
             <div className="flex items-center gap-2">
+              {fit && (
+                <span
+                  className={`h-1.5 w-1.5 shrink-0 rounded-full ${(FIT_DOT as any)[fit]}`}
+                  title={fit === "good" ? "Fits well" : fit === "warn" ? "May be slow" : "Too heavy"}
+                />
+              )}
               <span className="truncate text-[13px] font-semibold text-sv-text">{name}</span>
-              {inUse && <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] text-sv-good">In use</span>}
+              {inUse && <span className="shrink-0 rounded bg-sv-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-sv-accent">In use</span>}
               {pinned && <span className="shrink-0 rounded bg-sv-surface-2 px-1.5 py-0.5 text-[10px] text-sv-muted">Pinned</span>}
+              {fit && fit !== "good" && <span className="shrink-0 rounded bg-sv-surface-2 px-1.5 py-0.5 text-[10px] text-sv-text">{fit === "warn" ? "May be slow" : "Too heavy"}</span>}
             </div>
             <div className="truncate tabular-nums text-[11px] text-sv-muted">
                {owner} · ↓{item.downloads.toLocaleString()} · {formatNdaysAgo(item.last_modified)} · {parseParams(item.params_b)}
@@ -674,16 +681,9 @@ function HfRow({
           </div>
         </div>
 
-        <div className="hidden w-[300px] shrink-0 lg:block"></div>
+        <div className="flex w-[300px] shrink-0 flex-col gap-1"></div>
 
-        <div className="ml-auto shrink-0 flex items-center gap-2.5">
-          {fit && (
-            <div className="flex items-center gap-1.5 text-[11px]" title={fit === "good" ? "Fits well" : fit === "warn" ? "May be slow" : "Too heavy"}>
-              <span className={`shrink-0 h-2 w-2 rounded-full ${(FIT_DOT as any)[fit]}`} />
-              {fit !== "good" && <span className="text-sv-text">{fit === "warn" ? "May be slow" : "Too heavy"}</span>}
-            </div>
-          )}
-          
+        <div className="ml-auto flex shrink-0 items-center gap-2">
           <div className="flex shrink-0 items-center">
             <button 
               onClick={onToggleExpand}
@@ -882,7 +882,7 @@ function HfDetail({ details, hardware, track }: { details: HfModelDetails; hardw
                           <span className="text-xs font-medium text-sv-good">In use</span>
                         ) : (
                           track === "stt" ? (
-                            <button onClick={() => selectStt(mId)} className="rounded-lg bg-sv-accent px-3 py-1.5 text-xs font-medium text-white transition-colors duration-75 hover:bg-sv-accent-hover">
+                            <button onClick={() => selectStt(mId)} className="rounded-lg border border-sv-border bg-sv-surface-2 px-3 py-1.5 text-xs font-medium text-sv-text transition-colors duration-75 hover:border-sv-accent hover:text-sv-accent">
                               Select
                             </button>
                           ) : (
