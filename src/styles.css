@@ -14,14 +14,14 @@
   --color-sv-warn: #eab308;
   --color-sv-bad: #ef4444;
 
-  /* Settings per-section accents */
-  --color-sv-sec-dictation: #6c8ea4;
-  --color-sv-sec-tts: #917c9e;
-  --color-sv-sec-vocab: #64968c;
-  --color-sv-sec-replace: #a8727d;
-  --color-sv-sec-profiles: #7a9474;
-  --color-sv-sec-perf: #b09166;
-  --color-sv-sec-system: #7b839e;
+  /* Settings per-section accents — L=0.67, C=0.125. Hue varies, kept away from orange (48). */
+  --color-sv-sec-dictation: oklch(0.67 0.125 250);
+  --color-sv-sec-tts: oklch(0.67 0.125 310);
+  --color-sv-sec-vocab: oklch(0.67 0.125 210);
+  --color-sv-sec-replace: oklch(0.67 0.125 340);
+  --color-sv-sec-profiles: oklch(0.67 0.125 145);
+  --color-sv-sec-perf: oklch(0.67 0.125 180);
+  --color-sv-sec-system: oklch(0.67 0.125 280);
 }
 
 /* Light theme — overrides the @theme :root tokens when <html> has .theme-light.
@@ -36,14 +36,14 @@ html.theme-light {
   --color-sv-accent: #ea580c;
   --color-sv-accent-hover: #c2410c;
 
-  /* Settings per-section accents */
-  --color-sv-sec-dictation: #4a6c82;
-  --color-sv-sec-tts: #6e5c7a;
-  --color-sv-sec-vocab: #46766d;
-  --color-sv-sec-replace: #87545e;
-  --color-sv-sec-profiles: #5a7354;
-  --color-sv-sec-perf: #8a704c;
-  --color-sv-sec-system: #59617a;
+  /* Settings per-section accents — L=0.52, C=0.13. Hue varies, kept away from orange (48). */
+  --color-sv-sec-dictation: oklch(0.52 0.13 250);
+  --color-sv-sec-tts: oklch(0.52 0.13 310);
+  --color-sv-sec-vocab: oklch(0.52 0.13 210);
+  --color-sv-sec-replace: oklch(0.52 0.13 340);
+  --color-sv-sec-profiles: oklch(0.52 0.13 145);
+  --color-sv-sec-perf: oklch(0.52 0.13 180);
+  --color-sv-sec-system: oklch(0.52 0.13 280);
 }
 
 html,
@@ -152,4 +152,9 @@ body {
     transform: scale(1);
     opacity: 1;
   }
+}
+
+@keyframes sv-indeterminate {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
 }

@@ -237,8 +237,9 @@ export default function HfBrowser({ track, categoryFilter, languageFilter }: { t
   const sortStaffPicks = (a: any, b: any) => {
     const getScore = (m: any) => {
       let score = 0;
-      if (isModelInUse(m.id, false)) score += 1000;
-      if (pinnedSet.has(m.id)) score += 100;
+      // pinned outranks in-use because the control promises "pin to top"
+      if (pinnedSet.has(m.id)) score += 1000;
+      if (isModelInUse(m.id, false)) score += 100;
       if (isModelDownloaded(m.id, false)) score += 10;
       return score;
     };
@@ -248,8 +249,9 @@ export default function HfBrowser({ track, categoryFilter, languageFilter }: { t
   const sortHfResults = (a: HfSearchItem, b: HfSearchItem) => {
     const getScore = (m: HfSearchItem) => {
       let score = 0;
-      if (isModelInUse(m.id, true)) score += 1000;
-      if (pinnedSet.has(m.id)) score += 100;
+      // pinned outranks in-use because the control promises "pin to top"
+      if (pinnedSet.has(m.id)) score += 1000;
+      if (isModelInUse(m.id, true)) score += 100;
       if (isModelDownloaded(m.id, true)) score += 10;
       return score;
     };
@@ -400,6 +402,7 @@ function SttRow({
   pinned: boolean;
   onTogglePin: () => void;
 }) {
+  const [starting, setStarting] = useState(false);
   const downloaded = useModelStore((s) => s.downloaded.has(model.id));
   const progress = useModelStore((s) => s.progress[model.id]);
   const download = useModelStore((s) => s.download);
@@ -420,11 +423,20 @@ function SttRow({
     else if (estRamGb > hardware.available_ram_gb * 0.8) level = "warn";
   }
 
-  const isDownloading = progress?.status === "downloading";
+  const isBusy = starting || progress?.status === "downloading";
   const pct =
     progress && progress.total_bytes > 0
       ? Math.round((progress.downloaded_bytes / progress.total_bytes) * 100)
       : 0;
+
+  const handleDownload = async () => {
+    setStarting(true);
+    try {
+      await download(model.id);
+    } finally {
+      setStarting(false);
+    }
+  };
 
   return (
     <div className="group relative rounded-xl border border-sv-border bg-sv-surface px-4 py-3 transition-colors duration-75 hover:bg-sv-surface-2/40">
@@ -449,12 +461,23 @@ function SttRow({
               </div>
               
               <div className="flex shrink-0 items-center gap-2">
-                {isDownloading ? (
+                {isBusy ? (
                   <div className="flex w-32 items-center gap-2">
-                    <div className="h-1.5 flex-1 overflow-hidden rounded-full border border-sv-border bg-sv-surface-2">
-                      <div className="h-full bg-sv-accent transition-all duration-75" style={{ width: `${pct}%` }} />
-                    </div>
-                    <span className="w-8 text-right tabular-nums text-[11px] text-sv-muted">{pct}%</span>
+                    {!progress || progress.total_bytes === 0 ? (
+                      <>
+                        <div className="h-1.5 flex-1 overflow-hidden rounded-full border border-sv-border bg-sv-surface-2">
+                          <div className="h-full w-1/3 rounded-full bg-sv-accent animate-[sv-indeterminate_1.1s_ease-in-out_infinite]" />
+                        </div>
+                        <span className="w-8 text-right tabular-nums text-[11px] text-sv-muted">Starting…</span>
+                      </>
+                    ) : (
+                      <>
+                        <div className="h-1.5 flex-1 overflow-hidden rounded-full border border-sv-border bg-sv-surface-2">
+                          <div className="h-full bg-sv-accent transition-all duration-75" style={{ width: `${pct}%` }} />
+                        </div>
+                        <span className="w-8 text-right tabular-nums text-[11px] text-sv-muted">{pct}%</span>
+                      </>
+                    )}
                   </div>
                 ) : downloaded ? (
                   <>
@@ -468,7 +491,7 @@ function SttRow({
                     </button>
                   </>
                 ) : (
-                  <button onClick={() => download(model.id)} className="rounded-lg bg-sv-accent px-3 py-1.5 text-xs font-medium text-white transition-colors duration-75 hover:bg-sv-accent-hover">
+                  <button disabled={isBusy} onClick={handleDownload} className="rounded-lg bg-sv-accent px-3 py-1.5 text-xs font-medium text-white transition-colors duration-75 hover:bg-sv-accent-hover">
                     Download
                   </button>
                 )}
@@ -502,6 +525,7 @@ function LlmRow({
   pinned: boolean;
   onTogglePin: () => void;
 }) {
+  const [starting, setStarting] = useState(false);
   const downloaded = useModelStore((s) => s.downloadedLlm.has(model.id));
   const progress = useModelStore((s) => s.progress[model.id]);
   const download = useModelStore((s) => s.downloadLlm);
@@ -511,11 +535,20 @@ function LlmRow({
   const inUse = modes.some(m => m.model_source === "local" && m.model_id === model.id);
 
   const level = llmCompatibility(model, hardware).level;
-  const isDownloading = progress?.status === "downloading";
+  const isBusy = starting || progress?.status === "downloading";
   const pct =
     progress && progress.total_bytes > 0
       ? Math.round((progress.downloaded_bytes / progress.total_bytes) * 100)
       : 0;
+
+  const handleDownload = async () => {
+    setStarting(true);
+    try {
+      await download(model.id);
+    } finally {
+      setStarting(false);
+    }
+  };
 
   return (
     <div className="group relative rounded-xl border border-sv-border bg-sv-surface px-4 py-3 transition-colors duration-75 hover:bg-sv-surface-2/40">
@@ -540,12 +573,23 @@ function LlmRow({
               </div>
               
               <div className="flex shrink-0 items-center gap-2">
-                {isDownloading ? (
+                {isBusy ? (
                   <div className="flex w-32 items-center gap-2">
-                    <div className="h-1.5 flex-1 overflow-hidden rounded-full border border-sv-border bg-sv-surface-2">
-                      <div className="h-full bg-sv-accent transition-all duration-75" style={{ width: `${pct}%` }} />
-                    </div>
-                    <span className="w-8 text-right tabular-nums text-[11px] text-sv-muted">{pct}%</span>
+                    {!progress || progress.total_bytes === 0 ? (
+                      <>
+                        <div className="h-1.5 flex-1 overflow-hidden rounded-full border border-sv-border bg-sv-surface-2">
+                          <div className="h-full w-1/3 rounded-full bg-sv-accent animate-[sv-indeterminate_1.1s_ease-in-out_infinite]" />
+                        </div>
+                        <span className="w-8 text-right tabular-nums text-[11px] text-sv-muted">Starting…</span>
+                      </>
+                    ) : (
+                      <>
+                        <div className="h-1.5 flex-1 overflow-hidden rounded-full border border-sv-border bg-sv-surface-2">
+                          <div className="h-full bg-sv-accent transition-all duration-75" style={{ width: `${pct}%` }} />
+                        </div>
+                        <span className="w-8 text-right tabular-nums text-[11px] text-sv-muted">{pct}%</span>
+                      </>
+                    )}
                   </div>
                 ) : downloaded ? (
                   <>
@@ -555,7 +599,7 @@ function LlmRow({
                     </button>
                   </>
                 ) : (
-                  <button onClick={() => download(model.id)} className="rounded-lg bg-sv-accent px-3 py-1.5 text-xs font-medium text-white transition-colors duration-75 hover:bg-sv-accent-hover">
+                  <button disabled={isBusy} onClick={handleDownload} className="rounded-lg bg-sv-accent px-3 py-1.5 text-xs font-medium text-white transition-colors duration-75 hover:bg-sv-accent-hover">
                     Download
                   </button>
                 )}

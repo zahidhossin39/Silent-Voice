@@ -23,15 +23,7 @@ import {
 import type { DeviceRecommendation } from "../../types";
 import HotkeyRecorder from "../shared/HotkeyRecorder";
 import { checkForUpdatesManual } from "../../services/updater";
-import type { SttPreset } from "../../types";
 
-// Preset → recommended model (build plan §4 mode presets).
-const PRESET_MODEL: Record<SttPreset, string> = {
-  speed: "tiny.en",
-  balanced: "base.en",
-  accuracy: "small.en",
-  multilingual: "small",
-};
 
 export default function Settings() {
   const settings = useSettingsStore((s) => s.settings);
@@ -122,27 +114,7 @@ export default function Settings() {
     <Page title="Settings" subtitle="Dictation, audio, and appearance">
       <div className="gap-5 lg:columns-2 lg:gap-5">
         <Section title="Dictation" accent="var(--color-sv-sec-dictation)" icon={<MicrophoneIcon />}>
-          <Row
-            label="Speed / accuracy preset"
-            hint="Picks a Whisper model that matches the tradeoff"
-          >
-            <select
-              value={settings.stt_preset}
-              onChange={(e) => {
-                const preset = e.target.value as SttPreset;
-                setSettings({
-                  stt_preset: preset,
-                  active_stt_model: PRESET_MODEL[preset],
-                });
-              }}
-              className="w-56 rounded-lg border border-sv-border bg-sv-bg px-3 py-2 text-sm"
-            >
-              <option value="speed">Speed — Tiny (English)</option>
-              <option value="balanced">Balanced — Base (English)</option>
-              <option value="accuracy">Accuracy — Small (English)</option>
-              <option value="multilingual">Multilingual — Small</option>
-            </select>
-          </Row>
+
           <div className="border-b border-sv-border/60 py-3.5">
             <div className="text-sm">Global hotkey (push-to-talk)</div>
             <div className="mt-0.5 text-xs text-sv-muted">
@@ -853,7 +825,10 @@ function Section({
     <div className="mb-5 break-inside-avoid overflow-hidden rounded-xl border border-sv-border bg-sv-surface">
       <div className="flex items-center gap-2.5 border-b border-sv-border px-5 py-3">
         {icon && (
-          <span className="shrink-0" style={accent ? { color: accent } : undefined}>
+          <span
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg"
+            style={accent ? { backgroundColor: `color-mix(in srgb, ${accent} 15%, transparent)`, color: accent } : undefined}
+          >
             {icon}
           </span>
         )}
@@ -945,7 +920,7 @@ function Toggle({
   return (
     <button
       onClick={() => onChange(!checked)}
-      className={`relative h-6 w-11 rounded-full transition ${
+      className={`relative h-6 w-11 rounded-full transition-colors duration-75 ${
         checked ? "bg-sv-accent" : "bg-sv-surface-2"
       }`}
     >
