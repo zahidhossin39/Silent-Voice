@@ -127,32 +127,44 @@ export default function TranscriptCard({
     }
   }
 
+  // One place that turns a stored clip into a playable element. This used to be
+  // copy-pasted into both play and seek, which is how a broken Blob() call
+  // survived in both: the bytes arrive as an ArrayBuffer and must be passed
+  // straight to Blob, never coerced.
+  async function loadAudio(): Promise<HTMLAudioElement | null> {
+    if (!entry.audio_file) return null;
+    if (audioRef.current) return audioRef.current;
+    const buffer = await readAudioClip(entry.audio_file);
+    if (!buffer || buffer.byteLength === 0) {
+      console.warn("audio clip missing or empty", entry.audio_file);
+      return null;
+    }
+    if (audioUrl) URL.revokeObjectURL(audioUrl);
+    const url = URL.createObjectURL(new Blob([buffer], { type: "audio/wav" }));
+    setAudioUrl(url);
+    const audio = new Audio(url);
+    audio.onplay = () => setIsPlaying(true);
+    audio.onpause = () => setIsPlaying(false);
+    audio.onended = () => {
+      setIsPlaying(false);
+      setProgress(0);
+    };
+    audio.ontimeupdate = () => setProgress(audio.currentTime);
+    audio.onloadedmetadata = () => setDuration(audio.duration);
+    audio.onerror = () => console.warn("audio decode failed", entry.audio_file);
+    audioRef.current = audio;
+    return audio;
+  }
+
   async function togglePlay() {
-    if (!entry.audio_file) return;
-    if (audioRef.current && isPlaying) {
-      audioRef.current.pause();
-      return;
-    }
-    if (audioRef.current && !isPlaying) {
-      audioRef.current.play();
-      return;
-    }
-    // Lazy load the blob
     try {
-      const bytes = await readAudioClip(entry.audio_file);
-      if (!bytes) return;
-      const blob = new Blob([bytes as any], { type: "audio/wav" });
-      if (audioUrl) URL.revokeObjectURL(audioUrl);
-      const url = URL.createObjectURL(blob);
-      setAudioUrl(url);
-      const audio = new Audio(url);
-      audio.onplay = () => setIsPlaying(true);
-      audio.onpause = () => setIsPlaying(false);
-      audio.onended = () => { setIsPlaying(false); setProgress(0); };
-      audio.ontimeupdate = () => setProgress(audio.currentTime);
-      audio.onloadedmetadata = () => setDuration(audio.duration);
-      audioRef.current = audio;
-      audio.play();
+      if (audioRef.current) {
+        if (isPlaying) audioRef.current.pause();
+        else await audioRef.current.play();
+        return;
+      }
+      const audio = await loadAudio();
+      if (audio) await audio.play();
     } catch (e) {
       console.warn("audio play failed", e);
     }
@@ -161,36 +173,18 @@ export default function TranscriptCard({
   async function handleSeek(e: React.MouseEvent<HTMLDivElement>) {
     const rect = e.currentTarget.getBoundingClientRect();
     const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
-    const fraction = x / rect.width;
-    const targetTime = duration * fraction;
-    
-    if (audioRef.current) {
-      audioRef.current.currentTime = targetTime;
-      setProgress(targetTime);
-    } else {
-      if (!entry.audio_file) return;
-      try {
-        const bytes = await readAudioClip(entry.audio_file);
-        if (!bytes) return;
-        const blob = new Blob([bytes as any], { type: "audio/wav" });
-        if (audioUrl) URL.revokeObjectURL(audioUrl);
-        const url = URL.createObjectURL(blob);
-        setAudioUrl(url);
-        const audio = new Audio(url);
-        
-        audio.onplay = () => setIsPlaying(true);
-        audio.onpause = () => setIsPlaying(false);
-        audio.onended = () => { setIsPlaying(false); setProgress(0); };
-        audio.ontimeupdate = () => setProgress(audio.currentTime);
-        audio.onloadedmetadata = () => {
-          setDuration(audio.duration);
-          audio.currentTime = targetTime;
-          setProgress(targetTime);
-        };
-        audioRef.current = audio;
-      } catch (err) {
-        console.warn("audio load for seek failed", err);
-      }
+    const fraction = rect.width > 0 ? x / rect.width : 0;
+    try {
+      const audio = audioRef.current ?? (await loadAudio());
+      if (!audio) return;
+      // Before metadata lands, audio.duration is NaN — fall back to the length
+      // Rust recorded so a seek works on the very first click.
+      const total = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : duration;
+      const target = total * fraction;
+      audio.currentTime = target;
+      setProgress(target);
+    } catch (err) {
+      console.warn("audio seek failed", err);
     }
   }
 

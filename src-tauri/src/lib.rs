@@ -618,13 +618,19 @@ fn clear_history() -> Result<(), String> {
     history::clear()
 }
 
+/// Returns the clip as a RAW binary IPC response, not a serialised Vec<u8>.
+/// A plain Vec<u8> crosses the bridge as a JSON array of numbers, which the
+/// frontend cannot hand to Blob() — it stringifies to "82,73,70,70,..." and
+/// produces an undecodable text blob. It is also several times larger on the
+/// wire than the audio it carries.
 #[tauri::command]
-fn read_audio_clip(file_name: String) -> Result<Vec<u8>, String> {
+fn read_audio_clip(file_name: String) -> Result<tauri::ipc::Response, String> {
     if file_name.contains('/') || file_name.contains('\\') || file_name.contains("..") {
         return Err("Invalid file name".into());
     }
     let path = registry::audio_clips_dir().join(&file_name);
-    std::fs::read(&path).map_err(|e| e.to_string())
+    let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
+    Ok(tauri::ipc::Response::new(bytes))
 }
 
 #[tauri::command]

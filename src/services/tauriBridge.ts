@@ -476,10 +476,13 @@ export async function clearHistoryFile(): Promise<void> {
   }
 }
 
-export async function readAudioClip(fileName: string): Promise<Uint8Array | null> {
+// The Rust side answers with a raw binary IPC response, so this really is an
+// ArrayBuffer. It used to be annotated Uint8Array while actually arriving as a
+// number[], and the lie went unnoticed because the caller cast it to any.
+export async function readAudioClip(fileName: string): Promise<ArrayBuffer | null> {
   if (!isTauri()) return null;
   try {
-    return await invoke<Uint8Array>("read_audio_clip", { fileName });
+    return await invoke<ArrayBuffer>("read_audio_clip", { fileName });
   } catch (e) {
     console.warn("read_audio_clip failed", e);
     return null;
