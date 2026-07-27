@@ -23,6 +23,7 @@ import {
   ModesIcon,
   KeyIcon,
   GearIcon,
+  HistoryIcon,
   GuideIcon,
 } from "./components/shared/NavIcons";
 import { Titlebar } from "./components/shared/Titlebar";
@@ -32,6 +33,7 @@ const NAV = [
   { to: "/models", label: "Voices & models", Icon: StoreIcon },
   { to: "/modes", label: "Rewrite modes", Icon: ModesIcon },
   { to: "/settings", label: "Settings", Icon: GearIcon },
+  { to: "/history", label: "History", Icon: HistoryIcon },
   { to: "/api", label: "Cloud providers", Icon: KeyIcon },
   { to: "/guide", label: "How to use", Icon: GuideIcon },
 ];
