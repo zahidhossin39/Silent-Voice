@@ -828,16 +828,12 @@ unsafe fn apply(
         let color = if s.spelling { RED } else { BLUE };
         
         let is_new = !drawn.iter().any(|d| {
-            d.x == s.x && (d.y + d.h - 2) == strip_y && d.w.clamp(4, 600) == w && (if d.spelling { RED } else { BLUE }) == color
+            d.expected == s.expected && d.spelling == s.spelling && (d.start as isize - s.start as isize).abs() < 50
         });
         
         let state = &mut pool[i];
         let new_alpha = if is_new { 55 } else {
-            if state.x == s.x && state.y == strip_y && state.w == w && state.color == color {
-                state.alpha
-            } else {
-                255
-            }
+            if state.alpha > 0 { state.alpha } else { 255 }
         };
 
         if state.x != s.x || state.y != strip_y || state.w != w || state.color != color || state.alpha != new_alpha {

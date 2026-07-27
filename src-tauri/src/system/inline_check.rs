@@ -139,6 +139,11 @@ fn watcher(app: AppHandle) {
         let mut last_field_focused = false;
         let mut last_squiggles: Vec<SquiggleInfo> = Vec::new();
         let mut was_active = false;
+        // poll_once already computes exactly why a cycle produced nothing; it
+        // used to be discarded, which left "squiggles don't show up yet" with
+        // no evidence to diagnose from. Logged on transition only — logging
+        // every poll would write thousands of lines an hour.
+        let mut last_reason = "";
         // The screen-reader flag + focus handler make every Chromium/Electron
         // app build accessibility trees (needed for WebView2 apps like
         // WhatsApp, but a system-wide CPU/memory cost) — so they're only
@@ -306,7 +311,13 @@ fn watcher(app: AppHandle) {
             last_field_focused = field_focused;
             last_squiggles = squiggles.clone();
             let active = !squiggles.is_empty();
-            let _ = reason;
+            if reason != last_reason {
+                crate::logging::log_info(
+                    "inline_check",
+                    &format!("target: {last_reason} -> {reason}"),
+                );
+                last_reason = reason;
+            }
             if active || was_active {
                 let _ = overlay_tx.send(squiggles);
             }
