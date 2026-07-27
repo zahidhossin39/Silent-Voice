@@ -53,7 +53,7 @@ export default function TranscriptCard({
   const [isPlaying, setIsPlaying] = useState(false);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
-  const [duration, setDuration] = useState(0);
+  const [duration, setDuration] = useState(entry.audio_ms ? entry.audio_ms / 1000 : 0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   
   useEffect(() => {
@@ -158,6 +158,42 @@ export default function TranscriptCard({
     }
   }
 
+  async function handleSeek(e: React.MouseEvent<HTMLDivElement>) {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
+    const fraction = x / rect.width;
+    const targetTime = duration * fraction;
+    
+    if (audioRef.current) {
+      audioRef.current.currentTime = targetTime;
+      setProgress(targetTime);
+    } else {
+      if (!entry.audio_file) return;
+      try {
+        const bytes = await readAudioClip(entry.audio_file);
+        if (!bytes) return;
+        const blob = new Blob([bytes as any], { type: "audio/wav" });
+        if (audioUrl) URL.revokeObjectURL(audioUrl);
+        const url = URL.createObjectURL(blob);
+        setAudioUrl(url);
+        const audio = new Audio(url);
+        
+        audio.onplay = () => setIsPlaying(true);
+        audio.onpause = () => setIsPlaying(false);
+        audio.onended = () => { setIsPlaying(false); setProgress(0); };
+        audio.ontimeupdate = () => setProgress(audio.currentTime);
+        audio.onloadedmetadata = () => {
+          setDuration(audio.duration);
+          audio.currentTime = targetTime;
+          setProgress(targetTime);
+        };
+        audioRef.current = audio;
+      } catch (err) {
+        console.warn("audio load for seek failed", err);
+      }
+    }
+  }
+
   function formatTime(s: number) {
     const mins = Math.floor(s / 60);
     const secs = Math.floor(s % 60).toString().padStart(2, "0");
@@ -193,14 +229,6 @@ export default function TranscriptCard({
           >
             {copied ? "Copied" : "Copy"}
           </button>
-          {entry.audio_file && (
-            <button
-              onClick={handleCopyAudio}
-              className={audioCopied ? "text-sv-good" : "hover:text-sv-text"}
-            >
-              {audioCopied ? "Copied" : "Copy audio"}
-            </button>
-          )}
           <button
             onClick={() => onRemove(entry.id)}
             className="hover:text-sv-bad"
@@ -238,21 +266,45 @@ export default function TranscriptCard({
         <>
           <p className={`text-sm ${blurred ? "blur-sm transition group-hover:blur-none" : ""}`}>{displayed}</p>
           {entry.audio_file && (
-            <div className="mt-3 flex items-center gap-2 border-t border-sv-border/50 pt-2 text-xs text-sv-muted">
+            <div className="mt-3 flex items-center gap-3 border-t border-sv-border/60 pt-3">
               <button
                 onClick={togglePlay}
-                className="flex h-5 w-5 items-center justify-center rounded-full bg-sv-surface-2 hover:bg-sv-border hover:text-sv-text transition-colors"
-                title={isPlaying ? "Pause" : "Play original audio"}
+                aria-label={isPlaying ? "Pause recording" : "Play recording"}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-sv-border bg-sv-surface-2 text-sv-text transition-colors hover:border-sv-accent hover:text-sv-accent"
               >
                 {isPlaying ? (
-                  <svg viewBox="0 0 24 24" width={10} height={10} fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1" /><rect x="14" y="4" width="4" height="16" rx="1" /></svg>
+                  <svg viewBox="0 0 24 24" width={16} height={16} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="6" y="4" width="4" height="16" />
+                    <rect x="14" y="4" width="4" height="16" />
+                  </svg>
                 ) : (
-                  <svg viewBox="0 0 24 24" width={12} height={12} fill="currentColor" style={{ marginLeft: '1px' }}><path d="M7 4l12 8-12 8V4z"/></svg>
+                  <svg viewBox="0 0 24 24" width={16} height={16} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                    <polygon points="5 3 19 12 5 21 5 3" />
+                  </svg>
                 )}
               </button>
-              <span className="tabular-nums font-medium">
+              <div 
+                className="relative h-1 flex-1 cursor-pointer rounded-full bg-sv-surface-2"
+                role="slider"
+                aria-valuenow={progress}
+                aria-valuemin={0}
+                aria-valuemax={duration || 1}
+                onClick={handleSeek}
+              >
+                <div 
+                  className="absolute left-0 top-0 h-full rounded-full bg-sv-accent" 
+                  style={{ width: `${duration > 0 ? (progress / duration) * 100 : 0}%` }} 
+                />
+              </div>
+              <span className="shrink-0 tabular-nums text-[11px] text-sv-muted">
                 {formatTime(progress)} / {formatTime(duration)}
               </span>
+              <button
+                onClick={handleCopyAudio}
+                className={`ml-auto rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors duration-75 ${audioCopied ? "border-transparent text-sv-good" : "border-transparent text-sv-muted hover:border-sv-border hover:text-sv-text"}`}
+              >
+                {audioCopied ? "Copied" : "Copy audio"}
+              </button>
             </div>
           )}
         </>

@@ -167,6 +167,7 @@ export interface HistoryEntry {
   mode_id: string;
   model_id: string;
   duration_ms: number;
+  audio_ms?: number;
   audio_file?: string;
 }
 

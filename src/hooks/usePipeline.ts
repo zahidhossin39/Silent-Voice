@@ -13,6 +13,7 @@ interface PipelineResult {
   mode_id?: string;
   model_id: string;
   duration_ms: number;
+  audio_ms?: number;
   audio_file?: string;
 }
 
@@ -43,6 +44,7 @@ export function usePipeline() {
           mode_id: r.mode_id ?? activeModeId,
           model_id: r.model_id,
           duration_ms: r.duration_ms,
+          audio_ms: r.audio_ms,
           audio_file: r.audio_file,
         });
       }),

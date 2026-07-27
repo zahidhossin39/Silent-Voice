@@ -194,6 +194,7 @@ pub struct PipelineResult {
     pub mode_id: String,
     pub model_id: String,
     pub duration_ms: i64,
+    pub audio_ms: Option<i64>,
     pub audio_file: Option<String>,
 }
 
@@ -679,12 +680,14 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0);
 
+    let mut audio_ms = None;
     let audio_file = if save_audio {
         let name = format!("rec-{}.wav", now);
         let dest = registry::audio_clips_dir().join(&name);
         match std::fs::copy(&wav_path, &dest) {
             Ok(_) => {
                 crate::history::prune_clips(audio_clip_limit);
+                audio_ms = Some(samples.len() as i64 * 1000 / crate::audio::capture::WHISPER_SAMPLE_RATE as i64);
                 Some(name)
             }
             Err(e) => {
@@ -704,6 +707,7 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
         mode_id: mode_id.clone(),
         model_id: model_id.clone(),
         duration_ms: elapsed,
+        audio_ms,
         audio_file: audio_file.clone(),
     };
     let _ = history::append(entry);
@@ -717,6 +721,7 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
             mode_id,
             model_id,
             duration_ms: elapsed,
+            audio_ms,
             audio_file,
         },
     );

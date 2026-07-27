@@ -13,6 +13,8 @@ pub struct HistoryEntry {
     pub model_id: String,
     pub duration_ms: i64,
     #[serde(default)]
+    pub audio_ms: Option<i64>,
+    #[serde(default)]
     pub audio_file: Option<String>,
 }
 
@@ -150,6 +152,7 @@ mod tests {
             mode_id: "raw".into(),
             model_id: "tiny.en".into(),
             duration_ms: 10,
+            audio_ms: Some(1500),
             audio_file: Some("rec-1.wav".into()),
         };
         let json = serde_json::to_string(&entry).unwrap();
