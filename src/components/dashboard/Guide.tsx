@@ -181,7 +181,7 @@ export default function Guide() {
                 Adjust the slider to filter out background noise (wind, keyboard clicks, fans).
               </FeatureItem>
               <FeatureItem title="Read aloud" icon={<SpeakerIcon />}>
-                Select text in any app and press the read-aloud hotkey to hear it spoken. Voices live in Model Store → Text-to-Speech.
+                Select text in any app and press the read-aloud hotkey to hear it spoken. Voices live in Voices & models → Text-to-Speech.
               </FeatureItem>
             </div>
           </section>
@@ -196,7 +196,7 @@ export default function Guide() {
                 The app keeps running in the tray. Click the tray icon (near the clock) to bring it back.
               </TroubleItem>
               <TroubleItem q="Cloud STT errors?">
-                Use "Test connection" in API Keys. If cloud fails mid-dictation, it falls back to your local model.
+                Use "Test connection" in Cloud providers. If cloud fails mid-dictation, it falls back to your local model.
               </TroubleItem>
               <TroubleItem q="Something else broke?">
                 Errors are logged to <code className="rounded bg-sv-surface-2 px-1.5 py-0.5 text-xs text-sv-accent">%APPDATA%\SilentVoice\logs</code>.

@@ -119,6 +119,7 @@ export interface Mode {
   name: string;
   icon: string;
   system_prompt: string;
+  description?: string; // plain-language outcome shown on the card, instead of the prompt
   model_source: ModelSource; // "none" => raw transcription, no LLM
   model_id: string;
   provider_id?: string; // for model_source "api": which ApiProvider to use

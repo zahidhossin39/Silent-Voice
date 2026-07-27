@@ -5,10 +5,8 @@ import { useSettingsStore } from "../../stores/settingsStore";
 import { useModelStore } from "../../stores/modelStore";
 import { localLlmGenerate, apiGenerate } from "../../services/tauriBridge";
 import { LLM_MODELS } from "../../services/catalog";
+import { SAMPLE_INPUT } from "../../services/modes";
 import type { LlmModel, Mode, ModelSource } from "../../types";
-
-const SAMPLE_TEXT =
-  "um so i was thinking like maybe we could uh meet tomorrow you know to go over the the budget stuff";
 
 const EMPTY: Mode = {
   id: "",
@@ -23,6 +21,7 @@ const EMPTY: Mode = {
 export default function Modes() {
   const modes = useSettingsStore((s) => s.modes);
   const activeId = useSettingsStore((s) => s.settings.active_mode_id);
+  const providers = useSettingsStore((s) => s.providers);
   const setActiveMode = useSettingsStore((s) => s.setActiveMode);
   const addMode = useSettingsStore((s) => s.addMode);
   const updateMode = useSettingsStore((s) => s.updateMode);
@@ -31,7 +30,29 @@ export default function Modes() {
   const customLlm = useModelStore((s) => s.customLlm);
 
   const [editing, setEditing] = useState<Mode | null>(null);
+  const [previews, setPreviews] = useState<Record<string, string>>({});
+  const [runningPreviews, setRunningPreviews] = useState<Record<string, boolean>>({});
   const localCount = downloadedLlm.size;
+
+  async function runPreview(m: Mode) {
+    if (previews[m.id] || runningPreviews[m.id]) return;
+    setRunningPreviews((prev) => ({ ...prev, [m.id]: true }));
+    try {
+      let out: string;
+      if (m.model_source === "api") {
+        const p = providers.find((p) => p.id === m.provider_id);
+        if (!p) throw new Error("No provider");
+        out = await apiGenerate(p.base_url, p.api_key, p.model, m.system_prompt, SAMPLE_INPUT);
+      } else {
+        out = await localLlmGenerate(m.model_id, m.system_prompt, SAMPLE_INPUT);
+      }
+      setPreviews((prev) => ({ ...prev, [m.id]: out }));
+    } catch (e) {
+      setPreviews((prev) => ({ ...prev, [m.id]: `Error: ${e}` }));
+    } finally {
+      setRunningPreviews((prev) => ({ ...prev, [m.id]: false }));
+    }
+  }
 
   function save() {
     if (!editing) return;
@@ -71,8 +92,8 @@ export default function Modes() {
 
   return (
         <Page
-          title="Modes"
-          subtitle="How transcribed text is processed before pasting"
+          title="Rewrite modes"
+          subtitle="Pick what the AI does to your words before they land at the cursor."
           actions={
             <button
               onClick={() => setEditing({ ...EMPTY })}
@@ -101,9 +122,9 @@ export default function Modes() {
                 <>
                   ⚠ No local AI model yet. AI modes fall back to raw transcription.{" "}
                   <Link to="/models" className="underline">
-                    Download one in the Model Store
+                    Download one in Voices & models
                   </Link>{" "}
-                  (AI Processing tab), or use a cloud provider in API Keys.
+                  (AI Processing tab), or use a cloud provider in Cloud providers.
                 </>
               )}
             </span>
@@ -115,7 +136,7 @@ export default function Modes() {
                 key={m.id}
                 className={`rounded-xl border p-4 ${
                   activeId === m.id
-                    ? "border-sv-accent bg-sv-accent/5"
+                    ? "border-sv-accent/40 bg-sv-accent/5"
                     : "border-sv-border bg-sv-surface"
                 }`}
               >
@@ -123,9 +144,7 @@ export default function Modes() {
                   <div>
                     <h3 className="font-medium">{m.name}</h3>
                     <p className="mt-0.5 line-clamp-2 text-xs text-sv-muted">
-                      {m.model_source === "none"
-                        ? "Pastes exactly what was said."
-                        : m.system_prompt}
+                      {m.description || m.system_prompt}
                     </p>
                   </div>
                   {m.builtin && (
@@ -134,30 +153,50 @@ export default function Modes() {
                     </span>
                   )}
                 </div>
+                {previews[m.id] && (
+                  <div className="mt-3 rounded-lg bg-sv-surface-2 p-3 text-xs">
+                    <p className="mb-1 text-[11px] italic text-sv-muted">"{SAMPLE_INPUT}"</p>
+                    <p>
+                      <span className="text-sv-muted mr-1">Example:</span>
+                      {previews[m.id]}
+                    </p>
+                  </div>
+                )}
                 <div className="mt-3 flex items-center gap-2 text-xs">
-                  <button
-                    onClick={() => setActiveMode(m.id)}
-                    disabled={activeId === m.id}
-                    className={`rounded-lg px-2.5 py-1 ${
-                      activeId === m.id
-                        ? "bg-sv-good/15 text-sv-good"
-                        : "bg-sv-accent text-white hover:bg-sv-accent-hover"
-                    }`}
-                  >
-                    {activeId === m.id ? "✓ Active" : "Set active"}
-                  </button>
+                  {activeId === m.id ? (
+                    <span className="rounded bg-sv-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-sv-accent">
+                      Active
+                    </span>
+                  ) : (
+                    <button
+                      onClick={() => setActiveMode(m.id)}
+                      className="rounded-lg border border-sv-border bg-sv-surface-2 px-3 py-1.5 text-xs font-medium text-sv-text transition-colors duration-75 hover:border-sv-accent hover:text-sv-accent"
+                    >
+                      Use
+                    </button>
+                  )}
                   <button
                     onClick={() => setEditing({ ...m })}
-                    className="rounded-lg border border-sv-border px-2.5 py-1 text-sv-muted hover:text-sv-text"
+                    className="rounded-lg border border-transparent px-2.5 py-1.5 text-xs font-medium text-sv-muted transition-colors duration-75 hover:border-sv-border hover:text-sv-text"
                   >
                     Edit
                   </button>
                   {!m.builtin && (
                     <button
                       onClick={() => deleteMode(m.id)}
-                      className="rounded-lg border border-sv-border px-2.5 py-1 text-sv-muted hover:text-sv-bad"
+                      className="rounded-lg border border-transparent px-2.5 py-1.5 text-xs font-medium text-sv-muted transition-colors duration-75 hover:border-sv-bad/40 hover:bg-sv-bad/10 hover:text-sv-bad"
                     >
                       Delete
+                    </button>
+                  )}
+                  {m.model_source !== "none" &&
+                   ((m.model_source === "local" && downloadedLlm.has(m.model_id)) ||
+                    (m.model_source === "api" && providers.some(p => p.id === m.provider_id))) && (
+                    <button
+                      onClick={() => runPreview(m)}
+                      className="ml-auto rounded-lg border border-transparent px-2.5 py-1.5 text-xs font-medium text-sv-muted transition-colors duration-75 hover:border-sv-border hover:text-sv-text"
+                    >
+                      {runningPreviews[m.id] ? "Running…" : "Preview"}
                     </button>
                   )}
                 </div>
@@ -218,19 +257,19 @@ function Editor({
     try {
       let out: string;
       if (mode.model_source === "api") {
-        if (!provider) throw new Error("Pick a provider first (API Keys tab)");
+        if (!provider) throw new Error("Pick a provider first (Cloud providers tab)");
         out = await apiGenerate(
           provider.base_url,
           provider.api_key,
           provider.model,
           mode.system_prompt,
-          SAMPLE_TEXT
+          SAMPLE_INPUT
         );
       } else {
         out = await localLlmGenerate(
           mode.model_id,
           mode.system_prompt,
-          SAMPLE_TEXT
+          SAMPLE_INPUT
         );
       }
       setTestOut(out);
@@ -257,7 +296,7 @@ function Editor({
           />
         </label>
         <label className="mb-3 block text-sm">
-          <span className="mb-1 block text-sv-muted">System prompt</span>
+          <span className="mb-1 block text-sv-muted">Instructions sent to the AI</span>
           <textarea
             value={mode.system_prompt}
             disabled={readonly}
@@ -336,13 +375,13 @@ function Editor({
 
         {mode.model_source === "local" && !localReady && (
           <p className="mb-3 text-[11px] text-sv-warn">
-            This model isn’t downloaded. Get it in the Model Store → AI
+            This model isn’t downloaded. Get it in Voices & models → AI
             Processing, or this mode will paste raw text.
           </p>
         )}
         {mode.model_source === "api" && providers.length === 0 && (
           <p className="mb-3 text-[11px] text-sv-warn">
-            No providers yet — add one in the API Keys tab.
+            No providers yet — add one in the Cloud providers tab.
           </p>
         )}
 
@@ -363,7 +402,7 @@ function Editor({
                 {testing ? "Running…" : "▶ Test"}
               </button>
             </div>
-            <p className="mb-2 text-[11px] italic text-sv-muted">“{SAMPLE_TEXT}”</p>
+            <p className="mb-2 text-[11px] italic text-sv-muted">“{SAMPLE_INPUT}”</p>
             {testing && mode.model_source === "local" && (
               <p className="text-[11px] text-sv-muted">
                 First run loads the model into memory — can take a moment.

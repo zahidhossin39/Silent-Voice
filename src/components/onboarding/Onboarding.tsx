@@ -167,7 +167,7 @@ export default function Onboarding() {
               <p className="mt-1 text-sm text-sv-muted">
                 Speed depends on your graphics card and CPU — bigger isn't
                 better on a machine without a dedicated GPU. You can switch
-                anytime in the Model Store.
+                anytime in Voices & models.
               </p>
 
               {reco && (
@@ -386,7 +386,7 @@ export default function Onboarding() {
                 Hold <kbd className="rounded bg-sv-surface-2 px-1.5 py-0.5 text-sv-text">{settings.hotkey}</kbd>{" "}
                 anywhere on your PC to dictate. If your model is still
                 downloading, dictation will work as soon as it finishes — you
-                can watch progress in the Model Store.
+                can watch progress in Voices & models.
               </p>
               <button
                 onClick={finish}

@@ -133,8 +133,8 @@ export default function ModelStore() {
 
   return (
     <Page
-      title="Model Store"
-      subtitle="Pick a model to dictate with. Colored dots show what fits your device."
+      title="Voices & models"
+      subtitle="Pick what listens, speaks, and rewrites. Coloured dots show what fits your device."
     >
       {/* Tab switch */}
       <div className="mb-4 inline-flex flex-wrap gap-1 rounded-lg border border-sv-border bg-sv-surface p-1 text-sm">
@@ -239,7 +239,7 @@ export default function ModelStore() {
           <p className="mb-4 text-xs text-sv-muted">
             These run <strong>inside Silent Voice</strong> and power your AI
             modes (Clean Up, Formal, Email…). Assign one to a mode in the Modes
-            tab. You can also use a cloud provider instead (API Keys).
+            tab. You can also use a cloud provider instead (Cloud providers).
           </p>
           <HfBrowser track="llm" />
         </>

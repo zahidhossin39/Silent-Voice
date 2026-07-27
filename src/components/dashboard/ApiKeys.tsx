@@ -173,7 +173,7 @@ export default function ApiKeys() {
 
   return (
     <Page
-      title="API Keys"
+      title="Cloud providers"
       subtitle="Optional cloud providers for STT and AI processing. Keys are stored locally."
       actions={
         <div className="flex gap-2">

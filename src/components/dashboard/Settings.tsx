@@ -187,7 +187,7 @@ export default function Settings() {
             label="Speech-to-text source"
             hint={
               sttProviders.length === 0
-                ? "Add a provider in API Keys with \"STT\" checked to unlock cloud options"
+                ? "Add a provider in Cloud providers with \"STT\" checked to unlock cloud options"
                 : undefined
             }
           >
@@ -516,7 +516,7 @@ export default function Settings() {
 
         <Section
           title="Read aloud (text-to-speech)"
-          desc="Select text in any app, press the hotkey, and hear it spoken. Press again to stop. Voices are downloaded in Model Store → Text-to-Speech."
+          desc="Select text in any app, press the hotkey, and hear it spoken. Press again to stop. Voices are downloaded in Voices & models → Text-to-Speech."
           accent="var(--color-sv-sec-tts)"
           icon={<SpeakerIcon />}
         >
@@ -545,7 +545,7 @@ export default function Settings() {
               label="Voice"
               hint={
                 downloadedTts.size === 0
-                  ? "No voices downloaded yet — get one in Model Store → Text-to-Speech"
+                  ? "No voices downloaded yet — get one in Voices & models → Text-to-Speech"
                   : undefined
               }
             >
