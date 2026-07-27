@@ -139,6 +139,9 @@ fn watcher(app: AppHandle) {
         let mut last_field_focused = false;
         let mut last_squiggles: Vec<SquiggleInfo> = Vec::new();
         let mut was_active = false;
+        // ~3 polls at ACTIVE_POLL_MS = about 300ms of cover for a UIA hiccup.
+        const LOST_GRACE_POLLS: u32 = 3;
+        let mut lost_polls: u32 = 0;
         // poll_once already computes exactly why a cycle produced nothing; it
         // used to be discarded, which left "squiggles don't show up yet" with
         // no evidence to diagnose from. Logged on transition only — logging
@@ -299,7 +302,8 @@ fn watcher(app: AppHandle) {
             // a real text target was reached, just with nothing to squiggle.)
             // Governs whether we back off to FIELD_IDLE_MS or sleep deep.
             let field_focused =
-                matches!(reason, "active" | "empty text" | "no visible issue rects");
+                matches!(reason, "active" | "empty text" | "no visible issue rects")
+                    || is_transient_miss(reason);
             // Back off only when nothing changed. Squiggles-visible always
             // polls fast (ACTIVE_POLL_MS above), so this only relaxes the
             // error-free focused-field case — no stale-trail risk.
@@ -309,7 +313,7 @@ fn watcher(app: AppHandle) {
                 0
             };
             last_field_focused = field_focused;
-            last_squiggles = squiggles.clone();
+            
             let active = !squiggles.is_empty();
             if reason != last_reason {
                 crate::logging::log_info(
@@ -318,12 +322,47 @@ fn watcher(app: AppHandle) {
                 );
                 last_reason = reason;
             }
-            if active || was_active {
+            
+            if active {
+                lost_polls = 0;
+                last_squiggles = squiggles.clone();
                 let _ = overlay_tx.send(squiggles);
+                was_active = true;
+            } else if was_active && is_transient_miss(reason) {
+                lost_polls += 1;
+                if lost_polls < LOST_GRACE_POLLS {
+                    // skip the send entirely and leave was_active and last_squiggles unchanged
+                } else {
+                    crate::logging::log_info(
+                        "inline_check",
+                        &format!("cleared after {} consecutive transient misses", LOST_GRACE_POLLS)
+                    );
+                    last_squiggles = squiggles.clone();
+                    let _ = overlay_tx.send(squiggles);
+                    was_active = false;
+                    lost_polls = 0;
+                }
+            } else {
+                lost_polls = 0;
+                last_squiggles = squiggles.clone();
+                if was_active {
+                    let _ = overlay_tx.send(squiggles);
+                }
+                was_active = false;
             }
-            was_active = active;
         }
     }
+}
+
+/// A poll that produced nothing because UIA momentarily lost the field —
+/// not because the user left it. Chromium/Electron hosts drop and rebuild
+/// their accessibility tree constantly while typing, so treating these as
+/// "no more errors" and clearing the overlay is what makes squiggles blink.
+fn is_transient_miss(reason: &str) -> bool {
+    matches!(
+        reason,
+        "no text element" | "no text pattern" | "no document range" | "GetText failed" | "empty text"
+    )
 }
 
 fn poll_once(
