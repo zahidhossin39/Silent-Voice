@@ -4,6 +4,7 @@ pub mod foreground;
 pub mod hardware;
 pub mod hotkey;
 pub mod inline_check;
+pub mod job;
 pub mod overlay;
 pub mod paste;
 pub mod sherpa;

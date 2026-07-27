@@ -129,6 +129,9 @@ impl LlamaServer {
         }
 
         let mut child = cmd.spawn().map_err(|e| e.to_string())?;
+        if let Err(e) = crate::system::job::adopt(&child) {
+            crate::logging::log_info("job", &format!("Warning: failed to adopt llama-server: {}", e));
+        }
         let stderr = child.stderr.take().unwrap();
 
         let diag = diagnostics().clone();

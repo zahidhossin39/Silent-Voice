@@ -100,6 +100,9 @@ impl WhisperServer {
         }
 
         let child = cmd.spawn().map_err(|e| e.to_string())?;
+        if let Err(e) = crate::system::job::adopt(&child) {
+            crate::logging::log_info("job", &format!("Warning: failed to adopt whisper-server: {}", e));
+        }
         self.child = Some(child);
         self.key = Some(key.to_string());
         Ok(())

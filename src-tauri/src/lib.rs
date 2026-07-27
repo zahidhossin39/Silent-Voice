@@ -888,6 +888,8 @@ pub fn run() {
             // Inline proofreading watcher (squiggles in any app's text field).
             system::inline_check::start(app.handle().clone());
 
+            system::job::reap_orphans();
+
             // Keep-alive: periodically re-assert the overlay as visible +
             // topmost so it never silently disappears (unless the user hid it).
             let handle = app.handle().clone();

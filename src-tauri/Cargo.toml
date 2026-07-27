@@ -71,6 +71,9 @@ windows = { version = "0.58", features = [
   "Win32_System_Ole",
   "Win32_System_Threading",
   "Win32_System_Variant",
+  "Win32_System_JobObjects",
+  "Win32_System_Diagnostics_ToolHelp",
+  "Win32_Security",
 ] }
 windows-core = "0.58"
 # WebView2 memory trimming when hidden to tray. Version must match wry's, and
