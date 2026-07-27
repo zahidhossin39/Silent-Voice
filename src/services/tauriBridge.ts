@@ -479,10 +479,25 @@ export async function clearHistoryFile(): Promise<void> {
 // The Rust side answers with a raw binary IPC response, so this really is an
 // ArrayBuffer. It used to be annotated Uint8Array while actually arriving as a
 // number[], and the lie went unnoticed because the caller cast it to any.
+// Widened deliberately: Tauri's raw IPC response has been reported as both an
+// ArrayBuffer and a Uint8Array across versions, and Blob()/byteLength accept
+// either. Claiming one specific type here is what broke playback before — the
+// bridge said Uint8Array while a number[] actually arrived, and an `as any` at
+// the call site hid it. Accept both rather than assert the wrong one.
 export async function readAudioClip(fileName: string): Promise<ArrayBuffer | null> {
   if (!isTauri()) return null;
   try {
-    return await invoke<ArrayBuffer>("read_audio_clip", { fileName });
+    const raw = await invoke<ArrayBuffer | Uint8Array>("read_audio_clip", { fileName });
+    if (!raw) return null;
+    // Normalise here so callers have exactly one type to handle. Tauri's raw
+    // IPC body has been reported as both ArrayBuffer and Uint8Array, and a
+    // Uint8Array may sit on a SharedArrayBuffer, which Blob() rejects.
+    if (raw instanceof Uint8Array) {
+      const copy = new ArrayBuffer(raw.byteLength);
+      new Uint8Array(copy).set(raw);
+      return copy;
+    }
+    return raw;
   } catch (e) {
     console.warn("read_audio_clip failed", e);
     return null;

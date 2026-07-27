@@ -135,6 +135,8 @@ export default function TranscriptCard({
     if (!entry.audio_file) return null;
     if (audioRef.current) return audioRef.current;
     const buffer = await readAudioClip(entry.audio_file);
+    if (audioRef.current) return audioRef.current; // Concurrency check
+
     if (!buffer || buffer.byteLength === 0) {
       console.warn("audio clip missing or empty", entry.audio_file);
       return null;
@@ -151,7 +153,10 @@ export default function TranscriptCard({
     };
     audio.ontimeupdate = () => setProgress(audio.currentTime);
     audio.onloadedmetadata = () => setDuration(audio.duration);
-    audio.onerror = () => console.warn("audio decode failed", entry.audio_file);
+    audio.onerror = () => {
+      console.warn("audio decode failed", entry.audio_file);
+      setIsPlaying(false);
+    };
     audioRef.current = audio;
     return audio;
   }
