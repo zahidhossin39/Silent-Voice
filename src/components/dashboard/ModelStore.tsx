@@ -14,8 +14,10 @@ import type {
   CompatibilityLevel,
   PiperVoice,
 } from "../../types";
-import { hfPiperVoices } from "../../services/tauriBridge";
-import HfBrowser from "./hf/HfBrowser";
+import { hfPiperVoices, ttsSpeakText } from "../../services/tauriBridge";
+import HfBrowser, { MetricBar } from "./hf/HfBrowser";
+import ProviderLogo from "../shared/ProviderLogo";
+import { ttsNaturalnessScore, ttsNaturalnessLabel, ttsSpeedScore, ttsSpeedLabel } from "../../services/modelMetrics";
 
 type Tab = "stt" | "llm" | "tts";
 
@@ -133,7 +135,7 @@ export default function ModelStore() {
 
   return (
     <Page
-      title="Voices & models"
+      title="Model Store"
       subtitle="Pick what listens, speaks, and rewrites. Coloured dots show what fits your device."
     >
       {/* Tab switch */}
@@ -198,7 +200,7 @@ export default function ModelStore() {
               </span>
             )}
           </div>
-          <div className="grid grid-cols-1 items-start gap-2 lg:grid-cols-2">
+          <div className="flex flex-col gap-2 max-w-[1180px]">
             {sortedTts.map((v) => (
               <TtsCard
                 key={v.id}
@@ -284,9 +286,9 @@ function Select({
 }
 
 const TTS_QUALITY_CHIP: Record<string, { label: string; cls: string }> = {
-  fast: { label: "Fast", cls: "bg-sv-good/15 text-sv-good" },
-  balanced: { label: "Balanced", cls: "bg-sv-accent/15 text-sv-accent" },
-  natural: { label: "Natural HD", cls: "bg-sv-warn/15 text-sv-warn" },
+  fast: { label: "Fast", cls: "bg-sv-surface-2 text-sv-muted" },
+  balanced: { label: "Balanced", cls: "bg-sv-surface-2 text-sv-muted" },
+  natural: { label: "Natural", cls: "bg-sv-surface-2 text-sv-muted" },
 };
 
 function TtsCard({
@@ -306,12 +308,19 @@ function TtsCard({
   const progress = useModelStore((s) => s.progress[voice.id]);
   const downloadCustomTts = useModelStore((s) => s.downloadCustomTts);
   const remove = useModelStore((s) => s.removeTts);
+  const [playing, setPlaying] = useState(false);
 
   const download = () => {
-    // If it's a known catalog model, we could use downloadTts.
-    // However, for merged custom Piper models from hfPiperVoices, we must use downloadCustomTts
-    // with the explicit URLs (as they are not in the hardcoded TTS_MODELS array).
     downloadCustomTts(voice.id, voice.url_onnx, voice.url_json, voice.size_mb);
+  };
+
+  const handlePreview = async () => {
+    setPlaying(true);
+    try {
+      await ttsSpeakText("This is a preview of the voice.");
+    } finally {
+      setPlaying(false);
+    }
   };
 
   const isDownloading = progress?.status === "downloading";
@@ -323,87 +332,103 @@ function TtsCard({
 
   return (
     <div
-      className={`flex items-center gap-3 rounded-xl border px-3.5 py-2.5 transition ${
+      className={`group relative rounded-xl border ${
         active
-          ? "border-sv-accent bg-sv-accent/5 ring-1 ring-sv-accent/40"
-          : "border-sv-border bg-sv-surface hover:border-sv-muted/40"
-      }`}
+          ? "border-sv-accent/40"
+          : "border-sv-border"
+      } bg-sv-surface transition-colors duration-75 hover:bg-sv-surface-2/40 flex flex-wrap items-center gap-x-5 gap-y-2 px-4 py-3`}
     >
-      {/* Speaker glyph */}
-      <span className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-lg bg-sv-surface-2 text-sv-muted">
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M11 5 6 9H3v6h3l5 4z" />
-          <path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13" />
-        </svg>
-      </span>
-
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <h3 className="truncate text-sm font-medium">{voice.label}</h3>
-          <span
-            className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${chip.cls}`}
-          >
-            {chip.label}
-          </span>
-          {active && (
-            <span className="shrink-0 rounded-full bg-sv-accent px-2 py-0.5 text-[10px] font-medium text-white">
-              Active
+      <div className="flex min-w-[230px] max-w-[420px] flex-1 items-center gap-3">
+        <ProviderLogo provider={voice.engine} size={32} />
+        <div className="min-w-0 flex-1 flex flex-col gap-1.5">
+          <div className="flex items-center gap-2">
+            <span
+              className="h-1.5 w-1.5 shrink-0 rounded-full bg-sv-good"
+              title="Fits well"
+            />
+            <span className="truncate text-[13px] font-semibold text-sv-text">{voice.label}</span>
+            <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${chip.cls}`}>
+              {chip.label}
             </span>
+            {active && <span className="shrink-0 rounded bg-sv-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-sv-accent">In use</span>}
+            {pinned && <span className="shrink-0 rounded bg-sv-surface-2 px-1.5 py-0.5 text-[10px] text-sv-muted">Pinned</span>}
+          </div>
+          <div className="truncate tabular-nums text-[11px] text-sv-muted">
+            {voice.engine} · {voice.language} · {formatMB(voice.size_mb)}
+          </div>
+          {progress?.status === "error" && (
+            <div className="truncate text-[11px] text-sv-bad">{progress.error}</div>
           )}
         </div>
-        <p className="mt-0.5 truncate text-[11px] text-sv-muted">
-          {voice.engine === "sherpa" ? "Sherpa" : "Piper"} · {voice.language} ·{" "}
-          {formatMB(voice.size_mb)}
-        </p>
       </div>
 
-      <div className="flex shrink-0 items-center justify-end gap-2 min-w-[168px]">
-        <button onClick={onTogglePin} title={pinned ? "Unpin" : "Pin to top"} className={pinned ? "mr-auto rounded-lg p-1.5 transition text-sv-accent" : "mr-auto rounded-lg p-1.5 transition text-sv-muted hover:text-sv-accent"}><StarIcon filled={pinned} /></button>
-        {isDownloading ? (
-          <div className="flex items-center gap-2">
-            <div className="h-1.5 w-20 overflow-hidden rounded-full bg-sv-surface-2">
-              <div
-                className="h-full bg-sv-accent transition-all"
-                style={{ width: `${pct}%` }}
-              />
-            </div>
-            <span className="w-8 text-right text-[11px] text-sv-muted">
-              {pct}%
-            </span>
-          </div>
-        ) : downloaded ? (
-          <>
-            {active ? (
-              <span className="w-[84px] text-right text-[11px] text-sv-good">In use</span>
-            ) : (
-              <button
-                onClick={onSelect}
-                className="w-[84px] text-center rounded-lg bg-sv-surface-2 px-3 py-1.5 text-xs font-medium hover:bg-sv-accent hover:text-white"
-              >
-                Select
-              </button>
-            )}
+      <div className="flex w-[300px] shrink-0 flex-col gap-1">
+        <MetricBar label="naturalness" value={ttsNaturalnessScore(voice.quality)} caption={ttsNaturalnessLabel(voice.quality)} />
+        <MetricBar label="speed" value={ttsSpeedScore(voice.quality)} caption={ttsSpeedLabel(voice.quality)} />
+      </div>
+
+      <div className="ml-auto flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 items-center">
+          {downloaded && !active && (
             <button
-              onClick={() => remove(voice.id)}
-              title="Remove download"
-              className="rounded-lg p-1.5 text-sv-muted transition hover:bg-sv-surface-2 hover:text-sv-bad"
+              onClick={handlePreview}
+              disabled={playing}
+              className="mr-2 rounded-lg px-2.5 py-1.5 text-xs font-medium text-sv-text transition-colors duration-75 hover:bg-sv-surface-2 disabled:opacity-50"
             >
-              <TrashIcon />
+              {playing ? "Playing…" : "Preview"}
             </button>
-          </>
-        ) : (
-          <button
-            onClick={download}
-            className="w-[84px] text-center rounded-lg border border-sv-border px-3 py-1.5 text-xs font-medium text-sv-text hover:border-sv-accent hover:text-sv-accent"
-          >
-            Download
-          </button>
-        )}
-      </div>
+          )}
 
-      {progress?.status === "error" && (
-        <p className="w-full text-[11px] text-sv-bad">{progress.error}</p>
-      )}
+          {isDownloading ? (
+            <div className="flex w-32 items-center gap-2">
+              {!progress || progress.total_bytes === 0 ? (
+                <>
+                  <div className="h-1.5 flex-1 overflow-hidden rounded-full border border-sv-border bg-sv-surface-2">
+                    <div className="h-full w-1/3 rounded-full bg-sv-accent animate-[sv-indeterminate_1.1s_ease-in-out_infinite]" />
+                  </div>
+                  <span className="w-8 text-right tabular-nums text-[11px] text-sv-muted">Starting…</span>
+                </>
+              ) : (
+                <>
+                  <div className="h-1.5 flex-1 overflow-hidden rounded-full border border-sv-border bg-sv-surface-2">
+                    <div className="h-full bg-sv-accent transition-all duration-75" style={{ width: `${pct}%` }} />
+                  </div>
+                  <span className="w-8 text-right tabular-nums text-[11px] text-sv-muted">{pct}%</span>
+                </>
+              )}
+            </div>
+          ) : downloaded ? (
+            <div className="flex items-center gap-2">
+              {!active && (
+                <button
+                  onClick={onSelect}
+                  className="rounded-lg border border-sv-border bg-sv-surface-2 px-3 py-1.5 text-xs font-medium text-sv-text transition-colors duration-75 hover:border-sv-accent hover:text-sv-accent"
+                >
+                  Select
+                </button>
+              )}
+              <button
+                onClick={() => remove(voice.id)}
+                className="rounded-lg border border-sv-border px-2.5 py-1.5 text-xs font-medium text-sv-muted transition-colors duration-75 hover:border-sv-bad/40 hover:bg-sv-bad/10 hover:text-sv-bad"
+              >
+                Remove
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={download}
+              disabled={isDownloading}
+              className="rounded-lg border border-sv-border bg-sv-surface-2 px-3 py-1.5 text-xs font-medium text-sv-text transition-colors duration-75 hover:border-sv-accent hover:text-sv-accent"
+            >
+              Download
+            </button>
+          )}
+        </div>
+
+        <button onClick={onTogglePin} title={pinned ? "Unpin" : "Pin to top"} className={`transition-colors duration-75 ${pinned ? "text-sv-accent" : "text-sv-muted/40 hover:text-sv-accent"}`}>
+          <svg viewBox="0 0 24 24" width="16" height="16" fill={pinned ? "currentColor" : "none"} stroke={pinned ? "none" : "currentColor"} strokeWidth={pinned ? undefined : "1.75"} strokeLinecap="round" strokeLinejoin="round"><path d="M12 2.5l2.9 6.2 6.6.6-5 4.6 1.4 6.6L12 17l-5.9 3.5L7.5 14l-5-4.6 6.6-.6L12 2.5z" /></svg>
+        </button>
+      </div>
     </div>
   );
 }
@@ -429,37 +454,3 @@ function TabButton({
   );
 }
 
-
-function TrashIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width="15"
-      height="15"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.75"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-12" />
-    </svg>
-  );
-}
-
-function StarIcon({ filled }: { filled: boolean }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width="15"
-      height="15"
-      fill={filled ? "currentColor" : "none"}
-      stroke={filled ? "none" : "currentColor"}
-      strokeWidth={filled ? undefined : "1.75"}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M12 2.5l2.9 6.2 6.6.6-5 4.6 1.4 6.6L12 17l-5.9 3.5L7.5 14l-5-4.6 6.6-.6L12 2.5z" />
-    </svg>
-  );
-}

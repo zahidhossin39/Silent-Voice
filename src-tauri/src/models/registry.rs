@@ -130,6 +130,10 @@ pub fn audio_dir() -> PathBuf {
     bootstrap_dir().join("audio")
 }
 
+pub fn audio_clips_dir() -> PathBuf {
+    audio_dir().join("clips")
+}
+
 /// Path to the local history file.
 pub fn history_path() -> PathBuf {
     let loc = load_data_location();
@@ -146,6 +150,7 @@ pub fn ensure_dirs() -> std::io::Result<()> {
     std::fs::create_dir_all(llm_models_dir())?;
     std::fs::create_dir_all(tts_models_dir())?;
     std::fs::create_dir_all(audio_dir())?;
+    std::fs::create_dir_all(audio_clips_dir())?;
     Ok(())
 }
 

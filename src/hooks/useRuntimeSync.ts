@@ -65,6 +65,8 @@ export function useRuntimeSync() {
   const pillAutoHide = useSettingsStore((s) => s.settings.pill_auto_hide);
   const appendTrailingSpace = useSettingsStore((s) => s.settings.append_trailing_space);
   const coeditEnabled = useSettingsStore((s) => s.settings.coedit_enabled);
+  const saveAudio = useSettingsStore((s) => s.settings.save_audio);
+  const audioClipLimit = useSettingsStore((s) => s.settings.audio_clip_limit);
   const ttsVoice = useSettingsStore((s) => s.settings.active_tts_voice);
   const ttsHotkey = useSettingsStore((s) => s.settings.tts_hotkey);
   const ttsEnabled = useSettingsStore((s) => s.settings.tts_enabled);
@@ -135,9 +137,11 @@ export function useRuntimeSync() {
       proofreadIgnoreApps.split(",").map((a) => a.trim()).filter(Boolean),
       pillAutoHide,
       appendTrailingSpace,
-      coeditEnabled
+      coeditEnabled,
+      saveAudio,
+      audioClipLimit
     );
-  }, [toggleMode, inputSensitivity, inlineProofread, highPerformance, performanceThreads, proofreadDisabledRules, gectorSensitivity, proofreadIgnoreApps, pillAutoHide, appendTrailingSpace, coeditEnabled]);
+  }, [toggleMode, inputSensitivity, inlineProofread, highPerformance, performanceThreads, proofreadDisabledRules, gectorSensitivity, proofreadIgnoreApps, pillAutoHide, appendTrailingSpace, coeditEnabled, saveAudio, audioClipLimit]);
 
   useEffect(() => {
     setAutostart(autoStart);

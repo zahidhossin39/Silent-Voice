@@ -54,15 +54,13 @@ export default function Home() {
     <Page
       title="Home"
       subtitle={
-        (
-          <>
+        <>
             Hold{" "}
             <kbd className="rounded border border-sv-border bg-sv-surface-2 px-1.5 py-0.5 text-xs font-mono">
               {settings.hotkey}
             </kbd>{" "}
             anywhere in Windows, speak, and your words land at the cursor.
-          </>
-        ) as unknown as string
+        </>
       }
     >
       {!isTauri() && (
@@ -231,7 +229,7 @@ export default function Home() {
             label="Speech model"
             hint={
               downloadedModels.length === 0
-                ? "No models downloaded yet — get one in Voices & models"
+                ? "No models downloaded yet — get one in Model Store"
                 : "Which model transcribes your voice"
             }
           >

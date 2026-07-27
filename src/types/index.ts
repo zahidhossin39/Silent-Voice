@@ -167,6 +167,7 @@ export interface HistoryEntry {
   mode_id: string;
   model_id: string;
   duration_ms: number;
+  audio_file?: string;
 }
 
 // ---------- App settings ----------
@@ -212,6 +213,8 @@ export interface Settings {
   history_retention: "never" | "3d" | "2w" | "3m" | "custom"; // auto-delete entries older than this
   history_retention_custom_value: number; // used when history_retention === "custom"
   history_retention_custom_unit: "hours" | "days" | "weeks" | "months";
+  save_audio: boolean;      // keep a copy of the audio for each dictation
+  audio_clip_limit: number; // how many recordings to keep
 }
 
 // ---------- Hugging Face ----------

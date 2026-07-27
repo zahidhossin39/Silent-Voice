@@ -92,7 +92,7 @@ export default function Modes() {
 
   return (
         <Page
-          title="Rewrite modes"
+          title="Writing styles"
           subtitle="Pick what the AI does to your words before they land at the cursor."
           actions={
             <button
@@ -122,7 +122,7 @@ export default function Modes() {
                 <>
                   ⚠ No local AI model yet. AI modes fall back to raw transcription.{" "}
                   <Link to="/models" className="underline">
-                    Download one in Voices & models
+                    Download one in Model Store
                   </Link>{" "}
                   (AI Processing tab), or use a cloud provider in Cloud providers.
                 </>
@@ -375,7 +375,7 @@ function Editor({
 
         {mode.model_source === "local" && !localReady && (
           <p className="mb-3 text-[11px] text-sv-warn">
-            This model isn’t downloaded. Get it in Voices & models → AI
+            This model isn’t downloaded. Get it in Model Store → AI
             Processing, or this mode will paste raw text.
           </p>
         )}

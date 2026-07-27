@@ -30,8 +30,8 @@ import { Titlebar } from "./components/shared/Titlebar";
 
 const NAV = [
   { to: "/home", label: "Home", Icon: HomeIcon },
-  { to: "/models", label: "Voices & models", Icon: StoreIcon },
-  { to: "/modes", label: "Rewrite modes", Icon: ModesIcon },
+  { to: "/models", label: "Model Store", Icon: StoreIcon },
+  { to: "/modes", label: "Writing styles", Icon: ModesIcon },
   { to: "/settings", label: "Settings", Icon: GearIcon },
   { to: "/history", label: "History", Icon: HistoryIcon },
   { to: "/api", label: "Cloud providers", Icon: KeyIcon },

@@ -70,6 +70,8 @@ const DEFAULT_SETTINGS: Settings = {
   history_retention: "never",
   history_retention_custom_value: 7,
   history_retention_custom_unit: "days",
+  save_audio: true,
+  audio_clip_limit: 20,
 };
 
 interface SettingsState {

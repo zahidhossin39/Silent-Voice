@@ -197,7 +197,9 @@ export async function setBehavior(
   proofreadIgnoreApps: string[],
   pillAutoHide: boolean,
   appendTrailingSpace: boolean,
-  coeditEnabled: boolean
+  coeditEnabled: boolean,
+  saveAudio: boolean,
+  audioClipLimit: number
 ): Promise<void> {
   if (!isTauri()) return;
   try {
@@ -213,6 +215,8 @@ export async function setBehavior(
       pillAutoHide,
       appendTrailingSpace,
       coeditEnabled,
+      saveAudio,
+      audioClipLimit,
     });
   } catch (e) {
     console.warn("set_behavior failed", e);
@@ -470,6 +474,26 @@ export async function clearHistoryFile(): Promise<void> {
   } catch (e) {
     console.warn("clear_history failed", e);
   }
+}
+
+export async function readAudioClip(fileName: string): Promise<Uint8Array | null> {
+  if (!isTauri()) return null;
+  try {
+    return await invoke<Uint8Array>("read_audio_clip", { fileName });
+  } catch (e) {
+    console.warn("read_audio_clip failed", e);
+    return null;
+  }
+}
+
+export async function copyAudioFile(fileName: string): Promise<void> {
+  if (!isTauri()) return;
+  await invoke<void>("copy_audio_file", { fileName });
+}
+
+export async function pruneAudioClips(keep: number): Promise<void> {
+  if (!isTauri()) return;
+  await invoke<void>("prune_audio_clips", { keep });
 }
 
 // ---------------- Hugging Face ----------------

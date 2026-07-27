@@ -1,4 +1,5 @@
 pub mod autostart;
+pub mod clipboard_file;
 pub mod foreground;
 pub mod hardware;
 pub mod hotkey;

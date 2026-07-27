@@ -7,7 +7,7 @@ export default function Page({
   children,
 }: {
   title: string;
-  subtitle?: string;
+  subtitle?: ReactNode;
   actions?: ReactNode;
   children: ReactNode;
 }) {

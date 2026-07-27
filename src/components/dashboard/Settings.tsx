@@ -20,6 +20,7 @@ import {
   vadInstalled,
   deleteVadModel,
   recommendDeviceDefaults,
+  pruneAudioClips,
 } from "../../services/tauriBridge";
 import type { DeviceRecommendation } from "../../types";
 import HotkeyRecorder from "../shared/HotkeyRecorder";
@@ -516,7 +517,7 @@ export default function Settings() {
 
         <Section
           title="Read aloud (text-to-speech)"
-          desc="Select text in any app, press the hotkey, and hear it spoken. Press again to stop. Voices are downloaded in Voices & models → Text-to-Speech."
+          desc="Select text in any app, press the hotkey, and hear it spoken. Press again to stop. Voices are downloaded in Model Store → Text-to-Speech."
           accent="var(--color-sv-sec-tts)"
           icon={<SpeakerIcon />}
         >
@@ -545,7 +546,7 @@ export default function Settings() {
               label="Voice"
               hint={
                 downloadedTts.size === 0
-                  ? "No voices downloaded yet — get one in Voices & models → Text-to-Speech"
+                  ? "No voices downloaded yet — get one in Model Store → Text-to-Speech"
                   : undefined
               }
             >
@@ -853,6 +854,31 @@ export default function Settings() {
               )}
             </div>
           </Row>
+          <Row label="Save audio of each dictation" hint="Lets you replay and copy the original recording.">
+            <Toggle
+              checked={settings.save_audio}
+              onChange={async (v) => {
+                setSettings({ save_audio: v });
+                if (v) await pruneAudioClips(settings.audio_clip_limit);
+              }}
+            />
+          </Row>
+          {settings.save_audio && (
+            <Row label="Recordings to keep" hint="About 1 MB each. Older recordings are deleted first.">
+              <div className="flex items-center gap-2.5">
+                <ScrollNumberPicker
+                  value={settings.audio_clip_limit}
+                  onChange={async (v) => {
+                    setSettings({ audio_clip_limit: v });
+                    await pruneAudioClips(v);
+                  }}
+                  min={1}
+                  max={500}
+                />
+                <span className="text-sm text-sv-muted">recordings</span>
+              </div>
+            </Row>
+          )}
           <Row label="Blur transcripts until hover" hint="Keeps what you dictated hidden when your screen is visible to others">
             <Toggle
               checked={settings.blur_history}

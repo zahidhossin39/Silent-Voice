@@ -10,7 +10,7 @@ import type { HfSearchItem, HfModelDetails, LlmModel, HardwareInfo, HfFile, SttM
 import { formatMB, formatGB } from "../../../services/format";
 import SimpleMarkdown from "./SimpleMarkdown";
 import { STT_MODELS, sttLanguage } from "../../../services/catalog";
-import { accuracyScore, speedScore, deviceRealtimeLabel } from "../../../services/modelMetrics";
+import { accuracyScore, speedScore, deviceRealtimeLabel, llmQualityScore, llmSpeedScore, llmSpeedLabel } from "../../../services/modelMetrics";
 
 // --- Helpers ---
 function formatNdaysAgo(isoDate: string) {
@@ -96,7 +96,7 @@ function parseParams(params_b: number | null): string {
 // A labeled 0..1 meter. Minimal on purpose: a single monochrome fill (no
 // decorative color-coding between bars), a thin track, and the numeric
 // caption doing the real talking. The label already tells the two apart.
-function MetricBar({
+export function MetricBar({
   label,
   value,
   caption,
@@ -569,7 +569,10 @@ function LlmRow({
         </div>
       </div>
 
-      <div className="flex w-[300px] shrink-0 flex-col gap-1"></div>
+      <div className="flex w-[300px] shrink-0 flex-col gap-1">
+        <MetricBar label="quality" value={llmQualityScore(model.params)} caption={`${model.params} parameters`} />
+        <MetricBar label="speed" value={llmSpeedScore(level)} caption={llmSpeedLabel(level)} />
+      </div>
 
       <div className="ml-auto flex shrink-0 items-center gap-2">
         <div className="flex shrink-0 items-center">

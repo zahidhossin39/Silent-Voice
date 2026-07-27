@@ -486,6 +486,8 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
         mut mode_model,
         mut mode_base_url,
         mut mode_api_key,
+        save_audio,
+        audio_clip_limit,
     ) = {
         let state = app.state::<AppState>();
         let cfg = match state.config.lock() {
@@ -517,6 +519,8 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
             cfg.mode_model.clone(),
             cfg.mode_base_url.clone(),
             cfg.mode_api_key.clone(),
+            cfg.save_audio,
+            cfg.audio_clip_limit,
         )
     };
 
@@ -672,6 +676,23 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0);
 
+    let audio_file = if save_audio {
+        let name = format!("rec-{}.wav", now);
+        let dest = registry::audio_clips_dir().join(&name);
+        match std::fs::copy(&wav_path, &dest) {
+            Ok(_) => {
+                crate::history::prune_clips(audio_clip_limit);
+                Some(name)
+            }
+            Err(e) => {
+                crate::logging::log_error("audio", &format!("Failed to save audio clip: {}", e));
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     let entry = HistoryEntry {
         id: now,
         timestamp: now,
@@ -680,6 +701,7 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
         mode_id: mode_id.clone(),
         model_id: model_id.clone(),
         duration_ms: elapsed,
+        audio_file,
     };
     let _ = history::append(entry);
 

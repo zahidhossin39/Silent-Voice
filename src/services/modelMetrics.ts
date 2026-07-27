@@ -84,3 +84,59 @@ export function deviceRealtimeLabel(
   const rounded = rt >= 10 ? Math.round(rt) : Math.round(rt * 10) / 10;
   return `≈${rounded}x realtime on your device`;
 }
+
+// Quality tracks param count, but sub-linearly — a 4B is not four times as good
+// as a 1B. A log scale over the range the catalog actually spans (~0.5B-14B)
+// keeps the small models this app ships with visually distinguishable; a linear
+// scale against a large ceiling squashes them all into an identical stub.
+export function llmQualityScore(paramsStr: string): number {
+  const params = parseFloat(paramsStr);
+  if (isNaN(params) || params <= 0) return 0.5;
+  const lo = Math.log2(0.5);
+  const hi = Math.log2(14);
+  const score = (Math.log2(params) - lo) / (hi - lo);
+  return Math.max(0.1, Math.min(0.99, score));
+}
+
+// Coarse 3-step speed score for LLMs using compatibility level
+export function llmSpeedScore(level: string): number {
+  if (level === "good") return 0.8;
+  if (level === "warn") return 0.4;
+  return 0.1;
+}
+
+export function llmSpeedLabel(level: string): string {
+  if (level === "good") return "fast on your device";
+  if (level === "warn") return "may be slow";
+  return "too heavy for device";
+}
+
+// TTS quality (naturalness) based on tier
+export function ttsNaturalnessScore(quality: string): number {
+  if (quality === "natural") return 0.9;
+  if (quality === "balanced") return 0.6;
+  if (quality === "fast") return 0.3;
+  return 0.5;
+}
+
+export function ttsNaturalnessLabel(quality: string): string {
+  if (quality === "natural") return "closest to a human voice";
+  if (quality === "balanced") return "natural enough for most text";
+  if (quality === "fast") return "clear, noticeably synthetic";
+  return quality;
+}
+
+// TTS speed based on tier (fast = highest score)
+export function ttsSpeedScore(quality: string): number {
+  if (quality === "fast") return 0.9;
+  if (quality === "balanced") return 0.6;
+  if (quality === "natural") return 0.3;
+  return 0.5;
+}
+
+export function ttsSpeedLabel(quality: string): string {
+  if (quality === "fast") return "speaks almost instantly";
+  if (quality === "balanced") return "starts speaking quickly";
+  if (quality === "natural") return "takes a moment to start";
+  return quality;
+}

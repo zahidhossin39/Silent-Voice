@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import type { HistoryEntry } from "../../types";
-import { pasteText, copyToClipboard } from "../../services/tauriBridge";
+import { pasteText, copyToClipboard, readAudioClip, copyAudioFile } from "../../services/tauriBridge";
 import { useSettingsStore } from "../../stores/settingsStore";
 
 // Proofreading squiggles were removed from History at the user's request;
@@ -48,6 +48,19 @@ export default function TranscriptCard({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const [copied, setCopied] = useState(false);
+  const [audioCopied, setAudioCopied] = useState(false);
+
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [progress, setProgress] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  
+  useEffect(() => {
+    return () => {
+      if (audioUrl) URL.revokeObjectURL(audioUrl);
+    };
+  }, [audioUrl]);
 
   const displayed = entry.processed_text || entry.raw_text;
 
@@ -103,6 +116,54 @@ export default function TranscriptCard({
     }
   }
 
+  async function handleCopyAudio() {
+    if (!entry.audio_file) return;
+    try {
+      await copyAudioFile(entry.audio_file);
+      setAudioCopied(true);
+      setTimeout(() => setAudioCopied(false), 1500);
+    } catch (e) {
+      console.warn("audio copy failed", e);
+    }
+  }
+
+  async function togglePlay() {
+    if (!entry.audio_file) return;
+    if (audioRef.current && isPlaying) {
+      audioRef.current.pause();
+      return;
+    }
+    if (audioRef.current && !isPlaying) {
+      audioRef.current.play();
+      return;
+    }
+    // Lazy load the blob
+    try {
+      const bytes = await readAudioClip(entry.audio_file);
+      if (!bytes) return;
+      const blob = new Blob([bytes as any], { type: "audio/wav" });
+      if (audioUrl) URL.revokeObjectURL(audioUrl);
+      const url = URL.createObjectURL(blob);
+      setAudioUrl(url);
+      const audio = new Audio(url);
+      audio.onplay = () => setIsPlaying(true);
+      audio.onpause = () => setIsPlaying(false);
+      audio.onended = () => { setIsPlaying(false); setProgress(0); };
+      audio.ontimeupdate = () => setProgress(audio.currentTime);
+      audio.onloadedmetadata = () => setDuration(audio.duration);
+      audioRef.current = audio;
+      audio.play();
+    } catch (e) {
+      console.warn("audio play failed", e);
+    }
+  }
+
+  function formatTime(s: number) {
+    const mins = Math.floor(s / 60);
+    const secs = Math.floor(s % 60).toString().padStart(2, "0");
+    return `${mins}:${secs}`;
+  }
+
   return (
     <li className="group rounded-xl border border-sv-border bg-sv-surface p-4">
       <div className="mb-1 flex items-center justify-between text-xs text-sv-muted">
@@ -132,6 +193,14 @@ export default function TranscriptCard({
           >
             {copied ? "Copied" : "Copy"}
           </button>
+          {entry.audio_file && (
+            <button
+              onClick={handleCopyAudio}
+              className={audioCopied ? "text-sv-good" : "hover:text-sv-text"}
+            >
+              {audioCopied ? "Copied" : "Copy audio"}
+            </button>
+          )}
           <button
             onClick={() => onRemove(entry.id)}
             className="hover:text-sv-bad"
@@ -166,7 +235,27 @@ export default function TranscriptCard({
           </div>
         </div>
       ) : (
-        <p className={`text-sm ${blurred ? "blur-sm transition group-hover:blur-none" : ""}`}>{displayed}</p>
+        <>
+          <p className={`text-sm ${blurred ? "blur-sm transition group-hover:blur-none" : ""}`}>{displayed}</p>
+          {entry.audio_file && (
+            <div className="mt-3 flex items-center gap-2 border-t border-sv-border/50 pt-2 text-xs text-sv-muted">
+              <button
+                onClick={togglePlay}
+                className="flex h-5 w-5 items-center justify-center rounded-full bg-sv-surface-2 hover:bg-sv-border hover:text-sv-text transition-colors"
+                title={isPlaying ? "Pause" : "Play original audio"}
+              >
+                {isPlaying ? (
+                  <svg viewBox="0 0 24 24" width={10} height={10} fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1" /><rect x="14" y="4" width="4" height="16" rx="1" /></svg>
+                ) : (
+                  <svg viewBox="0 0 24 24" width={12} height={12} fill="currentColor" style={{ marginLeft: '1px' }}><path d="M7 4l12 8-12 8V4z"/></svg>
+                )}
+              </button>
+              <span className="tabular-nums font-medium">
+                {formatTime(progress)} / {formatTime(duration)}
+              </span>
+            </div>
+          )}
+        </>
       )}
     </li>
   );

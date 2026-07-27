@@ -87,6 +87,8 @@ pub struct RuntimeConfig {
     // next dictation doesn't butt up against this one. History stores the
     // clean text (no trailing space) — the space is a paste-time nicety only.
     pub append_trailing_space: bool,
+    pub save_audio: bool,
+    pub audio_clip_limit: usize,
 }
 
 /// One per-app profile rule, fully resolved by the frontend.
@@ -135,6 +137,8 @@ impl Default for RuntimeConfig {
             app_profiles: Vec::new(),
             pill_auto_hide: false,
             append_trailing_space: false,
+            save_audio: true,
+            audio_clip_limit: 20,
         }
     }
 }
@@ -303,6 +307,8 @@ fn set_behavior(
     pill_auto_hide: bool,
     append_trailing_space: bool,
     coedit_enabled: bool,
+    save_audio: bool,
+    audio_clip_limit: usize,
 ) -> Result<(), String> {
     let mut cfg = state.config.lock().map_err(|e| e.to_string())?;
     cfg.toggle_mode = toggle_mode;
@@ -320,6 +326,8 @@ fn set_behavior(
     cfg.pill_auto_hide = pill_auto_hide;
     cfg.append_trailing_space = append_trailing_space;
     cfg.coedit_enabled = coedit_enabled;
+    cfg.save_audio = save_audio;
+    cfg.audio_clip_limit = audio_clip_limit;
     Ok(())
 }
 
@@ -608,6 +616,30 @@ fn save_history(entries: Vec<HistoryEntry>) -> Result<(), String> {
 #[tauri::command]
 fn clear_history() -> Result<(), String> {
     history::clear()
+}
+
+#[tauri::command]
+fn read_audio_clip(file_name: String) -> Result<Vec<u8>, String> {
+    if file_name.contains('/') || file_name.contains('\\') || file_name.contains("..") {
+        return Err("Invalid file name".into());
+    }
+    let path = registry::audio_clips_dir().join(&file_name);
+    std::fs::read(&path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn copy_audio_file(file_name: String) -> Result<(), String> {
+    if file_name.contains('/') || file_name.contains('\\') || file_name.contains("..") {
+        return Err("Invalid file name".into());
+    }
+    let path = registry::audio_clips_dir().join(&file_name);
+    system::clipboard_file::copy_audio_file(&path)
+}
+
+#[tauri::command]
+fn prune_audio_clips(keep: usize) -> Result<(), String> {
+    history::prune_clips(keep);
+    Ok(())
 }
 
 // ---------------- Manual recording (UI buttons) ----------------
@@ -920,6 +952,9 @@ pub fn run() {
             load_history,
             save_history,
             clear_history,
+            read_audio_clip,
+            copy_audio_file,
+            prune_audio_clips,
             start_recording,
             stop_and_transcribe,
             paste_text,

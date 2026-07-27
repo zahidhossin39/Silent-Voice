@@ -181,7 +181,7 @@ export default function Guide() {
                 Adjust the slider to filter out background noise (wind, keyboard clicks, fans).
               </FeatureItem>
               <FeatureItem title="Read aloud" icon={<SpeakerIcon />}>
-                Select text in any app and press the read-aloud hotkey to hear it spoken. Voices live in Voices & models → Text-to-Speech.
+                Select text in any app and press the read-aloud hotkey to hear it spoken. Voices live in Model Store → Text-to-Speech.
               </FeatureItem>
             </div>
           </section>
