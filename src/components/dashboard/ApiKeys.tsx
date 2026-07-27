@@ -201,16 +201,21 @@ export default function ApiKeys() {
         </div>
       )}
       <div className="mb-4 rounded-lg border border-sv-border bg-sv-surface-2 px-3 py-2 text-[11px] text-sv-muted">
-        Cloud STT is confirmed working with <strong>OpenAI</strong>,{" "}
-        <strong>Groq</strong>, and <strong>OpenRouter</strong> (its own
-        JSON+base64 audio format is handled separately from the other two).
-        Everything else has no known-working transcription endpoint here —
-        leave "STT" unchecked for them, or check it and use Test to find out.
+        <strong>Speech-to-text works with OpenAI, Groq and OpenRouter.</strong> Other providers can still be used for AI rewriting, but not for transcription — use <strong>Test</strong> to check any provider.
       </div>
       {providers.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-sv-border bg-sv-surface p-8 text-center text-sm text-sv-muted">
-          No providers yet. The app works fully offline with local models — add
-          a provider only if you want to use a cloud API.
+        <div className="flex gap-4 rounded-xl border border-sv-border bg-sv-surface p-8 text-sm">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-sv-good/10 text-sv-good">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5">
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+          </div>
+          <div className="max-w-[60ch] text-left">
+            <strong>No cloud account needed.</strong>
+            <p className="mt-1 text-sv-muted">
+              Everything runs locally on this device; add a provider only if you specifically want to use a cloud model.
+            </p>
+          </div>
         </div>
       ) : (
         <div className="space-y-4">

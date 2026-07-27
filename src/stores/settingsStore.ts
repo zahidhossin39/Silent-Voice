@@ -66,6 +66,7 @@ const DEFAULT_SETTINGS: Settings = {
   pinned_tts: [],
   hf_show_incompatible: false,
   history_limit: 100,
+  blur_history: false,
   history_retention: "never",
   history_retention_custom_value: 7,
   history_retention_custom_unit: "days",

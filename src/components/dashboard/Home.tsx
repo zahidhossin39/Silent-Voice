@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import Page from "../shared/Page";
 import WaveformVisualizer from "../shared/WaveformVisualizer";
+import TranscriptList from "../shared/TranscriptList";
 import { buildAccelerator } from "../shared/HotkeyRecorder";
 import { STT_MODELS, LANGUAGES } from "../../services/catalog";
 import { useHardwareInfo } from "../../hooks/useHardwareInfo";
@@ -32,25 +34,22 @@ export default function Home() {
   const { hardware, loading } = useHardwareInfo();
   const settings = useSettingsStore((s) => s.settings);
   const setSettings = useSettingsStore((s) => s.setSettings);
-  const modes = useSettingsStore((s) => s.modes);
   const downloadedStt = useModelStore((s) => s.downloaded);
-  const downloadedCount = useModelStore(
-    (s) => s.downloaded.size + s.downloadedLlm.size + s.downloadedTts.size
-  );
   const recordingState = useUiStore((s) => s.recordingState);
   const lastError = useUiStore((s) => s.lastError);
 
-  const activeMode =
-    modes.find((m) => m.id === settings.active_mode_id)?.name ?? "Raw";
-
-  // Only downloaded models are selectable — you can't dictate with one that
-  // isn't on disk.
   const downloadedModels = STT_MODELS.filter((m) => downloadedStt.has(m.id));
 
   return (
     <Page
-      title="Home"
-      subtitle="Quick status and your device at a glance"
+      title="Silent Voice"
+      subtitle={
+        (
+          <>
+            Hold <Kbd>{settings.hotkey}</Kbd> anywhere in Windows, speak, and your words land at the cursor.
+          </>
+        ) as any
+      }
     >
       {!isTauri() && (
         <div className="mb-5 rounded-lg border border-sv-warn/30 bg-sv-warn/10 px-4 py-3 text-xs text-sv-warn">
@@ -65,160 +64,207 @@ export default function Home() {
         </div>
       )}
 
-      {/* Status card */}
-      <div className="mb-5 rounded-xl border border-sv-border bg-sv-surface p-5">
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="text-xs uppercase tracking-wide text-sv-muted">
-              Status
-            </div>
-            <div className="mt-1 flex items-center gap-3">
-              <span className="text-lg font-semibold">
-                {STATUS_LABEL[recordingState] ?? "Idle"}
-              </span>
+      {downloadedStt.size === 0 ? (
+        <div className="flex flex-col items-center justify-center rounded-xl border border-sv-border bg-sv-surface py-16 px-6 text-center">
+          <h2 className="mb-3 text-lg font-semibold text-sv-text">
+            A voice model is required
+          </h2>
+          <p className="mb-6 max-w-md text-sm text-sv-muted leading-relaxed">
+            Download a model once to transcribe your speech. It runs entirely on this device and nothing is uploaded.
+          </p>
+          <Link
+            to="/models"
+            className="rounded-lg bg-sv-accent px-5 py-2.5 text-sm font-medium text-white transition hover:bg-sv-accent-hover"
+          >
+            Choose a voice model
+          </Link>
+        </div>
+      ) : (
+        <>
+          {/* Status strip */}
+          <div className="mb-4 flex items-center justify-between rounded-xl border border-sv-border bg-sv-surface px-4 py-2.5">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
+                <span
+                  className={`h-2.5 w-2.5 rounded-full ${
+                    recordingState === "recording" || recordingState === "listening"
+                      ? "bg-sv-accent animate-pulse"
+                      : recordingState === "processing"
+                      ? "bg-sv-muted animate-pulse"
+                      : "bg-sv-muted"
+                  }`}
+                />
+                <span className="text-sm font-medium">
+                  {STATUS_LABEL[recordingState] ?? "Idle"}
+                </span>
+              </div>
               <WaveformVisualizer
                 active={
-                  recordingState === "recording" ||
-                  recordingState === "listening"
+                  recordingState === "recording" || recordingState === "listening"
                 }
               />
-            </div>
-          </div>
-          <div className="flex flex-col items-end">
-            <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wider text-sv-muted">
-              Push-to-talk hotkey
             </div>
             <InlineHotkey
               value={settings.hotkey}
               onChange={(hk) => setSettings({ hotkey: hk })}
             />
-            <p className="mt-2 max-w-[15rem] text-right text-[11px] leading-relaxed text-sv-muted">
-              <span className="font-medium text-sv-text">Hold</span> it to speak,{" "}
-              <span className="font-medium text-sv-text">release</span> to drop
-              the text right at your cursor.
-            </p>
           </div>
-        </div>
-      </div>
 
-      {/* Quick stats */}
-      <div className="mb-5 grid grid-cols-3 gap-4">
-        <StatCard label="Active STT model" value={settings.active_stt_model} />
-        <StatCard label="Active mode" value={activeMode} />
-        <StatCard
-          label="Downloaded models"
-          value={String(downloadedCount)}
-        />
-      </div>
+          {/* Quick controls */}
+          <div className="mb-6 grid grid-cols-2 gap-4">
+            <QuickControl
+              label="Speech model"
+              hint={
+                downloadedModels.length === 0
+                  ? "No models downloaded yet"
+                  : undefined
+              }
+            >
+              <select
+                value={settings.active_stt_model}
+                onChange={(e) =>
+                  setSettings({
+                    active_stt_model: e.target.value,
+                    stt_cloud_provider_id: null,
+                  })
+                }
+                disabled={downloadedModels.length === 0}
+                className="w-full rounded-lg border border-sv-border bg-sv-bg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-sv-accent disabled:opacity-50"
+              >
+                {downloadedModels.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.label}
+                  </option>
+                ))}
+                {!downloadedModels.some(
+                  (m) => m.id === settings.active_stt_model
+                ) && (
+                  <option value={settings.active_stt_model}>
+                    {settings.active_stt_model}
+                  </option>
+                )}
+              </select>
+            </QuickControl>
 
-      {/* Device info */}
-      <div className="mb-5 rounded-xl border border-sv-border bg-sv-surface p-5">
-        <h2 className="mb-4 text-sm font-semibold">Your device</h2>
-        {loading || !hardware ? (
-          <p className="text-sm text-sv-muted">Scanning…</p>
-        ) : (
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <DeviceTile
-              className="col-span-2"
-              label="Processor"
-              value={tidyCpuName(hardware.cpu_brand)}
-              sub={`${hardware.physical_cores} cores · ${hardware.logical_cores} threads${
-                hardware.has_avx2 ? " · AVX2" : ""
-              }${hardware.has_avx512 ? " · AVX-512" : ""}`}
-            />
-            <DeviceTile
-              label="Memory"
-              value={`${hardware.total_ram_gb.toFixed(0)} GB`}
-              sub={`${hardware.available_ram_gb.toFixed(1)} GB free`}
-            />
-            <DeviceTile
-              label="Free disk"
-              value={`${hardware.free_disk_gb.toFixed(0)} GB`}
-            />
-            <DeviceTile
-              className="col-span-2"
-              label="Graphics"
-              value={hardware.gpu_name ?? "None detected"}
-              sub={
-                hardware.gpu_vram_gb && hardware.gpu_vram_gb > 0
-                  ? `${formatGB(hardware.gpu_vram_gb)} dedicated${
-                      hardware.gpu_vram_gb < 1
-                        ? " — too little to accelerate models; they'll run on the CPU"
-                        : ""
-                    }`
-                  : "No dedicated memory — models run on the CPU"
-              }
-            />
-            <DeviceTile
-              className="col-span-2"
-              label="Best fit"
-              value={
-                hardware.gpu_vram_gb && hardware.gpu_vram_gb >= 2
-                  ? "GPU-class models"
-                  : "Fast, small models"
-              }
-              sub={
-                hardware.gpu_vram_gb && hardware.gpu_vram_gb >= 2
-                  ? "This device can handle the larger, more accurate models"
-                  : "Tiny / Base run best here — larger models will feel slow"
-              }
-            />
+            <QuickControl label="Language">
+              <select
+                value={settings.language}
+                onChange={(e) => setSettings({ language: e.target.value })}
+                className="w-full rounded-lg border border-sv-border bg-sv-bg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-sv-accent"
+              >
+                {LANGUAGES.map((l) => (
+                  <option key={l.code} value={l.code}>
+                    {l.name}
+                  </option>
+                ))}
+              </select>
+            </QuickControl>
           </div>
-        )}
-      </div>
 
-      {/* Quick controls — same settings as the Settings tab, surfaced here */}
-      <div className="rounded-xl border border-sv-border bg-sv-surface p-5">
-        <h2 className="mb-4 text-sm font-semibold">Quick controls</h2>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <QuickControl
-            label="Speech model"
-            hint={
-              downloadedModels.length === 0
-                ? "No models downloaded yet — get one in Model Store"
-                : "Which model transcribes your voice"
+          <TranscriptList
+            emptyState={
+              <div className="rounded-xl border border-sv-border bg-sv-surface px-6 py-9 text-center">
+                <div className="text-sm font-medium text-sv-text">
+                  Everything you dictate shows up here.
+                </div>
+                <div className="mt-5 flex items-center justify-center gap-3 text-sm">
+                  <span className="flex items-center gap-1.5">
+                    <Kbd>{settings.hotkey}</Kbd>
+                    <span className="text-sv-muted">hold</span>
+                  </span>
+                  <span className="text-sv-muted">→</span>
+                  <span className="font-medium text-sv-text">speak</span>
+                  <span className="text-sv-muted">→</span>
+                  <span className="font-medium text-sv-text">release</span>
+                </div>
+                <p className="mt-5 text-xs text-sv-muted">
+                  Nothing is uploaded — transcription runs on this device.
+                </p>
+              </div>
             }
-          >
-            <select
-              value={settings.active_stt_model}
-              onChange={(e) =>
-                setSettings({
-                  active_stt_model: e.target.value,
-                  stt_cloud_provider_id: null,
-                })
-              }
-              disabled={downloadedModels.length === 0}
-              className="w-full rounded-lg border border-sv-border bg-sv-bg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-sv-accent disabled:opacity-50"
-            >
-              {downloadedModels.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.label}
-                </option>
-              ))}
-              {!downloadedModels.some((m) => m.id === settings.active_stt_model) && (
-                <option value={settings.active_stt_model}>
-                  {settings.active_stt_model}
-                </option>
-              )}
-            </select>
-          </QuickControl>
+          />
 
-          <QuickControl label="Language" hint="What language you dictate in">
-            <select
-              value={settings.language}
-              onChange={(e) => setSettings({ language: e.target.value })}
-              className="w-full rounded-lg border border-sv-border bg-sv-bg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-sv-accent"
-            >
-              {LANGUAGES.map((l) => (
-                <option key={l.code} value={l.code}>
-                  {l.name}
-                </option>
-              ))}
-            </select>
-          </QuickControl>
-        </div>
-      </div>
+          <div className="mt-5">
+            <details className="group rounded-xl border border-sv-border bg-sv-surface">
+              <summary className="flex cursor-pointer items-center justify-between px-4 py-3 text-xs text-sv-muted hover:text-sv-text">
+                {loading || !hardware ? (
+                  <span>Scanning device…</span>
+                ) : (
+                  <span>
+                    {tidyCpuName(hardware.cpu_brand)} · {hardware.total_ram_gb.toFixed(0)} GB · {hardware.gpu_name ?? "None detected"} — best fit:{" "}
+                    {hardware.gpu_vram_gb && hardware.gpu_vram_gb >= 2
+                      ? "GPU-class models"
+                      : "fast, small models"}
+                  </span>
+                )}
+                <span className="transition-transform group-open:rotate-180">▼</span>
+              </summary>
+              <div className="border-t border-sv-border p-4">
+                {loading || !hardware ? (
+                  <p className="text-sm text-sv-muted">Scanning…</p>
+                ) : (
+                  <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                    <DeviceTile
+                      className="col-span-2"
+                      label="Processor"
+                      value={tidyCpuName(hardware.cpu_brand)}
+                      sub={`${hardware.physical_cores} cores · ${hardware.logical_cores} threads${
+                        hardware.has_avx2 ? " · AVX2" : ""
+                      }${hardware.has_avx512 ? " · AVX-512" : ""}`}
+                    />
+                    <DeviceTile
+                      label="Memory"
+                      value={`${hardware.total_ram_gb.toFixed(0)} GB`}
+                      sub={`${hardware.available_ram_gb.toFixed(1)} GB free`}
+                    />
+                    <DeviceTile
+                      label="Free disk"
+                      value={`${hardware.free_disk_gb.toFixed(0)} GB`}
+                    />
+                    <DeviceTile
+                      className="col-span-2"
+                      label="Graphics"
+                      value={hardware.gpu_name ?? "None detected"}
+                      sub={
+                        hardware.gpu_vram_gb && hardware.gpu_vram_gb > 0
+                          ? `${formatGB(hardware.gpu_vram_gb)} dedicated${
+                              hardware.gpu_vram_gb < 1
+                                ? " — too little to accelerate models; they'll run on the CPU"
+                                : ""
+                            }`
+                          : "No dedicated memory — models run on the CPU"
+                      }
+                    />
+                    <DeviceTile
+                      className="col-span-2"
+                      label="Best fit"
+                      value={
+                        hardware.gpu_vram_gb && hardware.gpu_vram_gb >= 2
+                          ? "GPU-class models"
+                          : "Fast, small models"
+                      }
+                      sub={
+                        hardware.gpu_vram_gb && hardware.gpu_vram_gb >= 2
+                          ? "This device can handle the larger, more accurate models"
+                          : "Tiny / Base run best here — larger models will feel slow"
+                      }
+                    />
+                  </div>
+                )}
+              </div>
+            </details>
+          </div>
+        </>
+      )}
     </Page>
+  );
+}
+
+function Kbd({ children }: { children: React.ReactNode }) {
+  return (
+    <kbd className="mx-1 rounded-md border border-sv-border border-b-[3px] bg-sv-surface-2 px-2 py-0.5 text-xs font-mono font-bold text-sv-text">
+      {children}
+    </kbd>
   );
 }
 
@@ -307,23 +353,12 @@ function QuickControl({
   children: React.ReactNode;
 }) {
   return (
-    <div>
-      <div className="mb-1.5">
-        <div className="text-sm font-medium">{label}</div>
-        {hint && <div className="text-[11px] text-sv-muted">{hint}</div>}
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center justify-between">
+        <label className="text-xs font-medium text-sv-muted">{label}</label>
+        {hint && <span className="text-[10px] text-sv-warn">{hint}</span>}
       </div>
       {children}
-    </div>
-  );
-}
-
-function StatCard({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-xl border border-sv-border bg-sv-surface p-4">
-      <div className="text-xs uppercase tracking-wide text-sv-muted">
-        {label}
-      </div>
-      <div className="mt-1 truncate text-lg font-semibold">{value}</div>
     </div>
   );
 }

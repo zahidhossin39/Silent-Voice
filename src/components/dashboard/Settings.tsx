@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import Page from "../shared/Page";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useModelStore } from "../../stores/modelStore";
+import { useHistoryStore } from "../../stores/historyStore";
 import { useHardwareInfo } from "../../hooks/useHardwareInfo";
 import { STT_MODELS, LANGUAGES, TTS_MODELS, TTS_SAMPLE_TEXT } from "../../services/catalog";
 import {
@@ -22,12 +23,37 @@ import {
 } from "../../services/tauriBridge";
 import type { DeviceRecommendation } from "../../types";
 import HotkeyRecorder from "../shared/HotkeyRecorder";
+import ScrollNumberPicker from "../shared/ScrollNumberPicker";
 import { checkForUpdatesManual } from "../../services/updater";
+import type { Settings } from "../../types";
 
+const RETENTION_OPTIONS: { value: Settings["history_retention"]; label: string }[] = [
+  { value: "never", label: "Never" },
+  { value: "3d", label: "After 3 days" },
+  { value: "2w", label: "After 2 weeks" },
+  { value: "3m", label: "After 3 months" },
+  { value: "custom", label: "Custom…" },
+];
+
+const RETENTION_UNITS: Settings["history_retention_custom_unit"][] = [
+  "hours",
+  "days",
+  "weeks",
+  "months",
+];
+
+const SELECT_CLS =
+  "h-9 rounded-lg border border-sv-border bg-sv-bg px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sv-accent";
 
 export default function Settings() {
   const settings = useSettingsStore((s) => s.settings);
   const setSettings = useSettingsStore((s) => s.setSettings);
+  const reprune = useHistoryStore((s) => s.reprune);
+
+  useEffect(() => {
+    reprune();
+  }, [settings.history_limit, settings.history_retention, settings.history_retention_custom_value, settings.history_retention_custom_unit, reprune]);
+
   // Toggle ON = rule active = NOT in the disabled list.
   const toggleProofreadRule = (rule: string, enabled: boolean) => {
     const rest = settings.proofread_disabled_rules.filter((r) => r !== rule);
@@ -770,6 +796,69 @@ export default function Settings() {
         </Section>
 
         <Section title="System" accent="var(--color-sv-sec-system)" icon={<CogIcon />}>
+          <Row label="History limit" hint="Keep at most this many transcriptions">
+            <div className="flex items-center gap-2.5">
+              <ScrollNumberPicker
+                value={settings.history_limit}
+                onChange={(v) => setSettings({ history_limit: v })}
+                min={1}
+                max={10000}
+              />
+              <span className="text-sm text-sv-muted">entries</span>
+            </div>
+          </Row>
+          <Row label="Auto-delete" hint="Remove entries older than">
+            <div className="flex items-center gap-2.5">
+              <select
+                value={settings.history_retention}
+                onChange={(e) =>
+                  setSettings({
+                    history_retention: e.target.value as Settings["history_retention"],
+                  })
+                }
+                className={SELECT_CLS}
+              >
+                {RETENTION_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+              {settings.history_retention === "custom" && (
+                <>
+                  <ScrollNumberPicker
+                    value={settings.history_retention_custom_value}
+                    onChange={(v) => setSettings({ history_retention_custom_value: v })}
+                    min={1}
+                    max={999}
+                    width={60}
+                  />
+                  <select
+                    value={settings.history_retention_custom_unit}
+                    onChange={(e) =>
+                      setSettings({
+                        history_retention_custom_unit: e.target
+                          .value as Settings["history_retention_custom_unit"],
+                      })
+                    }
+                    className={SELECT_CLS}
+                  >
+                    {RETENTION_UNITS.map((u) => (
+                      <option key={u} value={u}>
+                        {u}
+                      </option>
+                    ))}
+                  </select>
+                </>
+              )}
+            </div>
+          </Row>
+          <Row label="Blur transcripts until hover" hint="Keeps what you dictated hidden when your screen is visible to others">
+            <Toggle
+              checked={settings.blur_history}
+              onChange={(v) => setSettings({ blur_history: v })}
+            />
+          </Row>
           <Row label="Launch at startup">
             <Toggle
               checked={settings.auto_start}

@@ -438,6 +438,11 @@ export async function copyToClipboard(text: string): Promise<void> {
   await invoke<void>("copy_to_clipboard", { text });
 }
 
+export async function pasteText(text: string): Promise<void> {
+  if (!isTauri()) return;
+  await invoke<void>("paste_text", { text });
+}
+
 // ---------------- History (local JSON file via Rust) ----------------
 
 export async function loadHistory(): Promise<HistoryEntry[] | null> {
