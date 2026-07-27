@@ -188,10 +188,13 @@ mod replacement_tests {
 
 #[derive(Serialize, Clone)]
 pub struct PipelineResult {
+    pub id: i64,
     pub raw_text: String,
     pub processed_text: String,
+    pub mode_id: String,
     pub model_id: String,
     pub duration_ms: i64,
+    pub audio_file: Option<String>,
 }
 
 fn emit_state(app: &AppHandle, state: &str) {
@@ -701,17 +704,20 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
         mode_id: mode_id.clone(),
         model_id: model_id.clone(),
         duration_ms: elapsed,
-        audio_file,
+        audio_file: audio_file.clone(),
     };
     let _ = history::append(entry);
 
     let _ = app.emit(
         "pipeline://result",
         PipelineResult {
+            id: now,
             raw_text,
             processed_text,
+            mode_id,
             model_id,
             duration_ms: elapsed,
+            audio_file,
         },
     );
 

@@ -81,7 +81,8 @@ export const useHistoryStore = create<HistoryState>()(
       },
 
       addFull: (entry) => {
-        const entries = prune([entry, ...get().entries]);
+        const existing = get().entries.filter((e) => e.id !== entry.id);
+        const entries = prune([entry, ...existing]);
         set({ entries });
         if (isTauri()) saveHistory(entries);
       },

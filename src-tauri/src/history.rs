@@ -39,12 +39,30 @@ pub fn save(mut entries: Vec<HistoryEntry>) -> Result<(), String> {
         .filter_map(|e| e.audio_file.clone())
         .collect();
         
+    // A clip newer than every surviving entry belongs to a dictation the caller
+    // did not know about yet (Rust appends the entry, then the frontend saves a
+    // list it built moments earlier) — deleting it would destroy the recording
+    // that was just made. An empty list is different: it only comes from an
+    // explicit "clear all", which really should take every clip with it.
+    let clearing_all = entries.is_empty();
+    let newest_entry_id = entries.iter().map(|e| e.id).max().unwrap_or(0);
+
     let clips_dir = registry::audio_clips_dir();
     if let Ok(dir_entries) = std::fs::read_dir(&clips_dir) {
         for entry in dir_entries.flatten() {
             if let Some(name) = entry.file_name().to_str() {
                 if name.ends_with(".wav") && !surviving_clips.contains(name) {
-                    let _ = std::fs::remove_file(entry.path());
+                    if clearing_all {
+                        let _ = std::fs::remove_file(entry.path());
+                    } else if let Some(id_str) =
+                        name.strip_prefix("rec-").and_then(|s| s.strip_suffix(".wav"))
+                    {
+                        if let Ok(clip_id) = id_str.parse::<i64>() {
+                            if clip_id < newest_entry_id {
+                                let _ = std::fs::remove_file(entry.path());
+                            }
+                        }
+                    }
                 }
             }
         }

@@ -7,10 +7,13 @@ import { applyDownloadProgress } from "../stores/modelStore";
 import type { RecordingState, DownloadProgress } from "../types";
 
 interface PipelineResult {
+  id: number;
   raw_text: string;
   processed_text: string;
+  mode_id?: string;
   model_id: string;
   duration_ms: number;
+  audio_file?: string;
 }
 
 /**
@@ -33,13 +36,14 @@ export function usePipeline() {
       ),
       listenEvent<PipelineResult>("pipeline://result", (r) => {
         addFull({
-          id: Date.now(),
-          timestamp: Date.now(),
+          id: r.id,
+          timestamp: r.id,
           raw_text: r.raw_text,
           processed_text: r.processed_text,
-          mode_id: activeModeId,
+          mode_id: r.mode_id ?? activeModeId,
           model_id: r.model_id,
           duration_ms: r.duration_ms,
+          audio_file: r.audio_file,
         });
       }),
       listenEvent<string>("pipeline://error", (e) => setError(e)),
