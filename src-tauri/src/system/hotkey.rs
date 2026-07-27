@@ -77,14 +77,18 @@ fn tidy_ai_output(s: &str) -> String {
         }
     }
 
-    // Strip one pair of matching surrounding quotes.
-    let bytes = text.as_bytes();
-    if bytes.len() >= 2 {
-        let first = text.chars().next().unwrap();
-        let last = text.chars().last().unwrap();
+    // Strip one pair of matching surrounding quotes. Indexed by CHAR, not byte:
+    // the old guard checked byte length before taking chars, so a single
+    // multi-byte character passed a `len() >= 2` test with only one char in it
+    // and `count() - 2` was one underflow away. It never fired because no
+    // one-char string can match a quote pair, but that is luck, not design.
+    let chars: Vec<char> = text.chars().collect();
+    if chars.len() >= 2 {
+        let first = chars[0];
+        let last = chars[chars.len() - 1];
         let pair = matches!((first, last), ('"', '"') | ('\'', '\'') | ('“', '”'));
         if pair {
-            let inner: String = text.chars().skip(1).take(text.chars().count() - 2).collect();
+            let inner: String = chars[1..chars.len() - 1].iter().collect();
             if !inner.contains(first) {
                 text = inner.trim().to_string();
             }
@@ -728,4 +732,36 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
 
     // pill stays visible; just return to idle state
     go_idle(&app);
+}
+
+#[cfg(test)]
+mod tidy_tests {
+    use super::tidy_ai_output;
+
+    // Multi-byte characters are the hazard here: the old guard measured BYTES
+    // before slicing by CHARS, so these inputs sat one step from an underflow.
+    #[test]
+    fn single_multibyte_char_is_left_alone() {
+        assert_eq!(tidy_ai_output("“"), "“");
+        assert_eq!(tidy_ai_output("é"), "é");
+        assert_eq!(tidy_ai_output("日"), "日");
+    }
+
+    #[test]
+    fn strips_one_pair_of_quotes() {
+        assert_eq!(tidy_ai_output("\"hello there\""), "hello there");
+        assert_eq!(tidy_ai_output("“hello there”"), "hello there");
+    }
+
+    #[test]
+    fn keeps_quotes_that_are_part_of_the_text() {
+        // Inner quote means the outer pair is not a wrapper.
+        assert_eq!(tidy_ai_output("\"a\" and \"b\""), "\"a\" and \"b\"");
+    }
+
+    #[test]
+    fn handles_empty_and_two_char_input() {
+        assert_eq!(tidy_ai_output(""), "");
+        assert_eq!(tidy_ai_output("\"\""), "");
+    }
 }
