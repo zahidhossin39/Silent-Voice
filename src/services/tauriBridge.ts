@@ -122,9 +122,19 @@ export async function downloadModel(
   modelId: string,
   url: string,
   fileName: string
-): Promise<void> {
-  if (!isTauri()) return; // simulated no-op in browser preview
-  await invoke<void>("download_model", { modelId, url, fileName });
+): Promise<boolean> {
+  if (!isTauri()) return false; // simulated no-op in browser preview
+  return invoke<boolean>("download_model", { modelId, url, fileName });
+}
+
+export async function pauseDownload(modelId: string): Promise<void> {
+  if (!isTauri()) return;
+  await invoke<void>("pause_download", { modelId });
+}
+
+export async function cancelDownload(modelId: string): Promise<void> {
+  if (!isTauri()) return;
+  await invoke<void>("cancel_download", { modelId });
 }
 
 export async function deleteModel(modelId: string): Promise<void> {
@@ -279,9 +289,9 @@ export async function downloadTtsModel(
   voiceId: string,
   urlOnnx: string,
   urlJson: string
-): Promise<void> {
+): Promise<boolean> {
   if (!isTauri()) throw new Error("Voice downloads require the desktop app");
-  await invoke<void>("download_tts_model", { voiceId, urlOnnx, urlJson });
+  return invoke<boolean>("download_tts_model", { voiceId, urlOnnx, urlJson });
 }
 
 export async function deleteTtsModel(voiceId: string): Promise<void> {
@@ -347,9 +357,9 @@ export async function listDownloadedLlm(): Promise<string[]> {
 export async function downloadLlmModel(
   modelId: string,
   url: string
-): Promise<void> {
-  if (!isTauri()) return;
-  await invoke<void>("download_llm_model", { modelId, url });
+): Promise<boolean> {
+  if (!isTauri()) return false;
+  return invoke<boolean>("download_llm_model", { modelId, url });
 }
 
 export async function deleteLlmModel(modelId: string): Promise<void> {
@@ -585,9 +595,9 @@ export async function hfPiperVoices(): Promise<PiperVoice[]> {
   return invoke<PiperVoice[]>("hf_piper_voices");
 }
 
-export async function downloadVadModel(): Promise<void> {
-  if (!isTauri()) return;
-  await invoke<void>("download_vad_model");
+export async function downloadVadModel(): Promise<boolean> {
+  if (!isTauri()) return false;
+  return invoke<boolean>("download_vad_model");
 }
 export async function vadInstalled(): Promise<boolean> {
   if (!isTauri()) return false;
@@ -598,9 +608,9 @@ export async function deleteVadModel(): Promise<void> {
   await invoke<void>("delete_vad_model");
 }
 
-export async function downloadCoeditModel(): Promise<void> {
-  if (!isTauri()) return;
-  await invoke<void>("download_coedit_model");
+export async function downloadCoeditModel(): Promise<boolean> {
+  if (!isTauri()) return false;
+  return invoke<boolean>("download_coedit_model");
 }
 export async function coeditInstalled(): Promise<boolean> {
   if (!isTauri()) return false;
@@ -611,9 +621,9 @@ export async function deleteCoeditModel(): Promise<void> {
   await invoke<void>("delete_coedit_model");
 }
 
-export async function downloadGectorModel(variant: string): Promise<void> {
-  if (!isTauri()) return;
-  await invoke<void>("download_gector_model", { variant });
+export async function downloadGectorModel(variant: string): Promise<boolean> {
+  if (!isTauri()) return false;
+  return invoke<boolean>("download_gector_model", { variant });
 }
 export async function gectorInstalled(): Promise<boolean> {
   if (!isTauri()) return false;

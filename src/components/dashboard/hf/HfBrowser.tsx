@@ -159,14 +159,14 @@ export default function HfBrowser({ track, categoryFilter, languageFilter }: { t
       if (track === "llm") {
         return modes.some((m) => m.model_source === "local" && m.model_id === id);
       }
-      return !usingCloudStt && activeStt === id;
+      return !usingCloudStt && Boolean(activeStt) && activeStt === id && downloadedStt.has(id);
     }
     // HF rows only know the repo id, not the downloaded file stem — loose match.
     const searchId = (id.split("/").pop() || id).toLowerCase();
     if (track === "llm") {
-      return modes.some((m) => m.model_source === "local" && m.model_id.toLowerCase().includes(searchId));
+      return modes.some((m) => m.model_source === "local" && m.model_id.toLowerCase().includes(searchId)) && isModelDownloaded(id, true);
     }
-    return !usingCloudStt && !!activeStt?.toLowerCase().includes(searchId);
+    return !usingCloudStt && Boolean(activeStt) && activeStt.toLowerCase().includes(searchId) && isModelDownloaded(id, true);
   };
 
   const isModelDownloaded = (id: string, isHf: boolean = false) => {
@@ -404,12 +404,14 @@ function SttRow({
   const downloaded = useModelStore((s) => s.downloaded.has(model.id));
   const progress = useModelStore((s) => s.progress[model.id]);
   const download = useModelStore((s) => s.download);
+  const pauseStore = useModelStore((s) => s.pause);
+  const cancelStore = useModelStore((s) => s.cancel);
   const remove = useModelStore((s) => s.remove);
 
   const activeStt = useSettingsStore((s) => s.settings.active_stt_model);
   const usingCloudStt = useSettingsStore((s) => s.settings.stt_cloud_provider_id);
   const setSettings = useSettingsStore((s) => s.setSettings);
-  const isActive = !usingCloudStt && activeStt === model.id;
+  const isActive = !usingCloudStt && Boolean(activeStt) && activeStt === model.id && downloaded;
 
   const selectStt = (id: string) =>
     setSettings({ active_stt_model: id, stt_cloud_provider_id: null });
@@ -421,7 +423,9 @@ function SttRow({
     else if (estRamGb > hardware.available_ram_gb * 0.8) level = "warn";
   }
 
-  const isBusy = starting || progress?.status === "downloading";
+  const isDownloading = progress?.status === "downloading";
+  const isPaused = progress?.status === "paused";
+  const isBusy = starting || isDownloading;
   const pct =
     progress && progress.total_bytes > 0
       ? Math.round((progress.downloaded_bytes / progress.total_bytes) * 100)
@@ -466,23 +470,51 @@ function SttRow({
 
       <div className="ml-auto flex shrink-0 items-center gap-2">
         <div className="flex shrink-0 items-center">
-          {isBusy ? (
-            <div className="flex w-32 items-center gap-2">
-              {!progress || progress.total_bytes === 0 ? (
-                <>
-                  <div className="h-1.5 flex-1 overflow-hidden rounded-full border border-sv-border bg-sv-surface-2">
-                    <div className="h-full w-1/3 rounded-full bg-sv-accent animate-[sv-indeterminate_1.1s_ease-in-out_infinite]" />
-                  </div>
-                  <span className="w-8 text-right tabular-nums text-[11px] text-sv-muted">Starting…</span>
-                </>
+          {isBusy || isPaused ? (
+            <div className="flex items-center gap-1.5">
+              <div className="flex w-28 items-center gap-2">
+                {!progress || progress.total_bytes === 0 ? (
+                  <>
+                    <div className="h-1.5 flex-1 overflow-hidden rounded-full border border-sv-border bg-sv-surface-2">
+                      <div className="h-full w-1/3 rounded-full bg-sv-accent animate-[sv-indeterminate_1.1s_ease-in-out_infinite]" />
+                    </div>
+                    <span className="w-8 text-right tabular-nums text-[11px] text-sv-muted">
+                      {isPaused ? "Paused" : "Starting…"}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <div className="h-1.5 flex-1 overflow-hidden rounded-full border border-sv-border bg-sv-surface-2">
+                      <div className={`h-full ${isPaused ? "bg-sv-muted" : "bg-sv-accent"} transition-all duration-75`} style={{ width: `${pct}%` }} />
+                    </div>
+                    <span className="w-8 text-right tabular-nums text-[11px] text-sv-muted">{pct}%</span>
+                  </>
+                )}
+              </div>
+              {isDownloading ? (
+                <button
+                  onClick={() => pauseStore(model.id)}
+                  title="Pause download"
+                  className="p-1 text-sv-muted transition-colors duration-75 hover:text-sv-text"
+                >
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1" /><rect x="14" y="4" width="4" height="16" rx="1" /></svg>
+                </button>
               ) : (
-                <>
-                  <div className="h-1.5 flex-1 overflow-hidden rounded-full border border-sv-border bg-sv-surface-2">
-                    <div className="h-full bg-sv-accent transition-all duration-75" style={{ width: `${pct}%` }} />
-                  </div>
-                  <span className="w-8 text-right tabular-nums text-[11px] text-sv-muted">{pct}%</span>
-                </>
+                <button
+                  onClick={handleDownload}
+                  title="Resume download"
+                  className="p-1 text-sv-accent transition-colors duration-75 hover:text-sv-accent/80"
+                >
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><polygon points="5,3 19,12 5,21" /></svg>
+                </button>
               )}
+              <button
+                onClick={() => cancelStore(model.id)}
+                title="Cancel download"
+                className="p-1 text-sv-muted transition-colors duration-75 hover:text-sv-bad"
+              >
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+              </button>
             </div>
           ) : downloaded ? (
             <div className="flex items-center gap-2">
@@ -525,13 +557,17 @@ function LlmRow({
   const downloaded = useModelStore((s) => s.downloadedLlm.has(model.id));
   const progress = useModelStore((s) => s.progress[model.id]);
   const download = useModelStore((s) => s.downloadLlm);
+  const pauseStore = useModelStore((s) => s.pause);
+  const cancelStore = useModelStore((s) => s.cancel);
   const remove = useModelStore((s) => s.removeLlm);
 
   const modes = useSettingsStore((s) => s.modes);
   const inUse = modes.some(m => m.model_source === "local" && m.model_id === model.id);
 
   const level = llmCompatibility(model, hardware).level;
-  const isBusy = starting || progress?.status === "downloading";
+  const isDownloading = progress?.status === "downloading";
+  const isPaused = progress?.status === "paused";
+  const isBusy = starting || isDownloading;
   const pct =
     progress && progress.total_bytes > 0
       ? Math.round((progress.downloaded_bytes / progress.total_bytes) * 100)
@@ -576,23 +612,51 @@ function LlmRow({
 
       <div className="ml-auto flex shrink-0 items-center gap-2">
         <div className="flex shrink-0 items-center">
-          {isBusy ? (
-            <div className="flex w-32 items-center gap-2">
-              {!progress || progress.total_bytes === 0 ? (
-                <>
-                  <div className="h-1.5 flex-1 overflow-hidden rounded-full border border-sv-border bg-sv-surface-2">
-                    <div className="h-full w-1/3 rounded-full bg-sv-accent animate-[sv-indeterminate_1.1s_ease-in-out_infinite]" />
-                  </div>
-                  <span className="w-8 text-right tabular-nums text-[11px] text-sv-muted">Starting…</span>
-                </>
+          {isBusy || isPaused ? (
+            <div className="flex items-center gap-1.5">
+              <div className="flex w-28 items-center gap-2">
+                {!progress || progress.total_bytes === 0 ? (
+                  <>
+                    <div className="h-1.5 flex-1 overflow-hidden rounded-full border border-sv-border bg-sv-surface-2">
+                      <div className="h-full w-1/3 rounded-full bg-sv-accent animate-[sv-indeterminate_1.1s_ease-in-out_infinite]" />
+                    </div>
+                    <span className="w-8 text-right tabular-nums text-[11px] text-sv-muted">
+                      {isPaused ? "Paused" : "Starting…"}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <div className="h-1.5 flex-1 overflow-hidden rounded-full border border-sv-border bg-sv-surface-2">
+                      <div className={`h-full ${isPaused ? "bg-sv-muted" : "bg-sv-accent"} transition-all duration-75`} style={{ width: `${pct}%` }} />
+                    </div>
+                    <span className="w-8 text-right tabular-nums text-[11px] text-sv-muted">{pct}%</span>
+                  </>
+                )}
+              </div>
+              {isDownloading ? (
+                <button
+                  onClick={() => pauseStore(model.id)}
+                  title="Pause download"
+                  className="p-1 text-sv-muted transition-colors duration-75 hover:text-sv-text"
+                >
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1" /><rect x="14" y="4" width="4" height="16" rx="1" /></svg>
+                </button>
               ) : (
-                <>
-                  <div className="h-1.5 flex-1 overflow-hidden rounded-full border border-sv-border bg-sv-surface-2">
-                    <div className="h-full bg-sv-accent transition-all duration-75" style={{ width: `${pct}%` }} />
-                  </div>
-                  <span className="w-8 text-right tabular-nums text-[11px] text-sv-muted">{pct}%</span>
-                </>
+                <button
+                  onClick={handleDownload}
+                  title="Resume download"
+                  className="p-1 text-sv-accent transition-colors duration-75 hover:text-sv-accent/80"
+                >
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><polygon points="5,3 19,12 5,21" /></svg>
+                </button>
               )}
+              <button
+                onClick={() => cancelStore(model.id)}
+                title="Cancel download"
+                className="p-1 text-sv-muted transition-colors duration-75 hover:text-sv-bad"
+              >
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+              </button>
             </div>
           ) : downloaded ? (
             <div className="flex items-center gap-2">
@@ -640,16 +704,21 @@ function HfRow({
   const isToolUse = item.tags?.includes("tool-use") || item.tags?.includes("function-calling");
   const isReasoning = item.tags?.includes("reasoning") || item.tags?.includes("thinking");
 
+  const downloadedLlm = useModelStore((s) => s.downloadedLlm);
+  const downloadedStt = useModelStore((s) => s.downloaded);
   const modes = useSettingsStore((s) => s.modes);
   const activeStt = useSettingsStore((s) => s.settings.active_stt_model);
   const usingCloudStt = useSettingsStore((s) => s.settings.stt_cloud_provider_id);
   
   const searchId = (item.id.split("/").pop() || item.id).toLowerCase();
+  const downloadedSet = track === "llm" ? downloadedLlm : downloadedStt;
+  const isDownloaded = Array.from(downloadedSet).some((id) => id.toLowerCase().includes(searchId));
+
   let inUse = false;
   if (track === "llm") {
-    inUse = modes.some((m) => m.model_source === "local" && m.model_id.toLowerCase().includes(searchId));
+    inUse = modes.some((m) => m.model_source === "local" && m.model_id.toLowerCase().includes(searchId)) && isDownloaded;
   } else {
-    inUse = !usingCloudStt && !!activeStt?.toLowerCase().includes(searchId);
+    inUse = !usingCloudStt && Boolean(activeStt) && activeStt.toLowerCase().includes(searchId) && isDownloaded;
   }
 
   const fit = estimateFitFromParams(item.params_b, hardware, name);
@@ -743,6 +812,8 @@ function HfDetail({ details, hardware, track }: { details: HfModelDetails; hardw
   const downloadedLlm = useModelStore(s => s.downloadedLlm);
   const downloadedStt = useModelStore(s => s.downloaded);
   const progress = useModelStore(s => s.progress);
+  const pauseStore = useModelStore(s => s.pause);
+  const cancelStore = useModelStore(s => s.cancel);
   const downloadCustomLlm = useModelStore(s => s.downloadCustomLlm);
   const removeLlm = useModelStore(s => s.removeLlm);
   const downloadCustomStt = useModelStore(s => s.downloadCustomStt);
@@ -782,6 +853,7 @@ function HfDetail({ details, hardware, track }: { details: HfModelDetails; hardw
             const fit = getFit(f.size_bytes, hardware);
             const mId = getModelId(f.name);
             const isDownloaded = track === "stt" ? downloadedStt.has(mId) : downloadedLlm.has(mId);
+            const isPaused = !isDownloaded && progress[mId]?.status === "paused";
             const parsedLabel = track === "stt" ? f.name.split('/').pop()?.replace(/^ggml-/i, "").replace(/\.bin$/i, "") : parseQuant(f.name);
             const extraTag = track === "stt" ? (f.name.includes(".en") ? "English-only" : "Multilingual") : "";
             const isSelected = selectedIndex === i;
@@ -802,6 +874,7 @@ function HfDetail({ details, hardware, track }: { details: HfModelDetails; hardw
                     <div className="flex items-center gap-2">
                       <span className="font-medium text-sm">{parsedLabel}</span>
                       {isDownloaded && <span className="text-[10px] font-medium text-sv-good">Downloaded</span>}
+                      {isPaused && <span className="text-[10px] font-medium text-sv-warn">Paused</span>}
                     </div>
                     <div className="mt-0.5 text-xs text-sv-muted">
                       {formatMB(f.size_bytes / (1024 * 1024))}
@@ -825,11 +898,12 @@ function HfDetail({ details, hardware, track }: { details: HfModelDetails; hardw
             const estSpeed = details.params_b ? (details.params_b <= 4 ? "Fast on this device" : details.params_b <= 9 ? "Usable" : "May be slow") : null;
             const mId = getModelId(selectedFile.name);
             const isDl = track === "stt" ? downloadedStt.has(mId) : downloadedLlm.has(mId);
-            const isActiveStt = track === "stt" && !usingCloudStt && activeStt === mId;
+            const isActiveStt = track === "stt" && !usingCloudStt && Boolean(activeStt) && activeStt === mId && downloadedStt.has(mId);
             const isActiveLlm = track === "llm" && modes.some(m => m.model_source === "local" && m.model_id === mId);
             const isActive = track === "stt" ? isActiveStt : isActiveLlm;
             const prog = progress[mId];
             const isDownloading = prog?.status === "downloading";
+            const isPaused = prog?.status === "paused";
             const pct = prog && prog.total_bytes > 0 ? Math.round((prog.downloaded_bytes / prog.total_bytes) * 100) : 0;
 
             const doDownload = () => {
@@ -869,12 +943,38 @@ function HfDetail({ details, hardware, track }: { details: HfModelDetails; hardw
                 </div>
                 
                 <div>
-                  {isDownloading ? (
-                    <div className="flex w-32 items-center gap-2">
-                      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-sv-surface-2 border border-sv-border">
-                        <div className="h-full bg-sv-accent transition-all" style={{ width: `${pct}%` }} />
+                  {isDownloading || isPaused ? (
+                    <div className="flex items-center gap-1.5">
+                      <div className="flex w-28 items-center gap-2">
+                        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-sv-surface-2 border border-sv-border">
+                          <div className={`h-full ${isPaused ? "bg-sv-muted" : "bg-sv-accent"} transition-all`} style={{ width: `${pct}%` }} />
+                        </div>
+                        <span className="w-8 text-right text-xs text-sv-muted">{isPaused ? "Paused" : `${pct}%`}</span>
                       </div>
-                      <span className="w-8 text-right text-xs text-sv-muted">{pct}%</span>
+                      {isDownloading ? (
+                        <button
+                          onClick={() => pauseStore(mId)}
+                          title="Pause download"
+                          className="p-1 text-sv-muted transition-colors duration-75 hover:text-sv-text"
+                        >
+                          <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1" /><rect x="14" y="4" width="4" height="16" rx="1" /></svg>
+                        </button>
+                      ) : (
+                        <button
+                          onClick={doDownload}
+                          title="Resume download"
+                          className="p-1 text-sv-accent transition-colors duration-75 hover:text-sv-accent/80"
+                        >
+                          <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><polygon points="5,3 19,12 5,21" /></svg>
+                        </button>
+                      )}
+                      <button
+                        onClick={() => cancelStore(mId)}
+                        title="Cancel download"
+                        className="p-1 text-sv-muted transition-colors duration-75 hover:text-sv-bad"
+                      >
+                        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                      </button>
                     </div>
                   ) : isDl ? (
                     <div className="flex flex-col items-end gap-1">

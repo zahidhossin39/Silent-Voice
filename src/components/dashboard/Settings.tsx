@@ -219,6 +219,12 @@ export default function Settings() {
                 }
                 className="w-56 rounded-lg border border-sv-border bg-sv-bg px-3 py-2 text-sm"
               >
+                <option value="">None selected</option>
+                {!STT_MODELS.some((m) => m.id === settings.active_stt_model) && settings.active_stt_model !== "" && (
+                  <option value={settings.active_stt_model}>
+                    {settings.active_stt_model}
+                  </option>
+                )}
                 {[...STT_MODELS]
                   .sort((a, b) => {
                     const aDown = downloadedStt.has(a.id) ? 0 : 1;
@@ -307,9 +313,8 @@ export default function Settings() {
                   onClick={async () => {
                     setCoeditFetching(true);
                     try {
-                      await downloadCoeditModel();
-                      const ok = await coeditInstalled();
-                      setCoeditReady(ok);
+                      const ok = await downloadCoeditModel();
+                      if (ok) setCoeditReady(await coeditInstalled());
                     } finally {
                       setCoeditFetching(false);
                     }
@@ -395,8 +400,8 @@ export default function Settings() {
                         onClick={async () => {
                           setGectorFetching(true);
                           try {
-                            await downloadGectorModel(gectorVariant);
-                            setGectorReady(await gectorInstalled());
+                            const ok = await downloadGectorModel(gectorVariant);
+                            if (ok) setGectorReady(await gectorInstalled());
                           } finally {
                             setGectorFetching(false);
                           }
@@ -503,8 +508,8 @@ export default function Settings() {
               return (
                 <button
                   onClick={async () => {
-                    await downloadVadModel();
-                    setVadReady(await vadInstalled());
+                    const ok = await downloadVadModel();
+                    if (ok) setVadReady(await vadInstalled());
                   }}
                   className="rounded-lg border border-sv-border px-3 py-1.5 text-xs hover:border-sv-accent hover:text-sv-accent"
                 >

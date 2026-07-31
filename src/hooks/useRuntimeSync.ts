@@ -104,6 +104,7 @@ export function useRuntimeSync() {
     const sttProvider = sttCloudProviderId
       ? providers.find((p) => p.id === sttCloudProviderId && p.uses.includes("stt"))
       : undefined;
+    if (!model && !sttProvider) return;
     updateRuntimeConfig(
       model,
       language,

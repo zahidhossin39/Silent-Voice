@@ -205,7 +205,7 @@ export default function ModelStore() {
               <TtsCard
                 key={v.id}
                 voice={v}
-                active={activeTts === v.id}
+                active={Boolean(activeTts) && activeTts === v.id && downloadedTts.has(v.id)}
                 onSelect={() => setSettings({ active_tts_voice: v.id })}
                 pinned={pinnedTts.has(v.id)}
                 onTogglePin={() => togglePinnedTts(v.id)}
@@ -307,6 +307,8 @@ function TtsCard({
   const downloaded = useModelStore((s) => s.downloadedTts.has(voice.id));
   const progress = useModelStore((s) => s.progress[voice.id]);
   const downloadCustomTts = useModelStore((s) => s.downloadCustomTts);
+  const pauseStore = useModelStore((s) => s.pause);
+  const cancelStore = useModelStore((s) => s.cancel);
   const remove = useModelStore((s) => s.removeTts);
   const [playing, setPlaying] = useState(false);
 
@@ -324,6 +326,7 @@ function TtsCard({
   };
 
   const isDownloading = progress?.status === "downloading";
+  const isPaused = progress?.status === "paused";
   const pct =
     progress && progress.total_bytes > 0
       ? Math.round((progress.downloaded_bytes / progress.total_bytes) * 100)
@@ -379,23 +382,51 @@ function TtsCard({
             </button>
           )}
 
-          {isDownloading ? (
-            <div className="flex w-32 items-center gap-2">
-              {!progress || progress.total_bytes === 0 ? (
-                <>
-                  <div className="h-1.5 flex-1 overflow-hidden rounded-full border border-sv-border bg-sv-surface-2">
-                    <div className="h-full w-1/3 rounded-full bg-sv-accent animate-[sv-indeterminate_1.1s_ease-in-out_infinite]" />
-                  </div>
-                  <span className="w-8 text-right tabular-nums text-[11px] text-sv-muted">Starting…</span>
-                </>
+          {isDownloading || isPaused ? (
+            <div className="flex items-center gap-1.5">
+              <div className="flex w-28 items-center gap-2">
+                {!progress || progress.total_bytes === 0 ? (
+                  <>
+                    <div className="h-1.5 flex-1 overflow-hidden rounded-full border border-sv-border bg-sv-surface-2">
+                      <div className="h-full w-1/3 rounded-full bg-sv-accent animate-[sv-indeterminate_1.1s_ease-in-out_infinite]" />
+                    </div>
+                    <span className="w-8 text-right tabular-nums text-[11px] text-sv-muted">
+                      {isPaused ? "Paused" : "Starting…"}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <div className="h-1.5 flex-1 overflow-hidden rounded-full border border-sv-border bg-sv-surface-2">
+                      <div className={`h-full ${isPaused ? "bg-sv-muted" : "bg-sv-accent"} transition-all duration-75`} style={{ width: `${pct}%` }} />
+                    </div>
+                    <span className="w-8 text-right tabular-nums text-[11px] text-sv-muted">{pct}%</span>
+                  </>
+                )}
+              </div>
+              {isDownloading ? (
+                <button
+                  onClick={() => pauseStore(voice.id)}
+                  title="Pause download"
+                  className="p-1 text-sv-muted transition-colors duration-75 hover:text-sv-text"
+                >
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1" /><rect x="14" y="4" width="4" height="16" rx="1" /></svg>
+                </button>
               ) : (
-                <>
-                  <div className="h-1.5 flex-1 overflow-hidden rounded-full border border-sv-border bg-sv-surface-2">
-                    <div className="h-full bg-sv-accent transition-all duration-75" style={{ width: `${pct}%` }} />
-                  </div>
-                  <span className="w-8 text-right tabular-nums text-[11px] text-sv-muted">{pct}%</span>
-                </>
+                <button
+                  onClick={download}
+                  title="Resume download"
+                  className="p-1 text-sv-accent transition-colors duration-75 hover:text-sv-accent/80"
+                >
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><polygon points="5,3 19,12 5,21" /></svg>
+                </button>
               )}
+              <button
+                onClick={() => cancelStore(voice.id)}
+                title="Cancel download"
+                className="p-1 text-sv-muted transition-colors duration-75 hover:text-sv-bad"
+              >
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+              </button>
             </div>
           ) : downloaded ? (
             <div className="flex items-center gap-2">

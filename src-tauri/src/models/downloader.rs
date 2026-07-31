@@ -2,6 +2,7 @@ use super::registry;
 use futures_util::StreamExt;
 use serde::Serialize;
 use std::io::Write;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{AppHandle, Emitter};
 
 // CoEdIT-large grammar model, INT8 ONNX. Hosted on Hugging Face — upload the
@@ -15,12 +16,18 @@ const COEDIT_TOKENIZER_URL: &str = "https://huggingface.co/Zaid-Hossain/coedit-l
 const GECTOR_BASE_URL: &str =
     "https://huggingface.co/Zaid-Hossain/gector-roberta-onnx/resolve/main/";
 
+#[derive(Default, Debug)]
+pub struct DownloadStopFlag {
+    pub stop: AtomicBool,
+    pub cancel: AtomicBool,
+}
+
 #[derive(Serialize, Clone)]
 pub struct DownloadProgress {
     pub model_id: String,
     pub downloaded_bytes: u64,
     pub total_bytes: u64,
-    pub status: String, // "downloading" | "downloaded" | "error"
+    pub status: String, // "downloading" | "downloaded" | "paused" | "cancelled" | "error"
     pub error: Option<String>,
 }
 
@@ -30,10 +37,11 @@ pub async fn download_model(
     model_id: String,
     url: String,
     file_name: String,
-) -> Result<(), String> {
+    stop_flag: Option<&DownloadStopFlag>,
+) -> Result<bool, String> {
     registry::ensure_dirs().map_err(|e| e.to_string())?;
     let dest = registry::models_dir().join(&file_name);
-    download_to(app, model_id, url, dest).await
+    download_to(app, model_id, url, dest, stop_flag).await
 }
 
 /// Download an LLM GGUF model to the llm directory (stored as <id>.gguf).
@@ -41,10 +49,11 @@ pub async fn download_llm_model(
     app: AppHandle,
     model_id: String,
     url: String,
-) -> Result<(), String> {
+    stop_flag: Option<&DownloadStopFlag>,
+) -> Result<bool, String> {
     registry::ensure_dirs().map_err(|e| e.to_string())?;
     let dest = registry::llm_model_path(&model_id);
-    download_to(app, model_id, url, dest).await
+    download_to(app, model_id, url, dest, stop_flag).await
 }
 
 pub fn delete_llm_model(model_id: &str) -> Result<(), String> {
@@ -70,7 +79,8 @@ pub async fn download_tts_model(
     voice_id: String,
     url_onnx: String,
     url_json: String,
-) -> Result<(), String> {
+    stop_flag: Option<&DownloadStopFlag>,
+) -> Result<bool, String> {
     registry::ensure_dirs().map_err(|e| e.to_string())?;
 
     if url_json.ends_with("tokens.txt") {
@@ -92,13 +102,15 @@ pub async fn download_tts_model(
             .await
             .map_err(|e| e.to_string())?;
         std::fs::write(dir.join("tokens.txt"), &tokens).map_err(|e| e.to_string())?;
-        return download_to(app, voice_id, url_onnx, dir.join("model.onnx")).await;
+        return download_to(app, voice_id, url_onnx, dir.join("model.onnx"), stop_flag).await;
     }
 
     if url_json.is_empty() {
         // Sherpa archive path.
         let archive = registry::tts_models_dir().join(format!("{voice_id}.tar.bz2"));
-        download_to(app.clone(), voice_id.clone(), url_onnx, archive.clone()).await?;
+        if !download_to(app.clone(), voice_id.clone(), url_onnx, archive.clone(), stop_flag).await? {
+            return Ok(false);
+        }
 
         let out = tokio::task::spawn_blocking({
             let archive = archive.clone();
@@ -128,7 +140,7 @@ pub async fn download_tts_model(
         if registry::sherpa_voice_model(&voice_id).is_none() {
             return Err("voice archive did not contain the expected files".into());
         }
-        return Ok(());
+        return Ok(true);
     }
 
     // Piper pair path. Config first (tiny) — if it fails we haven't wasted a
@@ -148,7 +160,7 @@ pub async fn download_tts_model(
         .map_err(|e| e.to_string())?;
     std::fs::write(registry::tts_config_path(&voice_id), &json).map_err(|e| e.to_string())?;
 
-    download_to(app, voice_id.clone(), url_onnx, registry::tts_model_path(&voice_id)).await
+    download_to(app, voice_id.clone(), url_onnx, registry::tts_model_path(&voice_id), stop_flag).await
 }
 
 pub fn delete_tts_model(voice_id: &str) -> Result<(), String> {
@@ -168,7 +180,7 @@ pub fn delete_tts_model(voice_id: &str) -> Result<(), String> {
     Ok(())
 }
 
-pub async fn download_vad_model(app: AppHandle) -> Result<(), String> {
+pub async fn download_vad_model(app: AppHandle, stop_flag: Option<&DownloadStopFlag>) -> Result<bool, String> {
     registry::ensure_dirs().map_err(|e| e.to_string())?;
     let dir = registry::vad_dir();
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -177,6 +189,7 @@ pub async fn download_vad_model(app: AppHandle) -> Result<(), String> {
         "vad".into(),
         VAD_URL.into(),
         dir.join("silero_vad.onnx"),
+        stop_flag,
     )
     .await
 }
@@ -189,7 +202,7 @@ pub fn delete_vad_model() -> Result<(), String> {
     Ok(())
 }
 
-pub async fn download_coedit_model(app: AppHandle) -> Result<(), String> {
+pub async fn download_coedit_model(app: AppHandle, stop_flag: Option<&DownloadStopFlag>) -> Result<bool, String> {
     registry::ensure_dirs().map_err(|e| e.to_string())?;
     let dir = registry::coedit_dir();
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -198,9 +211,11 @@ pub async fn download_coedit_model(app: AppHandle) -> Result<(), String> {
         ("decoder_model_int8.onnx", COEDIT_DECODER_URL),
         ("tokenizer.json", COEDIT_TOKENIZER_URL),
     ] {
-        download_to(app.clone(), "coedit".into(), url.into(), dir.join(name)).await?;
+        if !download_to(app.clone(), "coedit".into(), url.into(), dir.join(name), stop_flag).await? {
+            return Ok(false);
+        }
     }
-    Ok(())
+    Ok(true)
 }
 
 pub fn delete_coedit_model() -> Result<(), String> {
@@ -209,7 +224,7 @@ pub fn delete_coedit_model() -> Result<(), String> {
     Ok(())
 }
 
-pub async fn download_gector_model(app: AppHandle, variant: String) -> Result<(), String> {
+pub async fn download_gector_model(app: AppHandle, variant: String, stop_flag: Option<&DownloadStopFlag>) -> Result<bool, String> {
     registry::ensure_dirs().map_err(|e| e.to_string())?;
     let dir = registry::gector_dir();
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -234,15 +249,18 @@ pub async fn download_gector_model(app: AppHandle, variant: String) -> Result<()
     files.extend(["tokenizer.json", "labels.txt", "verb-form-vocab.txt"]);
 
     for name in files {
-        download_to(
+        if !download_to(
             app.clone(),
             "gector".into(),
             format!("{GECTOR_BASE_URL}{name}"),
             dir.join(name),
+            stop_flag,
         )
-        .await?;
+        .await? {
+            return Ok(false);
+        }
     }
-    Ok(())
+    Ok(true)
 }
 
 pub fn delete_gector_model() -> Result<(), String> {
@@ -253,14 +271,68 @@ pub fn delete_gector_model() -> Result<(), String> {
     Ok(())
 }
 
+pub fn clean_part_and_emit_cancelled(app: &AppHandle, model_id: &str) {
+    // Cancelling an already-PAUSED download has no live transfer to stop, so the
+    // dest path is gone with it — the .part has to be found by name across every
+    // track that could have produced this model_id.
+    let mut candidate_parts = vec![
+        registry::models_dir().join(format!("ggml-{model_id}.bin.part")),
+        registry::models_dir().join(format!("{model_id}.part")),
+        registry::llm_model_path(model_id).with_file_name(format!("{model_id}.gguf.part")),
+        registry::tts_models_dir().join(format!("{model_id}.onnx.part")),
+        registry::tts_models_dir().join(format!("{model_id}.tar.bz2.part")),
+        registry::sherpa_voice_dir(model_id).join("model.onnx.part"),
+    ];
+
+    let extra_dir = match model_id {
+        "vad" => Some(registry::vad_dir()),
+        "coedit" => Some(registry::coedit_dir()),
+        "gector" => Some(registry::gector_dir()),
+        _ => None,
+    };
+    if let Some(dir) = extra_dir {
+        if let Ok(entries) = std::fs::read_dir(&dir) {
+            for e in entries.flatten() {
+                let p = e.path();
+                if p.extension().is_some_and(|x| x == "part") {
+                    candidate_parts.push(p);
+                }
+            }
+        }
+    }
+
+    for p in candidate_parts {
+        if p.exists() {
+            let _ = std::fs::remove_file(p);
+        }
+    }
+
+    emit(
+        app,
+        DownloadProgress {
+            model_id: model_id.to_string(),
+            downloaded_bytes: 0,
+            total_bytes: 0,
+            status: "cancelled".into(),
+            error: None,
+        },
+    );
+}
+
 /// Stream `url` to `dest` with resume support, emitting `download://progress` events. §4 / §14.
-async fn download_to(
+pub async fn download_to(
     app: AppHandle,
     model_id: String,
     url: String,
     dest: std::path::PathBuf,
-) -> Result<(), String> {
-    fetch_to_file(&url, &dest, |downloaded, total| {
+    stop_flag: Option<&DownloadStopFlag>,
+) -> Result<bool, String> {
+    let mut last_downloaded = 0u64;
+    let mut last_total = 0u64;
+
+    let res = fetch_to_file(&url, &dest, stop_flag, |downloaded, total| {
+        last_downloaded = downloaded;
+        last_total = total;
         emit(
             &app,
             DownloadProgress {
@@ -272,20 +344,62 @@ async fn download_to(
             },
         );
     })
-    .await?;
+    .await;
 
-    let size = std::fs::metadata(&dest).map(|m| m.len()).unwrap_or(0);
-    emit(
-        &app,
-        DownloadProgress {
-            model_id,
-            downloaded_bytes: size,
-            total_bytes: size,
-            status: "downloaded".into(),
-            error: None,
-        },
-    );
-    Ok(())
+    match res {
+        Ok(()) => {
+            let size = std::fs::metadata(&dest).map(|m| m.len()).unwrap_or(0);
+            emit(
+                &app,
+                DownloadProgress {
+                    model_id,
+                    downloaded_bytes: size,
+                    total_bytes: size,
+                    status: "downloaded".into(),
+                    error: None,
+                },
+            );
+            // Returns true if downloaded to completion, false if stopped early (paused/cancelled)
+            Ok(true)
+        }
+        Err(ref e) if e == "__paused__" => {
+            let tmp = part_path(&dest);
+            let size = std::fs::metadata(&tmp).map(|m| m.len()).unwrap_or(last_downloaded);
+            emit(
+                &app,
+                DownloadProgress {
+                    model_id,
+                    downloaded_bytes: size,
+                    total_bytes: last_total,
+                    status: "paused".into(),
+                    error: None,
+                },
+            );
+            Ok(false)
+        }
+        Err(ref e) if e == "__cancelled__" => {
+            let tmp = part_path(&dest);
+            let _ = std::fs::remove_file(&tmp);
+            emit(
+                &app,
+                DownloadProgress {
+                    model_id,
+                    downloaded_bytes: 0,
+                    total_bytes: 0,
+                    status: "cancelled".into(),
+                    error: None,
+                },
+            );
+            Ok(false)
+        }
+        Err(e) => Err(e),
+    }
+}
+
+fn part_path(dest: &std::path::Path) -> std::path::PathBuf {
+    let mut tmp_name = dest.file_name().unwrap_or_default().to_os_string();
+    tmp_name.push(".part");
+    dest.with_file_name(tmp_name)
 }
 
 /// The actual transport: resume-aware, retrying, size-verified fetch of `url`
@@ -294,12 +408,10 @@ async fn download_to(
 async fn fetch_to_file(
     url: &str,
     dest: &std::path::Path,
-    on_progress: impl Fn(u64, u64),
+    stop_flag: Option<&DownloadStopFlag>,
+    mut on_progress: impl FnMut(u64, u64),
 ) -> Result<(), String> {
-    // Append .part to dest filename so it cannot collide with a differently-named real model file.
-    let mut tmp_name = dest.file_name().unwrap_or_default().to_os_string();
-    tmp_name.push(".part");
-    let tmp = dest.with_file_name(tmp_name);
+    let tmp = part_path(dest);
 
     let client = reqwest::Client::builder()
         .user_agent("SilentVoice/0.1.6 (+https://github.com/zahidhossin39/Silent-Voice)")
@@ -307,6 +419,16 @@ async fn fetch_to_file(
         .map_err(|e| e.to_string())?;
 
     for attempt in 1..=4 {
+        if let Some(flag) = stop_flag {
+            if flag.stop.load(Ordering::Relaxed) {
+                if flag.cancel.load(Ordering::Relaxed) {
+                    return Err("__cancelled__".into());
+                } else {
+                    return Err("__paused__".into());
+                }
+            }
+        }
+
         let resume_from = std::fs::metadata(&tmp).map(|m| m.len()).unwrap_or(0);
 
         let mut req = client.get(url);
@@ -369,6 +491,18 @@ async fn fetch_to_file(
         let mut last_emit = downloaded;
 
         while let Some(chunk) = stream.next().await {
+            if let Some(flag) = stop_flag {
+                if flag.stop.load(Ordering::Relaxed) {
+                    let _ = file.flush();
+                    drop(file);
+                    if flag.cancel.load(Ordering::Relaxed) {
+                        return Err("__cancelled__".into());
+                    } else {
+                        return Err("__paused__".into());
+                    }
+                }
+            }
+
             let chunk = match chunk {
                 Ok(c) => c,
                 Err(e) => {
@@ -549,7 +683,7 @@ mod tests {
     async fn run(replies: Vec<Reply>, dest: &std::path::Path) -> Result<(), String> {
         let port = spawn_server(replies).await;
         let url = format!("http://127.0.0.1:{port}/model.bin");
-        fetch_to_file(&url, dest, |_, _| {}).await
+        fetch_to_file(&url, dest, None, |_, _| {}).await
     }
 
     #[tokio::test]

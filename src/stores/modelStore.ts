@@ -4,6 +4,8 @@ import type { DownloadProgress, LlmModel } from "../types";
 import {
   listDownloadedModels,
   downloadModel as bridgeDownload,
+  pauseDownload as bridgePause,
+  cancelDownload as bridgeCancel,
   deleteModel as bridgeDelete,
   listDownloadedLlm,
   downloadLlmModel as bridgeDownloadLlm,
@@ -27,6 +29,8 @@ interface ModelState {
   progress: Record<string, DownloadProgress>;
   refresh: () => Promise<void>;
   download: (modelId: string) => Promise<void>;
+  pause: (modelId: string) => Promise<void>;
+  cancel: (modelId: string) => Promise<void>;
   remove: (modelId: string) => Promise<void>;
   downloadLlm: (modelId: string) => Promise<void>;
   downloadCustomLlm: (model: LlmModel) => Promise<void>;
@@ -47,7 +51,7 @@ function startProgress(
       ...s.progress,
       [modelId]: {
         model_id: modelId,
-        downloaded_bytes: 0,
+        downloaded_bytes: s.progress[modelId]?.downloaded_bytes ?? 0,
         total_bytes: totalBytes,
         status: "downloading",
       },
@@ -77,13 +81,27 @@ export const useModelStore = create<ModelState>()(
     });
   },
 
+  pause: async (modelId) => {
+    await bridgePause(modelId);
+  },
+
+  cancel: async (modelId) => {
+    await bridgeCancel(modelId);
+    set((s) => {
+      const progress = { ...s.progress };
+      delete progress[modelId];
+      return { progress };
+    });
+  },
+
   download: async (modelId) => {
     const model = STT_MODELS.find((m) => m.id === modelId);
     if (!model) return;
     startProgress(set, modelId, model.size_mb * 1024 * 1024);
     try {
       const downloadUrl = model.url ?? WHISPER_BASE_URL + model.file;
-      await bridgeDownload(modelId, downloadUrl, model.file);
+      const ok = await bridgeDownload(modelId, downloadUrl, model.file);
+      if (!ok) return;
       set((s) => {
         const downloaded = new Set(s.downloaded);
         downloaded.add(modelId);
@@ -108,7 +126,8 @@ export const useModelStore = create<ModelState>()(
   downloadCustomStt: async (modelId, url, filename, size_mb) => {
     startProgress(set, modelId, size_mb * 1024 * 1024);
     try {
-      await bridgeDownload(modelId, url, filename);
+      const ok = await bridgeDownload(modelId, url, filename);
+      if (!ok) return;
       set((s) => {
         const downloaded = new Set(s.downloaded);
         downloaded.add(modelId);
@@ -146,7 +165,8 @@ export const useModelStore = create<ModelState>()(
     if (!model) return;
     startProgress(set, modelId, model.size_mb * 1024 * 1024);
     try {
-      await bridgeDownloadLlm(modelId, model.url);
+      const ok = await bridgeDownloadLlm(modelId, model.url);
+      if (!ok) return;
       set((s) => {
         const downloadedLlm = new Set(s.downloadedLlm);
         downloadedLlm.add(modelId);
@@ -171,7 +191,8 @@ export const useModelStore = create<ModelState>()(
   downloadCustomLlm: async (model) => {
     startProgress(set, model.id, model.size_mb * 1024 * 1024);
     try {
-      await bridgeDownloadLlm(model.id, model.url);
+      const ok = await bridgeDownloadLlm(model.id, model.url);
+      if (!ok) return;
       set((s) => {
         const downloadedLlm = new Set(s.downloadedLlm);
         downloadedLlm.add(model.id);
@@ -212,7 +233,8 @@ export const useModelStore = create<ModelState>()(
     if (!voice) return;
     startProgress(set, voiceId, voice.size_mb * 1024 * 1024);
     try {
-      await bridgeDownloadTts(voiceId, voice.url_onnx, voice.url_json);
+      const ok = await bridgeDownloadTts(voiceId, voice.url_onnx, voice.url_json);
+      if (!ok) return;
       set((s) => {
         const downloadedTts = new Set(s.downloadedTts);
         downloadedTts.add(voiceId);
@@ -237,7 +259,8 @@ export const useModelStore = create<ModelState>()(
   downloadCustomTts: async (voiceId, urlOnnx, urlJson, size_mb) => {
     startProgress(set, voiceId, size_mb * 1024 * 1024);
     try {
-      await bridgeDownloadTts(voiceId, urlOnnx, urlJson);
+      const ok = await bridgeDownloadTts(voiceId, urlOnnx, urlJson);
+      if (!ok) return;
       set((s) => {
         const downloadedTts = new Set(s.downloadedTts);
         downloadedTts.add(voiceId);
@@ -279,6 +302,14 @@ export const useModelStore = create<ModelState>()(
 
 // Allow the Rust backend to push live download progress via events.
 export function applyDownloadProgress(p: DownloadProgress) {
+  if (p.status === "cancelled") {
+    useModelStore.setState((s) => {
+      const progress = { ...s.progress };
+      delete progress[p.model_id];
+      return { progress };
+    });
+    return;
+  }
   useModelStore.setState((s) => ({
     progress: { ...s.progress, [p.model_id]: p },
   }));

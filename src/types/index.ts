@@ -101,6 +101,8 @@ export type DownloadStatus =
   | "not_downloaded"
   | "downloading"
   | "downloaded"
+  | "paused"
+  | "cancelled"
   | "error";
 
 export interface DownloadProgress {

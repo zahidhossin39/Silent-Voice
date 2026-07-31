@@ -60,11 +60,14 @@ export default function ModelCard({
   const downloaded = useModelStore((s) => s.downloaded.has(model.id));
   const progress = useModelStore((s) => s.progress[model.id]);
   const download = useModelStore((s) => s.download);
+  const pauseStore = useModelStore((s) => s.pause);
+  const cancelStore = useModelStore((s) => s.cancel);
   const remove = useModelStore((s) => s.remove);
   const [open, setOpen] = useState(false);
 
   const level = sttCompatibility(model, hardware).level;
   const isDownloading = progress?.status === "downloading";
+  const isPaused = progress?.status === "paused";
   const pct =
     progress && progress.total_bytes > 0
       ? Math.round((progress.downloaded_bytes / progress.total_bytes) * 100)
@@ -106,17 +109,43 @@ export default function ModelCard({
 
         <div className="flex shrink-0 items-center justify-end gap-2 min-w-[168px]">
           <button onClick={onTogglePin} title={pinned ? "Unpin" : "Pin to top"} className={pinned ? "mr-auto rounded-lg p-1.5 transition text-sv-accent" : "mr-auto rounded-lg p-1.5 transition text-sv-muted hover:text-sv-accent"}><StarIcon filled={pinned} /></button>
-          {isDownloading ? (
-            <div className="flex items-center gap-2">
-              <div className="h-1.5 w-20 overflow-hidden rounded-full bg-sv-surface-2">
-                <div
-                  className="h-full bg-sv-accent transition-all"
-                  style={{ width: `${pct}%` }}
-                />
+          {isDownloading || isPaused ? (
+            <div className="flex items-center gap-1.5">
+              <div className="flex w-20 items-center gap-2">
+                <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-sv-surface-2">
+                  <div
+                    className={`h-full ${isPaused ? "bg-sv-muted" : "bg-sv-accent"} transition-all`}
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+                <span className="w-8 text-right text-[11px] text-sv-muted">
+                  {isPaused ? "Paused" : `${pct}%`}
+                </span>
               </div>
-              <span className="w-8 text-right text-[11px] text-sv-muted">
-                {pct}%
-              </span>
+              {isDownloading ? (
+                <button
+                  onClick={() => pauseStore(model.id)}
+                  title="Pause download"
+                  className="p-1 text-sv-muted transition-colors duration-75 hover:text-sv-text"
+                >
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1" /><rect x="14" y="4" width="4" height="16" rx="1" /></svg>
+                </button>
+              ) : (
+                <button
+                  onClick={() => download(model.id)}
+                  title="Resume download"
+                  className="p-1 text-sv-accent transition-colors duration-75 hover:text-sv-accent/80"
+                >
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><polygon points="5,3 19,12 5,21" /></svg>
+                </button>
+              )}
+              <button
+                onClick={() => cancelStore(model.id)}
+                title="Cancel download"
+                className="p-1 text-sv-muted transition-colors duration-75 hover:text-sv-bad"
+              >
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+              </button>
             </div>
           ) : downloaded ? (
             <>

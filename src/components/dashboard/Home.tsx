@@ -37,8 +37,10 @@ export default function Home() {
   const recordingState = useUiStore((s) => s.recordingState);
   const lastError = useUiStore((s) => s.lastError);
 
-  const sttPass = downloadedStt.size > 0;
-  const sttValue = STT_MODELS.find((m) => m.id === settings.active_stt_model)?.label ?? settings.active_stt_model;
+  const sttPass = downloadedStt.size > 0 && Boolean(settings.active_stt_model) && downloadedStt.has(settings.active_stt_model);
+  const sttValue = settings.active_stt_model
+    ? (STT_MODELS.find((m) => m.id === settings.active_stt_model)?.label ?? settings.active_stt_model)
+    : "None selected";
   
   const micPass = settings.audio_device !== "";
   const micValue = settings.audio_device ? settings.audio_device : "System default";
@@ -119,7 +121,7 @@ export default function Home() {
             <StatusCheck
               pass={sttPass}
               label="Voice model"
-              value={sttPass ? sttValue : "Not downloaded"}
+              value={sttPass ? sttValue : (settings.active_stt_model ? "Not downloaded" : "None selected")}
               fixLink="/models"
               fixText="Choose one →"
             />
@@ -244,16 +246,16 @@ export default function Home() {
               disabled={downloadedModels.length === 0}
               className="w-full rounded-lg border border-sv-border bg-sv-bg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-sv-accent disabled:opacity-50"
             >
+              {!downloadedModels.some((m) => m.id === settings.active_stt_model) && (
+                <option value={settings.active_stt_model}>
+                  {settings.active_stt_model ? settings.active_stt_model : "None selected"}
+                </option>
+              )}
               {downloadedModels.map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.label}
                 </option>
               ))}
-              {!downloadedModels.some((m) => m.id === settings.active_stt_model) && (
-                <option value={settings.active_stt_model}>
-                  {settings.active_stt_model}
-                </option>
-              )}
             </select>
           </QuickControl>
 

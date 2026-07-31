@@ -16,7 +16,7 @@ use models::{downloader, registry, hf};
 use serde::Deserialize;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, AtomicU64};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use system::{hardware, hotkey, overlay, paste, tray};
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -183,6 +183,29 @@ pub struct AppState {
     pub active_app: Mutex<String>,
     /// Read-aloud playback state (see system/tts.rs).
     pub tts: system::tts::TtsState,
+    pub download_cancels: Mutex<std::collections::HashMap<String, Arc<downloader::DownloadStopFlag>>>,
+}
+
+impl AppState {
+    pub fn register_download(&self, model_id: &str) -> Result<Arc<downloader::DownloadStopFlag>, String> {
+        let mut map = self.download_cancels.lock().map_err(|e| e.to_string())?;
+        let flag = Arc::new(downloader::DownloadStopFlag::default());
+        map.insert(model_id.to_string(), flag.clone());
+        Ok(flag)
+    }
+
+    pub fn unregister_download(&self, model_id: &str) {
+        if let Ok(mut map) = self.download_cancels.lock() {
+            map.remove(model_id);
+        }
+    }
+}
+
+pub struct DownloadGuard<'a>(pub &'a AppState, pub String);
+impl<'a> Drop for DownloadGuard<'a> {
+    fn drop(&mut self) {
+        self.0.unregister_download(&self.1);
+    }
 }
 
 /// Ensure the bundled llama.cpp server is running for `model_id`, then run a
@@ -465,13 +488,42 @@ async fn proofread_text(state: State<'_, AppState>, text: String) -> Result<Vec<
 }
 
 #[tauri::command]
+fn pause_download(state: State<'_, AppState>, model_id: String) -> Result<(), String> {
+    let map = state.download_cancels.lock().map_err(|e| e.to_string())?;
+    if let Some(flag) = map.get(&model_id) {
+        flag.stop.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn cancel_download(app: AppHandle, state: State<'_, AppState>, model_id: String) -> Result<(), String> {
+    let mut active = false;
+    {
+        let map = state.download_cancels.lock().map_err(|e| e.to_string())?;
+        if let Some(flag) = map.get(&model_id) {
+            flag.cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+            flag.stop.store(true, std::sync::atomic::Ordering::Relaxed);
+            active = true;
+        }
+    }
+    if !active {
+        downloader::clean_part_and_emit_cancelled(&app, &model_id);
+    }
+    Ok(())
+}
+
+#[tauri::command]
 async fn download_tts_model(
     app: AppHandle,
+    state: State<'_, AppState>,
     voice_id: String,
     url_onnx: String,
     url_json: String,
-) -> Result<(), String> {
-    downloader::download_tts_model(app, voice_id, url_onnx, url_json).await
+) -> Result<bool, String> {
+    let flag = state.register_download(&voice_id)?;
+    let _guard = DownloadGuard(&state, voice_id.clone());
+    downloader::download_tts_model(app, voice_id, url_onnx, url_json, Some(&flag)).await
 }
 
 #[tauri::command]
@@ -556,10 +608,13 @@ fn list_downloaded_llm() -> Vec<String> {
 #[tauri::command]
 async fn download_llm_model(
     app: AppHandle,
+    state: State<'_, AppState>,
     model_id: String,
     url: String,
-) -> Result<(), String> {
-    downloader::download_llm_model(app, model_id, url).await
+) -> Result<bool, String> {
+    let flag = state.register_download(&model_id)?;
+    let _guard = DownloadGuard(&state, model_id.clone());
+    downloader::download_llm_model(app, model_id, url, Some(&flag)).await
 }
 
 #[tauri::command]
@@ -589,11 +644,14 @@ fn list_downloaded_models() -> Vec<String> {
 #[tauri::command]
 async fn download_model(
     app: AppHandle,
+    state: State<'_, AppState>,
     model_id: String,
     url: String,
     file_name: String,
-) -> Result<(), String> {
-    downloader::download_model(app, model_id, url, file_name).await
+) -> Result<bool, String> {
+    let flag = state.register_download(&model_id)?;
+    let _guard = DownloadGuard(&state, model_id.clone());
+    downloader::download_model(app, model_id, url, file_name, Some(&flag)).await
 }
 
 #[tauri::command]
@@ -772,8 +830,11 @@ fn set_webview_memory_low(app: &AppHandle, low: bool) {
 }
 
 #[tauri::command]
-async fn download_coedit_model(app: AppHandle) -> Result<(), String> {
-    models::downloader::download_coedit_model(app).await
+async fn download_coedit_model(app: AppHandle, state: State<'_, AppState>) -> Result<bool, String> {
+    let model_id = "coedit".to_string();
+    let flag = state.register_download(&model_id)?;
+    let _guard = DownloadGuard(&state, model_id);
+    models::downloader::download_coedit_model(app, Some(&flag)).await
 }
 #[tauri::command]
 fn coedit_installed() -> bool { models::registry::coedit_installed() }
@@ -781,8 +842,11 @@ fn coedit_installed() -> bool { models::registry::coedit_installed() }
 fn delete_coedit_model() -> Result<(), String> { models::downloader::delete_coedit_model() }
 
 #[tauri::command]
-async fn download_gector_model(app: AppHandle, variant: String) -> Result<(), String> {
-    models::downloader::download_gector_model(app, variant).await
+async fn download_gector_model(app: AppHandle, state: State<'_, AppState>, variant: String) -> Result<bool, String> {
+    let model_id = "gector".to_string();
+    let flag = state.register_download(&model_id)?;
+    let _guard = DownloadGuard(&state, model_id);
+    models::downloader::download_gector_model(app, variant, Some(&flag)).await
 }
 #[tauri::command]
 fn gector_installed() -> bool { models::registry::gector_installed() }
@@ -790,8 +854,11 @@ fn gector_installed() -> bool { models::registry::gector_installed() }
 fn delete_gector_model() -> Result<(), String> { models::downloader::delete_gector_model() }
 
 #[tauri::command]
-async fn download_vad_model(app: AppHandle) -> Result<(), String> {
-    models::downloader::download_vad_model(app).await
+async fn download_vad_model(app: AppHandle, state: State<'_, AppState>) -> Result<bool, String> {
+    let model_id = "vad".to_string();
+    let flag = state.register_download(&model_id)?;
+    let _guard = DownloadGuard(&state, model_id);
+    models::downloader::download_vad_model(app, Some(&flag)).await
 }
 #[tauri::command]
 fn vad_installed() -> bool { models::registry::vad_installed() }
@@ -945,6 +1012,8 @@ pub fn run() {
             proofread_text,
             download_tts_model,
             delete_tts_model,
+            pause_download,
+            cancel_download,
             set_active_mode,
             api_generate,
             api_list_models,
