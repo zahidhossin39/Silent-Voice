@@ -19,16 +19,19 @@ const TAP_MS: u64 = 300;
 const DOUBLE_TAP_WINDOW_MS: u64 = 450;
 
 /// Resolve how many CPU threads inference should use.
-/// - high_performance OFF → balanced default `max(2, cores/2)` (keeps the
-///   system responsive).
+///
+/// Counts PHYSICAL cores, not logical ones: one thread already saturates a
+/// core's vector units, so a hyperthread sibling adds cache contention and, on
+/// a laptop chip, power draw that lowers the all-core turbo clock.
+/// - high_performance OFF → all physical cores, capped at 8 (whisper.cpp stops
+///   scaling past that, and the cap leaves headroom on many-core machines).
 /// - high_performance ON  → the user's chosen `performance_threads`, clamped to
-///   [default, all cores]; 0 means "auto" = all cores. Shared by STT (whisper)
+///   [default, physical cores]; 0 means "auto" = all physical cores. Shared by STT (whisper)
 ///   and sherpa TTS so both honor the Performance setting identically.
 pub fn resolve_thread_count(high_performance: bool, performance_threads: u32) -> u32 {
-    let cores = std::thread::available_parallelism()
-        .map(|n| n.get() as u32)
-        .unwrap_or(4);
-    let default = std::cmp::max(2, cores / 2);
+    let count = super::hardware::physical_core_count() as u32;
+    let cores = if count > 0 { count } else { 4 };
+    let default = cores.clamp(2, 8);
     if !high_performance {
         return default;
     }

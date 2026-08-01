@@ -77,6 +77,12 @@ impl WhisperServer {
             // dictation-length clips.
             .arg("-bs")
             .arg("1")
+            // Best-of candidates: single candidate evaluation (default 2).
+            .arg("-bo")
+            .arg("1")
+            // Disable temperature fallback: cap at one pass to bound decode latency
+            // on trailing silence or breath noise.
+            .arg("-nf")
             // Flash attention: faster attention kernels; whisper.cpp disables
             // it by itself with a warning when the backend lacks support.
             .arg("-fa")

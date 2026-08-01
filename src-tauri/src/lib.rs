@@ -220,9 +220,12 @@ pub async fn run_local_llm(
     if !model_path.exists() {
         return Err(format!("Local model '{model_id}' is not downloaded"));
     }
-    let threads = std::thread::available_parallelism()
-        .map(|n| n.get() as u32)
-        .unwrap_or(4);
+    let (high_performance, performance_threads) = {
+        let state = app.state::<AppState>();
+        let cfg = state.config.lock().map_err(|e| e.to_string())?;
+        (cfg.high_performance, cfg.performance_threads)
+    };
+    let threads = hotkey::resolve_thread_count(high_performance, performance_threads);
 
     let needs_wait = {
         let state = app.state::<AppState>();
@@ -736,11 +739,9 @@ async fn stop_and_transcribe(
     registry::ensure_dirs().map_err(|e| e.to_string())?;
     let wav_path = registry::audio_dir().join("last.wav");
     capture::write_wav(&wav_path, &samples)?;
-    let threads = std::thread::available_parallelism()
-        .map(|n| n.get() as u32)
-        .unwrap_or(4);
-    let (vocabulary, stt_source, stt_base_url, stt_api_key, stt_cloud_model, use_gpu) = {
+    let (vocabulary, stt_source, stt_base_url, stt_api_key, stt_cloud_model, use_gpu, threads) = {
         let cfg = state.config.lock().map_err(|e| e.to_string())?;
+        let threads = hotkey::resolve_thread_count(cfg.high_performance, cfg.performance_threads);
         (
             cfg.vocabulary.clone(),
             cfg.stt_source.clone(),
@@ -748,6 +749,7 @@ async fn stop_and_transcribe(
             cfg.stt_api_key.clone(),
             cfg.stt_cloud_model.clone(),
             cfg.use_gpu,
+            threads,
         )
     };
     transcription::whisper::transcribe_dispatch(

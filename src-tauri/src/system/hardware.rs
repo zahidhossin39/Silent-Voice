@@ -37,6 +37,17 @@ fn detect_avx512() -> bool {
 
 const BYTES_PER_GB: f64 = 1024.0 * 1024.0 * 1024.0;
 
+/// Cached: this sits on the per-dictation path via `resolve_thread_count`, and
+/// building a `System` snapshot walks every process on the machine. The core
+/// count cannot change while the app runs, so pay for it once.
+pub fn physical_core_count() -> usize {
+    static CORES: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    *CORES.get_or_init(|| {
+        let sys = System::new_all();
+        sys.physical_core_count().unwrap_or_else(|| sys.cpus().len())
+    })
+}
+
 pub fn detect() -> HardwareInfo {
     let mut sys = System::new_all();
     sys.refresh_all();
@@ -47,7 +58,7 @@ pub fn detect() -> HardwareInfo {
         .map(|c| c.brand().trim().to_string())
         .unwrap_or_else(|| "Unknown CPU".to_string());
 
-    let physical_cores = sys.physical_core_count().unwrap_or_else(|| sys.cpus().len());
+    let physical_cores = physical_core_count();
     let logical_cores = sys.cpus().len();
 
     let total_ram_gb = sys.total_memory() as f64 / BYTES_PER_GB;

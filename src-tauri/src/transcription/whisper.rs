@@ -128,6 +128,9 @@ pub async fn transcribe(
         "--no-timestamps".into(), // -nt: text only, no [timestamps]
         "-bs".into(),
         "1".into(), // greedy decoding — same speedup as the server path
+        "-bo".into(),
+        "1".into(), // best-of 1 candidate (default 2)
+        "-nf".into(), // disable temperature fallback: cap at 1 pass for bounded latency
         "-fa".into(),
     ];
 
