@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect } from "react";
 import Page from "../shared/Page";
 import ConfirmDialog from "../shared/ConfirmDialog";
+import Select from "../shared/Select";
 import { ROW_ACTION, ROW_ACTION_PRIMARY, ROW_ACTION_DANGER } from "./hf/HfBrowser";
 import {
   STT_MODELS,
@@ -142,7 +143,7 @@ export default function ModelStore() {
       subtitle="Pick what listens, speaks, and rewrites. Coloured dots show what fits your device."
     >
       {/* Tab switch */}
-      <div className="mb-4 inline-flex flex-wrap gap-1 rounded-lg border border-sv-border bg-sv-surface p-1 text-sm">
+      <div role="tablist" aria-label="Model type" className="mb-4 inline-flex flex-wrap gap-1 rounded-lg border border-sv-border bg-sv-surface p-1 text-sm">
         <TabButton active={tab === "stt"} onClick={() => setTab("stt")}>
           <div className="flex items-center gap-2">
             <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
@@ -205,14 +206,15 @@ export default function ModelStore() {
           </div>
           <div className="flex flex-col gap-2 max-w-[1180px]">
             {sortedTts.map((v) => (
-              <TtsCard
-                key={v.id}
-                voice={v}
-                active={Boolean(activeTts) && activeTts === v.id && downloadedTts.has(v.id)}
-                onSelect={() => setSettings({ active_tts_voice: v.id })}
-                pinned={pinnedTts.has(v.id)}
-                onTogglePin={() => togglePinnedTts(v.id)}
-              />
+              <div key={v.id} className="sv-virtual-row">
+                <TtsCard
+                  voice={v}
+                  active={Boolean(activeTts) && activeTts === v.id && downloadedTts.has(v.id)}
+                  onSelect={() => setSettings({ active_tts_voice: v.id })}
+                  pinned={pinnedTts.has(v.id)}
+                  onTogglePin={() => togglePinnedTts(v.id)}
+                />
+              </div>
             ))}
           </div>
         </>
@@ -243,7 +245,7 @@ export default function ModelStore() {
         <>
           <p className="mb-4 text-xs text-sv-muted">
             These run <strong>inside Silent Voice</strong> and power your AI
-            modes (Clean Up, Formal, Email…). Assign one to a mode in the Modes
+            modes (Clean Up, Formal, Email…). Assign one to a mode in the Writing styles
             tab. You can also use a cloud provider instead (Cloud providers).
           </p>
           <HfBrowser track="llm" />
@@ -265,26 +267,6 @@ function LegendDot({
       <span className={`h-2 w-2 rounded-full ${DOT[level]}`} />
       {label}
     </span>
-  );
-}
-
-function Select({
-  value,
-  onChange,
-  children,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="rounded-lg border border-sv-border bg-sv-surface px-3 py-1.5 text-xs text-sv-text"
-    >
-      {children}
-    </select>
   );
 }
 
@@ -533,6 +515,8 @@ function TabButton({
 }) {
   return (
     <button
+      role="tab"
+      aria-selected={active}
       onClick={onClick}
       className={`rounded-md px-4 py-1.5 transition ${
         active ? "bg-sv-accent text-sv-on-accent" : "text-sv-muted hover:text-sv-text"

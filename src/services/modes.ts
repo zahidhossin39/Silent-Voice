@@ -28,7 +28,7 @@ export const BUILTIN_MODES: Mode[] = [
   },
   {
     id: "flow",
-    name: "Whisper Flow",
+    name: "Whisper Flow Style",
     icon: "wind",
     system_prompt: `You clean up dictated speech into natural written text. Keep the speaker's own words and tone — never paraphrase, summarize, or add anything of your own. Write the result once; never repeat it.
 

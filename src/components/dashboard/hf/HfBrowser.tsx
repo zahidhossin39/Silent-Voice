@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { Link } from "react-router-dom";
 import ProviderLogo from "../../shared/ProviderLogo";
 import ConfirmDialog from "../../shared/ConfirmDialog";
+import Select from "../../shared/Select";
 import { useHardwareInfo } from "../../../hooks/useHardwareInfo";
 import { LLM_MODELS } from "../../../services/catalog";
 import { llmCompatibility } from "../../../services/recommend";
@@ -158,6 +159,7 @@ export default function HfBrowser({ track, categoryFilter, languageFilter }: { t
 
   const downloadedLlm = useModelStore((s) => s.downloadedLlm);
   const downloadedStt = useModelStore((s) => s.downloaded);
+  const customLlm = useModelStore((s) => s.customLlm);
   const modes = useSettingsStore((s) => s.modes);
   const activeStt = useSettingsStore((s) => s.settings.active_stt_model);
   const usingCloudStt = useSettingsStore((s) => s.settings.stt_cloud_provider_id);
@@ -268,7 +270,14 @@ export default function HfBrowser({ track, categoryFilter, languageFilter }: { t
     if (categoryFilter && categoryFilter !== "all" && m.preset !== categoryFilter) return false;
     if (languageFilter && languageFilter !== "all" && sttLanguage(m) !== languageFilter) return false;
     return true;
-  }) : LLM_MODELS;
+  }) : [
+    // Downloaded HF models live only in customLlm, not in the staff-pick
+    // catalog or the live trending feed — without this they'd vanish from the
+    // list after downloading. Fold them in so they render and (being
+    // downloaded) sort to the top.
+    ...LLM_MODELS,
+    ...customLlm.filter((c) => !LLM_MODELS.some((m) => m.id === c.id)),
+  ];
   
   const staffPicksSorted = [...staffPicksRaw].sort(sortStaffPicks);
   
@@ -288,16 +297,12 @@ export default function HfBrowser({ track, categoryFilter, languageFilter }: { t
           onChange={(e) => setQuery(e.target.value)}
           className="min-w-[220px] flex-1 rounded-lg border border-sv-border bg-sv-bg px-3 py-1.5 text-sm placeholder:text-sv-muted focus:border-sv-accent focus:outline-none"
         />
-        <select
-          value={sort}
-          onChange={(e) => setSort(e.target.value)}
-          className="rounded-lg border border-sv-border bg-sv-bg px-2 py-1.5 text-sm text-sv-text"
-        >
+        <Select value={sort} onChange={setSort}>
           <option value="downloads">Best Match / Downloads</option>
           <option value="likes">Most Likes</option>
           <option value="trending">Trending</option>
           <option value="lastModified">Recently Updated</option>
-        </select>
+        </Select>
         <label className="flex items-center gap-2 text-sm text-sv-text cursor-pointer whitespace-nowrap">
           <input 
             type="checkbox" 

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import Page from "../shared/Page";
 import { useSettingsStore } from "../../stores/settingsStore";
@@ -277,6 +277,14 @@ function Editor({
   const [testing, setTesting] = useState(false);
   const [testOut, setTestOut] = useState<string | null>(null);
 
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onCancel();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onCancel]);
+
   const provider =
     mode.model_source === "api"
       ? providers.find((p) => p.id === mode.provider_id)
@@ -324,9 +332,18 @@ function Editor({
     // becomes scrollable when it doesn't. With items-center the panel overflowed
     // equally out of both ends of the fixed box, putting Save out of reach at
     // the app's own minimum window height (560px).
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 p-4">
-      <div className="my-auto w-full max-w-lg rounded-xl border border-sv-border bg-sv-surface p-5">
-        <h2 className="mb-1 text-lg font-semibold">
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 p-4"
+      onClick={onCancel}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="mode-editor-title"
+        onClick={(e) => e.stopPropagation()}
+        className="my-auto w-full max-w-lg rounded-xl border border-sv-border bg-sv-surface p-5"
+      >
+        <h2 id="mode-editor-title" className="mb-1 text-lg font-semibold">
           {mode.id ? "Edit mode" : "New mode"}
         </h2>
         {mode.builtin && (

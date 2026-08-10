@@ -62,7 +62,7 @@ export default function Guide() {
             <div className="flex flex-col md:flex-row md:items-start gap-8">
               <div className="flex-1">
                 <p className="text-base text-sv-muted max-w-[65ch] mb-8 leading-relaxed">
-                  In the <strong className="text-sv-text font-medium">Modes</strong> tab, have AI instantly format your speech. Turn raw thoughts into formal emails, bullet points, or clean code comments.
+                  In the <strong className="text-sv-text font-medium">Writing styles</strong> tab, have AI instantly format your speech. Turn raw thoughts into formal emails, bullet points, or clean code comments.
                 </p>
                 <p className="text-sm text-sv-muted max-w-[65ch] leading-relaxed">
                   When an AI rewrite fails for any reason, the <strong className="text-sv-text font-medium">raw transcription is pasted instead</strong> — you never lose your words.

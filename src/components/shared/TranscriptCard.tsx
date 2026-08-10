@@ -331,7 +331,7 @@ export default function TranscriptCard({
   const timeLabel = when.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 
   return (
-    <li className="group rounded-xl border border-sv-border/70 bg-sv-surface p-4 transition-colors duration-200 hover:border-sv-border sm:p-5">
+    <li className="sv-virtual-row group rounded-xl border border-sv-border/70 bg-sv-surface p-4 transition-colors duration-200 hover:border-sv-border sm:p-5">
       <div className="mb-2.5 flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="text-[13px] font-medium text-sv-text/90">

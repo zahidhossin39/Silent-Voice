@@ -423,9 +423,228 @@ pub fn collapse_repeated_words(text: &str) -> String {
     out
 }
 
+pub fn structure_text(text: &str) -> String {
+    if text.trim().is_empty() {
+        return String::new();
+    }
+
+    let commands = [
+        ("new paragraph", "\n\n"),
+        ("new line", "\n"),
+        ("bullet point", "\n- "),
+        ("bullet", "\n- "),
+        ("number one", "\n1. "),
+        ("number 1", "\n1. "),
+        ("number two", "\n2. "),
+        ("number 2", "\n2. "),
+        ("number three", "\n3. "),
+        ("number 3", "\n3. "),
+        ("number four", "\n4. "),
+        ("number 4", "\n4. "),
+        ("number five", "\n5. "),
+        ("number 5", "\n5. "),
+        ("number six", "\n6. "),
+        ("number 6", "\n6. "),
+        ("number seven", "\n7. "),
+        ("number 7", "\n7. "),
+        ("number eight", "\n8. "),
+        ("number 8", "\n8. "),
+        ("number nine", "\n9. "),
+        ("number 9", "\n9. "),
+        ("number ten", "\n10. "),
+        ("number 10", "\n10. "),
+    ];
+
+    let mut result = text.to_string();
+
+    for &(phrase, replacement) in &commands {
+        let mut new_result = String::new();
+        let chars: Vec<(usize, char)> = result.char_indices().collect();
+        let mut i = 0;
+        let mut last_idx = 0;
+        
+        while i < chars.len() {
+            let mut matched = false;
+            let mut match_len_bytes = 0;
+            let mut match_len_chars = 0;
+            
+            let mut j = i;
+            let mut p_match = true;
+            for p_c in phrase.chars() {
+                if j < chars.len() {
+                    let mut lc = chars[j].1.to_lowercase();
+                    if lc.next() == Some(p_c) && lc.next().is_none() {
+                        j += 1;
+                    } else {
+                        p_match = false;
+                        break;
+                    }
+                } else {
+                    p_match = false;
+                    break;
+                }
+            }
+            
+            if p_match {
+                let prev_char = if i > 0 { Some(chars[i - 1].1) } else { None };
+                let next_char = if j < chars.len() { Some(chars[j].1) } else { None };
+                
+                let is_start_boundary = prev_char.map_or(true, |c| !c.is_alphanumeric());
+                let is_end_boundary = next_char.map_or(true, |c| !c.is_alphanumeric());
+                
+                if is_start_boundary && is_end_boundary {
+                    matched = true;
+                    match_len_bytes = if j < chars.len() {
+                        chars[j].0 - chars[i].0
+                    } else {
+                        result.len() - chars[i].0
+                    };
+                    match_len_chars = j - i;
+                }
+            }
+            
+            if matched {
+                new_result.push_str(&result[last_idx..chars[i].0]);
+                new_result.push_str(replacement);
+                last_idx = chars[i].0 + match_len_bytes;
+                i += match_len_chars;
+            } else {
+                i += 1;
+            }
+        }
+        new_result.push_str(&result[last_idx..]);
+        result = new_result;
+    }
+
+    let chars: Vec<char> = result.chars().collect();
+    
+    let mut temp1 = Vec::new();
+    for &c in &chars {
+        if c == '\n' {
+            while let Some(&last) = temp1.last() {
+                if last == ' ' || last == '\t' {
+                    temp1.pop();
+                } else {
+                    break;
+                }
+            }
+        }
+        temp1.push(c);
+    }
+    
+    let mut temp2 = Vec::new();
+    let mut after_newline = false;
+    for &c in &temp1 {
+        if after_newline {
+            if c == ' ' || c == '\t' {
+                continue;
+            } else {
+                after_newline = false;
+            }
+        }
+        if c == '\n' {
+            after_newline = true;
+        }
+        temp2.push(c);
+    }
+    
+    let mut temp3 = Vec::new();
+    let mut nl_count = 0;
+    for &c in &temp2 {
+        if c == '\n' {
+            nl_count += 1;
+            if nl_count <= 2 {
+                temp3.push(c);
+            }
+        } else {
+            nl_count = 0;
+            temp3.push(c);
+        }
+    }
+    
+    let mut temp4 = Vec::new();
+    let mut sp_count = 0;
+    for &c in &temp3 {
+        if c == ' ' || c == '\t' {
+            if sp_count == 0 {
+                temp4.push(c);
+            }
+            sp_count += 1;
+        } else {
+            sp_count = 0;
+            temp4.push(c);
+        }
+    }
+    
+    result = temp4.into_iter().collect::<String>();
+    result = result.trim().to_string();
+
+    let mut cap_result = String::new();
+    let chars2: Vec<char> = result.chars().collect();
+    let mut cap_next_alpha = true;
+    
+    let mut i = 0;
+    while i < chars2.len() {
+        let c = chars2[i];
+        
+        if (c == 'i' || c == 'I') && (i == 0 || !chars2[i - 1].is_alphanumeric()) {
+            let mut j = i + 1;
+            while j < chars2.len() && (chars2[j].is_alphabetic() || chars2[j] == '\'' || chars2[j] == '’') {
+                j += 1;
+            }
+            let is_end_boundary = j == chars2.len() || !chars2[j].is_alphanumeric();
+            if is_end_boundary {
+                let word: String = chars2[i..j].iter().collect();
+                let word_lower = word.to_lowercase();
+                // Explanation: The pronoun 'I' must always be capitalized in English.
+                if matches!(word_lower.as_str(), "i" | "i'm" | "i've" | "i'll" | "i'd" | "i’m" | "i’ve" | "i’ll" | "i’d") {
+                    cap_result.push('I');
+                    for k in i + 1..j {
+                        cap_result.push(chars2[k]);
+                    }
+                    if cap_next_alpha {
+                        cap_next_alpha = false;
+                    }
+                    i = j;
+                    continue;
+                }
+            }
+        }
+        
+        if c == '\n' {
+            cap_next_alpha = true;
+            cap_result.push(c);
+        } else if c == '.' || c == '?' || c == '!' {
+            // Only a real sentence end (punctuation then a space/newline/end)
+            // starts a new capital. Guards decimals ("3.5 stars") and
+            // abbreviations ("U.S.") from capitalising the following word.
+            let next_is_break = i + 1 >= chars2.len() || chars2[i + 1].is_whitespace();
+            if next_is_break {
+                cap_next_alpha = true;
+            }
+            cap_result.push(c);
+        } else if c.is_alphabetic() {
+            if cap_next_alpha {
+                for uc in c.to_uppercase() {
+                    cap_result.push(uc);
+                }
+                cap_next_alpha = false;
+            } else {
+                cap_result.push(c);
+            }
+        } else {
+            cap_result.push(c);
+        }
+        
+        i += 1;
+    }
+    
+    cap_result
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{collapse_repeated_words, format_numbers};
+    use super::{collapse_repeated_words, format_numbers, structure_text};
 
     #[test]
     fn small_numbers_become_digits_too() {
@@ -513,5 +732,22 @@ mod tests {
         assert_eq!(collapse_repeated_words("no no no"), "no");
         assert_eq!(collapse_repeated_words("no no no cat"), "no cat");
         assert_eq!(collapse_repeated_words("no, no"), "no, no");
+    }
+
+    #[test]
+    fn test_structure_text() {
+        assert_eq!(structure_text(""), "");
+        assert_eq!(structure_text("hello world"), "Hello world");
+        assert_eq!(structure_text("first line new line second line"), "First line\nSecond line");
+        assert_eq!(structure_text("intro new paragraph body text"), "Intro\n\nBody text");
+        assert_eq!(structure_text("shopping bullet point milk bullet point eggs bullet point bread"), "Shopping\n- Milk\n- Eggs\n- Bread");
+        assert_eq!(structure_text("steps number one plan number two build number three ship"), "Steps\n1. Plan\n2. Build\n3. Ship");
+        assert_eq!(structure_text("i think i'm ready"), "I think I'm ready");
+        assert_eq!(structure_text("hello new line world"), "Hello\nWorld");
+        assert_eq!(structure_text("the victorian period was long"), "The victorian period was long"); // "period" NOT a command
+        assert_eq!(structure_text("done. next thing"), "Done. Next thing");
+        // A decimal must not capitalise the following word (abbreviations like
+        // "u.s. team" stay ambiguous and are accepted as-is).
+        assert_eq!(structure_text("it is 3.5 stars now"), "It is 3.5 stars now");
     }
 }

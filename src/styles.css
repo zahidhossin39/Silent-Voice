@@ -200,6 +200,15 @@ body {
 .sv-ready { animation: sv-ready-in 500ms ease-out both; }
 .sv-ready-key { animation: sv-ready-glow 1.4s ease-out; }
 
+/* Long lists (900+ TTS voices, unbounded History): let the browser skip
+   layout + paint for rows scrolled off-screen. Native, no windowing library,
+   and it leaves sorting/expand/scroll untouched. The intrinsic size is the
+   approximate collapsed row height so the scrollbar stays stable. */
+.sv-virtual-row {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 72px;
+}
+
 /* Keyboard focus. Applied via :where() so specificity stays 0 and any
    component-level focus style still wins. Without this, ~140 of the app's
    interactive elements had no visible focus at all. */
