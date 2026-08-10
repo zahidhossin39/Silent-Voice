@@ -13,6 +13,7 @@ import Onboarding from "./components/onboarding/Onboarding";
 import { useModelStore } from "./stores/modelStore";
 import { useSettingsStore } from "./stores/settingsStore";
 import { useHistoryStore } from "./stores/historyStore";
+import { useAnnounceStore } from "./stores/announceStore";
 import { usePipeline } from "./hooks/usePipeline";
 import { useRuntimeSync } from "./hooks/useRuntimeSync";
 import { useUpdateStore } from "./stores/updateStore";
@@ -61,11 +62,24 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-screen w-full flex-col overflow-hidden bg-sv-base">
+    <div className="flex h-screen w-full flex-col overflow-hidden bg-sv-bg">
       <Titlebar />
       <div className="flex-1 overflow-hidden relative">
         {!hydrated ? null : !onboarded ? <Onboarding /> : <Dashboard />}
       </div>
+      <Announcer />
+    </div>
+  );
+}
+
+// Single polite live region for the whole app. Visually hidden; screen readers
+// speak whatever the announce store last set (dictation done, learned words,
+// download finished, errors).
+function Announcer() {
+  const message = useAnnounceStore((s) => s.message);
+  return (
+    <div aria-live="polite" role="status" className="sr-only">
+      {message}
     </div>
   );
 }
@@ -130,7 +144,7 @@ function Dashboard() {
               className={({ isActive }) =>
                 `flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition ${
                   isActive
-                    ? "bg-sv-accent text-white"
+                    ? "bg-sv-accent text-sv-on-accent"
                     : "text-sv-muted hover:bg-sv-surface-2 hover:text-sv-text"
                 }`
               }
@@ -145,7 +159,7 @@ function Dashboard() {
           <button
             onClick={installNow}
             disabled={installing}
-            className="mx-3 mb-2 flex items-center justify-center gap-1.5 rounded-lg bg-sv-accent px-3 py-2 text-xs font-medium text-white transition hover:bg-sv-accent/90 disabled:opacity-60"
+            className="mx-3 mb-2 flex items-center justify-center gap-1.5 rounded-lg bg-sv-accent px-3 py-2 text-xs font-medium text-sv-on-accent transition hover:bg-sv-accent/90 disabled:opacity-60"
           >
             {installing ? "Updating…" : `Update available${updateVersion ? ` (v${updateVersion})` : ""}`}
           </button>

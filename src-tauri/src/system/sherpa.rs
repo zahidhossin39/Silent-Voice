@@ -146,7 +146,7 @@ type WriteWaveFn =
 static ORT: OnceLock<Result<Library, String>> = OnceLock::new();
 static LIB: OnceLock<Result<Library, String>> = OnceLock::new();
 
-fn lib() -> Result<&'static Library, String> {
+pub(crate) fn lib() -> Result<&'static Library, String> {
     LIB.get_or_init(|| {
         let dir = std::env::current_exe()
             .ok()

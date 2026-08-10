@@ -61,6 +61,8 @@ pub struct RuntimeConfig {
     // app's focused text field (system/inline_check.rs). English-only.
     pub inline_proofread: bool,
     pub coedit_enabled: bool,
+    // Transcribe natural speech chunks in background while hotkey is held.
+    pub chunk_on_silence: bool,
     pub high_performance: bool,
     // Thread count when high_performance is on. 0 = auto (all cores). Otherwise
     // the user's chosen count, clamped to [default, all cores] in hotkey.rs.
@@ -126,6 +128,7 @@ impl Default for RuntimeConfig {
             input_sensitivity: 50,
             inline_proofread: true,
             coedit_enabled: true,
+            chunk_on_silence: false,
             high_performance: false,
             performance_threads: 0,
             proofread_disabled_rules: Vec::new(),
@@ -168,6 +171,11 @@ pub struct AppState {
     pub config: Mutex<RuntimeConfig>,
     pub llama: Mutex<llm::llama::LlamaServer>,
     pub whisper_server: Mutex<transcription::server::WhisperServer>,
+    /// Resident sherpa-onnx STT recognizer (Moonshine or SenseVoice), keyed by
+    /// "<model_id>|<threads>" so it loads once and reloads only when the model
+    /// or thread count changes.
+    pub sherpa_stt: Mutex<Option<(String, Arc<system::sherpa_stt::SherpaSttEngine>)>>,
+    pub segmenter: Arc<audio::segmenter::Segmenter>,
     /// True only when the user explicitly hid the overlay (menu/tray). The
     /// keep-alive loop respects this and won't force it back.
     pub overlay_hidden: AtomicBool,
@@ -181,6 +189,10 @@ pub struct AppState {
     pub tap: Mutex<TapState>,
     /// Exe basename of the app focused when recording started (per-app profiles).
     pub active_app: Mutex<String>,
+    /// Raw HWND (as isize) of the window focused when recording started, so the
+    /// paste path can refuse to type into a different window if focus was
+    /// stolen mid-processing. 0 = unknown.
+    pub target_hwnd: std::sync::atomic::AtomicIsize,
     /// Read-aloud playback state (see system/tts.rs).
     pub tts: system::tts::TtsState,
     pub download_cancels: Mutex<std::collections::HashMap<String, Arc<downloader::DownloadStopFlag>>>,
@@ -253,6 +265,65 @@ fn get_hardware_info() -> hardware::HardwareInfo {
 #[tauri::command]
 fn recommend_device_defaults() -> hardware::DeviceRecommendation {
     hardware::recommend(&hardware::detect())
+}
+
+/// One pasteable blob of app + system info and the tail of the log, so a
+/// non-technical user reporting a problem can share everything at once.
+#[tauri::command]
+fn copy_diagnostics(state: State<AppState>) -> String {
+    let hw = hardware::detect();
+    let (model, source, lang, gpu, hp, threads, mode) = state
+        .config
+        .lock()
+        .map(|c| {
+            (
+                c.model_id.clone(),
+                c.stt_source.clone(),
+                c.language.clone(),
+                c.use_gpu,
+                c.high_performance,
+                c.performance_threads,
+                c.mode_id.clone(),
+            )
+        })
+        .unwrap_or_default();
+    format!(
+        "Silent Voice diagnostics\n\
+         version: {ver}\n\
+         os: {os}\n\
+         cpu: {cpu} ({phys} cores / {logi} threads)\n\
+         ram: {ram_total:.1} GB total, {ram_free:.1} GB free\n\
+         gpu: {gpu_name}\n\
+         disk free: {disk:.0} GB\n\
+         avx2: {avx2}  avx512: {avx512}\n\
+         --- settings ---\n\
+         stt source: {source}\n\
+         speech model: {model}\n\
+         language: {lang}\n\
+         use gpu: {gpu}\n\
+         high performance: {hp} (threads: {threads})\n\
+         active mode: {mode}\n\
+         --- recent log ---\n{log}\n",
+        ver = env!("CARGO_PKG_VERSION"),
+        os = hw.os,
+        cpu = hw.cpu_brand,
+        phys = hw.physical_cores,
+        logi = hw.logical_cores,
+        ram_total = hw.total_ram_gb,
+        ram_free = hw.available_ram_gb,
+        gpu_name = hw.gpu_name.clone().unwrap_or_else(|| "none detected".into()),
+        disk = hw.free_disk_gb,
+        avx2 = hw.has_avx2,
+        avx512 = hw.has_avx512,
+        source = source,
+        model = if model.trim().is_empty() { "(none selected)".to_string() } else { model },
+        lang = lang,
+        gpu = gpu,
+        hp = hp,
+        threads = threads,
+        mode = if mode.trim().is_empty() { "raw".to_string() } else { mode },
+        log = crate::logging::recent(60),
+    )
 }
 
 #[tauri::command]
@@ -333,6 +404,7 @@ fn set_behavior(
     pill_auto_hide: bool,
     append_trailing_space: bool,
     coedit_enabled: bool,
+    chunk_on_silence: bool,
     save_audio: bool,
     audio_clip_limit: usize,
 ) -> Result<(), String> {
@@ -352,6 +424,7 @@ fn set_behavior(
     cfg.pill_auto_hide = pill_auto_hide;
     cfg.append_trailing_space = append_trailing_space;
     cfg.coedit_enabled = coedit_enabled;
+    cfg.chunk_on_silence = chunk_on_silence;
     cfg.save_audio = save_audio;
     cfg.audio_clip_limit = audio_clip_limit;
     Ok(())
@@ -657,6 +730,20 @@ async fn download_model(
     downloader::download_model(app, model_id, url, file_name, Some(&flag)).await
 }
 
+/// Download a sherpa STT model archive (Moonshine) and extract it. Separate
+/// from download_model because it's a multi-file .tar.bz2, not a single .bin.
+#[tauri::command]
+async fn download_stt_archive(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    model_id: String,
+    url: String,
+) -> Result<bool, String> {
+    let flag = state.register_download(&model_id)?;
+    let _guard = DownloadGuard(&state, model_id.clone());
+    downloader::download_stt_archive(app, model_id, url, Some(&flag)).await
+}
+
 #[tauri::command]
 fn delete_model(model_id: String) -> Result<(), String> {
     downloader::delete_model(&model_id)
@@ -677,6 +764,84 @@ fn save_history(entries: Vec<HistoryEntry>) -> Result<(), String> {
 #[tauri::command]
 fn clear_history() -> Result<(), String> {
     history::clear()
+}
+
+#[derive(serde::Serialize)]
+struct RetranscribeResult {
+    text: String,
+    model_id: String,
+}
+
+/// Re-run transcription on a saved history clip using the CURRENTLY active STT
+/// model + settings, then apply the same deterministic text cleanup a fresh
+/// dictation gets (repeat-collapse, replacements, number formatting). Lets the
+/// user re-transcribe an old clip with a model they've since switched to.
+#[tauri::command]
+async fn retranscribe_clip(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    file_name: String,
+) -> Result<RetranscribeResult, String> {
+    if file_name.contains('/') || file_name.contains('\\') || file_name.contains("..") {
+        return Err("invalid clip name".into());
+    }
+    let wav = registry::audio_clips_dir().join(&file_name);
+    if !wav.exists() {
+        return Err("this recording's audio was not saved, so it can't be re-transcribed".into());
+    }
+
+    let (
+        model_id,
+        language,
+        vocabulary,
+        use_gpu,
+        high_performance,
+        performance_threads,
+        stt_source,
+        stt_base_url,
+        stt_api_key,
+        stt_cloud_model,
+        replacements,
+    ) = {
+        let cfg = state.config.lock().map_err(|e| e.to_string())?;
+        (
+            cfg.model_id.clone(),
+            cfg.language.clone(),
+            cfg.vocabulary.clone(),
+            cfg.use_gpu,
+            cfg.high_performance,
+            cfg.performance_threads,
+            cfg.stt_source.clone(),
+            cfg.stt_base_url.clone(),
+            cfg.stt_api_key.clone(),
+            cfg.stt_cloud_model.clone(),
+            cfg.replacements.clone(),
+        )
+    };
+    if model_id.is_empty() {
+        return Err("no speech model is selected — pick one in the Model Store first".into());
+    }
+
+    let threads = hotkey::resolve_thread_count(high_performance, performance_threads);
+    let raw = transcription::whisper::transcribe_dispatch(
+        &app,
+        &wav,
+        &model_id,
+        threads,
+        &language,
+        &vocabulary,
+        use_gpu,
+        &stt_source,
+        &stt_base_url,
+        &stt_api_key,
+        &stt_cloud_model,
+    )
+    .await?;
+
+    let text = system::textfmt::collapse_repeated_words(&raw);
+    let text = hotkey::apply_replacements(&text, &replacements);
+    let text = system::textfmt::format_numbers(&text);
+    Ok(RetranscribeResult { text, model_id })
 }
 
 /// Returns the clip as a RAW binary IPC response, not a serialised Vec<u8>.
@@ -728,6 +893,7 @@ async fn stop_and_transcribe(
     model_id: String,
     language: String,
 ) -> Result<String, String> {
+    state.segmenter.reset();
     let recorder = {
         let mut slot = state.recorder.lock().map_err(|e| e.to_string())?;
         slot.take().ok_or("not recording")?
@@ -994,6 +1160,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_hardware_info,
             recommend_device_defaults,
+            copy_diagnostics,
             list_input_devices,
             start_mic_probe,
             stop_mic_probe,
@@ -1027,7 +1194,9 @@ pub fn run() {
             local_llm_generate,
             list_downloaded_models,
             download_model,
+            download_stt_archive,
             delete_model,
+            retranscribe_clip,
             load_history,
             save_history,
             clear_history,

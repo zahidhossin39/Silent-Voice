@@ -164,13 +164,71 @@ pub fn model_path(model_id: &str) -> PathBuf {
     models_dir().join(model_file_name(model_id))
 }
 
-/// List downloaded Whisper model ids.
+/// Directory of an extracted sherpa STT model (e.g. Moonshine): a folder of
+/// .onnx files + tokens.txt, living alongside the flat Whisper `ggml-*.bin`
+/// files in models_dir(). Mirrors how sherpa TTS voices are whole folders.
+pub fn stt_model_dir(model_id: &str) -> PathBuf {
+    models_dir().join(model_id)
+}
+
+/// True if `model_id` is a fully-installed Moonshine model. All moonshine
+/// int8 bundles ship these exact internal filenames, so the same check works
+/// for tiny and base.
+pub fn moonshine_installed(model_id: &str) -> bool {
+    let d = stt_model_dir(model_id);
+    d.join("preprocess.onnx").exists()
+        && d.join("encode.int8.onnx").exists()
+        && d.join("tokens.txt").exists()
+}
+
+/// True if `model_id` is a fully-installed SenseVoice model.
+pub fn sense_voice_installed(model_id: &str) -> bool {
+    let d = stt_model_dir(model_id);
+    d.join("model.int8.onnx").exists() && d.join("tokens.txt").exists()
+}
+
+/// Which engine runs a given STT model, derived from its id. The frontend
+/// carries this as `SttModel.engine`; this is the single backend source of
+/// truth, so adding a new sherpa family is a one-place change.
+#[derive(PartialEq, Eq, Clone, Copy, Debug)]
+pub enum SttEngine {
+    Whisper,
+    Moonshine,
+    SenseVoice,
+}
+
+pub fn stt_engine(model_id: &str) -> SttEngine {
+    if model_id.starts_with("sense-voice") {
+        SttEngine::SenseVoice
+    } else if model_id.starts_with("moonshine") {
+        SttEngine::Moonshine
+    } else {
+        SttEngine::Whisper
+    }
+}
+
+/// True if `model_id` names a fully-installed sherpa STT model of any family
+/// (Moonshine or SenseVoice) — the two live in the same directory shape.
+pub fn sherpa_stt_installed(model_id: &str) -> bool {
+    match stt_engine(model_id) {
+        SttEngine::Moonshine => moonshine_installed(model_id),
+        SttEngine::SenseVoice => sense_voice_installed(model_id),
+        SttEngine::Whisper => false,
+    }
+}
+
+/// List downloaded STT model ids — flat Whisper `ggml-*.bin` files plus
+/// extracted sherpa model directories (Moonshine, SenseVoice).
 pub fn list_downloaded() -> Vec<String> {
     let mut ids = Vec::new();
     if let Ok(entries) = std::fs::read_dir(models_dir()) {
         for entry in entries.flatten() {
             if let Some(name) = entry.file_name().to_str() {
-                if let Some(rest) = name.strip_prefix("ggml-") {
+                if entry.path().is_dir() {
+                    if sherpa_stt_installed(name) {
+                        ids.push(name.to_string());
+                    }
+                } else if let Some(rest) = name.strip_prefix("ggml-") {
                     if let Some(id) = rest.strip_suffix(".bin") {
                         ids.push(id.to_string());
                     }

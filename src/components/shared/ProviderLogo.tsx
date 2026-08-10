@@ -112,15 +112,29 @@ function resolveBrand(provider: string): Brand | null {
 
 // Deterministic fallback color for providers without a known brand mark, so
 // the same provider always gets the same chip color across the app.
+// Deep-tone palette: every entry is dark enough that white monogram text
+// clears 4.5:1, so the tiny 10px initials stay legible on any chip.
 const FALLBACK_COLORS = [
-  "#6366F1", "#0EA5E9", "#10B981", "#F59E0B", "#EF4444",
-  "#8B5CF6", "#EC4899", "#14B8A6", "#F97316", "#84CC16",
+  "#3730A3", "#0369A1", "#047857", "#B45309", "#B91C1C",
+  "#6D28D9", "#BE185D", "#0F766E", "#C2410C", "#4D7C0F",
 ];
 
 function hashColor(s: string): string {
   let h = 0;
   for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
   return FALLBACK_COLORS[h % FALLBACK_COLORS.length];
+}
+
+// Pick black or white monogram text for the strongest contrast on a given hex
+// chip color — white on the lighter fallbacks (amber, lime) fails WCAG.
+function textOn(hex: string): string {
+  const n = parseInt(hex.slice(1), 16);
+  const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => {
+    v /= 255;
+    return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+  });
+  const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  return lum > 0.4 ? "#000000" : "#ffffff";
 }
 
 function initials(s: string): string {
@@ -163,8 +177,8 @@ export default function ProviderLogo({
   const color = hashColor(provider);
   return (
     <div
-      className="flex shrink-0 items-center justify-center rounded-md text-[10px] font-semibold text-white"
-      style={{ width: size, height: size, background: color }}
+      className="flex shrink-0 items-center justify-center rounded-md text-[10px] font-semibold"
+      style={{ width: size, height: size, background: color, color: textOn(color) }}
       title={provider}
     >
       {initials(provider)}

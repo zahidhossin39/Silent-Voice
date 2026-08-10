@@ -58,6 +58,15 @@ pub fn log_info(context: &str, msg: &str) {
     write_line("INFO", context, msg);
 }
 
+/// The last `max_lines` lines of the current log file, for the diagnostics
+/// export. Empty if the log doesn't exist yet.
+pub fn recent(max_lines: usize) -> String {
+    let content = std::fs::read_to_string(log_path()).unwrap_or_default();
+    let lines: Vec<&str> = content.lines().collect();
+    let start = lines.len().saturating_sub(max_lines);
+    lines[start..].join("\n")
+}
+
 /// Human-readable message from a caught panic payload.
 pub fn panic_msg(p: &(dyn std::any::Any + Send)) -> String {
     if let Some(s) = p.downcast_ref::<&str>() {

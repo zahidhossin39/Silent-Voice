@@ -52,6 +52,7 @@ const DEFAULT_SETTINGS: Settings = {
   input_sensitivity: 50,
   inline_proofread: true,
   coedit_enabled: true,
+  chunk_on_silence: false,
   proofread_disabled_rules: [],
   gector_sensitivity: "balanced",
   proofread_ignore_apps: "",
@@ -88,6 +89,8 @@ interface SettingsState {
   addMode: (mode: Mode) => void;
   updateMode: (id: string, patch: Partial<Mode>) => void;
   deleteMode: (id: string) => void;
+  togglePinMode: (id: string) => void;
+  resetMode: (id: string) => void;
   addProvider: (p: ApiProvider) => void;
   updateProvider: (id: string, patch: Partial<ApiProvider>) => void;
   deleteProvider: (id: string) => void;
@@ -229,6 +232,20 @@ export const useSettingsStore = create<SettingsState>()(
             settings: { ...s.settings, active_mode_id: nextActive },
           };
         }),
+      togglePinMode: (id) =>
+        set((s) => ({
+          modes: s.modes.map((m) => (m.id === id ? { ...m, pinned: !m.pinned } : m)),
+        })),
+      resetMode: (id) =>
+        set((s) => {
+          const def = BUILTIN_MODES.find((m) => m.id === id);
+          if (!def) return s;
+          return {
+            modes: s.modes.map((m) =>
+              m.id === id ? { ...def, pinned: m.pinned } : m
+            ),
+          };
+        }),
       addProvider: (p) => set((s) => ({ providers: [...s.providers, p] })),
       updateProvider: (id, patch) =>
         set((s) => ({
@@ -273,6 +290,15 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: "silent-voice-settings",
+      version: 1,
+      migrate: (persistedState: any, fromVersion: number) => {
+        // Chunked transcription shipped enabled and regressed quality on
+        // 4-core laptops; force it off once for anyone who stored `true`.
+        if (fromVersion < 1 && persistedState?.settings) {
+          persistedState.settings.chunk_on_silence = false;
+        }
+        return persistedState;
+      },
       storage: createJSONStorage(() => customStorage),
       merge: (persistedState: any, currentState) => {
         // Deep merge the settings object so new keys added to DEFAULT_SETTINGS
@@ -296,10 +322,31 @@ export const useSettingsStore = create<SettingsState>()(
         if (!isValidAccelerator(mergedSettings.tts_hotkey)) {
           mergedSettings.tts_hotkey = DEFAULT_SETTINGS.tts_hotkey;
         }
+        // Reconcile modes with the shipped built-ins. A persisted built-in the
+        // user hasn't touched is refreshed from BUILTIN_MODES so prompt fixes
+        // reach existing users (its own `pinned` choice is kept). One the
+        // user edited (`customized: true`) is left exactly as they saved it —
+        // editing a built-in is allowed, so their edit must win over ours.
+        // Custom modes are untouched, and built-ins added in a newer version
+        // are appended. Without this, `...persistedState` below would pin
+        // every user to whatever prompts they first launched with.
+        const builtinById = new Map(BUILTIN_MODES.map((m) => [m.id, m]));
+        const persistedModes: Mode[] = persistedState?.modes ?? currentState.modes;
+        const seen = new Set<string>();
+        const mergedModes: Mode[] = persistedModes.map((m) => {
+          seen.add(m.id);
+          const def = builtinById.get(m.id);
+          if (!def || m.customized) return m;
+          return { ...def, pinned: m.pinned };
+        });
+        for (const b of BUILTIN_MODES) {
+          if (!seen.has(b.id)) mergedModes.push(b);
+        }
         return {
           ...currentState,
           ...persistedState,
           settings: mergedSettings,
+          modes: mergedModes,
         };
       },
     }

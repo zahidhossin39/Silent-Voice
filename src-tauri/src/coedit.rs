@@ -2,14 +2,26 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
-use ndarray::{Array2, Array3};
-use ort::session::Session;
+use ndarray::{Array2, Array3, Array4};
+use ort::session::{Session, SessionInputValue};
 use ort::value::Tensor;
 use tokenizers::Tokenizer;
 
+// T5-large decoder geometry (from the exported model IO).
+const N_LAYERS: usize = 24;
+const N_HEADS: usize = 16;
+const HEAD_DIM: usize = 64;
+const VOCAB: usize = 32100;
+const EOS: i64 = 1;
+
 struct Coedit {
     encoder: std::sync::Mutex<Session>,
+    // Step 0 of decoding: no past, takes encoder_hidden_states, emits the full
+    // present (decoder + encoder KV).
     decoder: std::sync::Mutex<Session>,
+    // Steps 1+: fed the growing decoder-KV and the constant encoder-KV as past,
+    // so each step is one token-forward instead of re-attending the whole prefix.
+    decoder_past: std::sync::Mutex<Session>,
     tokenizer: Tokenizer,
 }
 
@@ -65,9 +77,14 @@ fn init_coedit() -> Option<Coedit> {
 
     let encoder_path = base_dir.join("encoder_model_int8.onnx");
     let decoder_path = base_dir.join("decoder_model_int8.onnx");
+    let decoder_past_path = base_dir.join("decoder_with_past_model_int8.onnx");
     let tokenizer_path = base_dir.join("tokenizer.json");
 
-    if !encoder_path.exists() || !decoder_path.exists() || !tokenizer_path.exists() {
+    if !encoder_path.exists()
+        || !decoder_path.exists()
+        || !decoder_past_path.exists()
+        || !tokenizer_path.exists()
+    {
         return None;
     }
 
@@ -103,6 +120,19 @@ fn init_coedit() -> Option<Coedit> {
         }
     };
 
+    let decoder_past = match Session::builder()
+        .and_then(|b| b.with_optimization_level(ort::session::builder::GraphOptimizationLevel::Level3))
+        .and_then(|b| b.with_intra_threads(threads))
+        .and_then(|b| b.with_inter_threads(1))
+        .and_then(|b| b.commit_from_file(&decoder_past_path))
+    {
+        Ok(s) => s,
+        Err(e) => {
+            crate::logging::log_error("coedit", &format!("Failed to load ONNX decoder-with-past session: {}", e));
+            return None;
+        }
+    };
+
     let tokenizer = match Tokenizer::from_file(&tokenizer_path) {
         Ok(t) => t,
         Err(e) => {
@@ -114,6 +144,7 @@ fn init_coedit() -> Option<Coedit> {
     Some(Coedit {
         encoder: std::sync::Mutex::new(encoder),
         decoder: std::sync::Mutex::new(decoder),
+        decoder_past: std::sync::Mutex::new(decoder_past),
         tokenizer,
     })
 }
@@ -216,15 +247,35 @@ pub fn correct(text: &str) -> String {
         return text.to_string();
     }
 
-    let mut dec_ids: Vec<i64> = vec![0];
-    let max_steps = (enc_len + 16).min(128);
+    // Greedy KV-cache decode. Step 0 runs the no-past decoder to seed the
+    // caches; every later step runs the with-past decoder over a single token.
+    // No fixed step cap that could truncate mid-sentence — bounded only by a
+    // generous runaway guard, and terminated by the model's EOS.
+    let argmax = |logits: &[f32]| -> i64 {
+        // Only ever one row of logits (decoder_sequence_length == 1), so the
+        // last VOCAB entries are the next-token distribution.
+        let row = &logits[logits.len() - VOCAB..];
+        row.iter()
+            .enumerate()
+            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+            .map(|(i, _)| i as i64)
+            .unwrap()
+    };
 
-    let vocab = 32100;
+    // Per-layer decoder KV (grows one token per step) and encoder KV (computed
+    // once at step 0, constant thereafter). Stored as raw buffers, rebuilt into
+    // tensors each step.
+    let mut dec_kv: Vec<Vec<f32>> = vec![Vec::new(); N_LAYERS * 2];
+    let mut enc_kv: Vec<Vec<f32>> = vec![Vec::new(); N_LAYERS * 2];
+    // Decoder-cache length after step 0 is always 1; grows by one per later step.
+    let mut dec_seq: usize = 1;
 
-    for _ in 0..max_steps {
-        let cur = dec_ids.len();
-        
-        let dec_input = match Array2::from_shape_vec((1, cur), dec_ids.clone()) {
+    let mut out_ids_i64: Vec<i64> = Vec::new();
+    let max_steps = (enc_len + 48).min(512);
+
+    // --- Step 0: no-past decoder. Seeds both caches. ---
+    let mut next_tok: i64 = {
+        let dec_input = match Array2::from_shape_vec((1, 1), vec![0i64]) {
             Ok(a) => a,
             Err(_) => return text.to_string(),
         };
@@ -236,57 +287,144 @@ pub fn correct(text: &str) -> String {
             Ok(a) => a,
             Err(_) => return text.to_string(),
         };
-
-        let (Ok(dec_input_t), Ok(enc_hidden_t), Ok(enc_mask_t)) = (
+        let (Ok(dec_t), Ok(hid_t), Ok(mask_t)) = (
             Tensor::from_array(dec_input),
             Tensor::from_array(enc_hidden),
             Tensor::from_array(enc_mask),
         ) else {
             return text.to_string();
         };
-
-        let decoder_inputs = ort::inputs![
-            "input_ids" => dec_input_t,
-            "encoder_hidden_states" => enc_hidden_t,
-            "encoder_attention_mask" => enc_mask_t,
+        let inputs: Vec<(String, SessionInputValue)> = vec![
+            ("input_ids".into(), dec_t.into()),
+            ("encoder_hidden_states".into(), hid_t.into()),
+            ("encoder_attention_mask".into(), mask_t.into()),
         ];
 
-        let logits_data;
+        let Ok(mut decoder) = c.decoder.lock() else {
+            return text.to_string();
+        };
+        let outputs = match decoder.run(inputs) {
+            Ok(o) => o,
+            Err(_) => return text.to_string(),
+        };
+        let tok = match outputs["logits"].try_extract_tensor::<f32>() {
+            Ok((_, data)) => argmax(data),
+            Err(_) => return text.to_string(),
+        };
+        // Capture both caches. decoder present has seq==1 here.
+        for i in 0..N_LAYERS {
+            for (slot, kind) in [(0usize, "key"), (1, "value")] {
+                let dk = format!("present.{i}.decoder.{kind}");
+                let ek = format!("present.{i}.encoder.{kind}");
+                match outputs[dk.as_str()].try_extract_tensor::<f32>() {
+                    Ok((_, d)) => dec_kv[i * 2 + slot] = d.to_vec(),
+                    Err(_) => return text.to_string(),
+                }
+                match outputs[ek.as_str()].try_extract_tensor::<f32>() {
+                    Ok((_, d)) => enc_kv[i * 2 + slot] = d.to_vec(),
+                    Err(_) => return text.to_string(),
+                }
+            }
+        }
+        tok
+    };
+
+    if next_tok != EOS {
+        out_ids_i64.push(next_tok);
+    }
+
+    // --- Steps 1+: with-past decoder, one token per step. ---
+    if next_tok != EOS {
+        // The encoder KV and attention mask are constant across every step —
+        // build them into tensors ONCE and pass them by reference (zero-copy
+        // View) each step. Re-cloning the ~7MB encoder cache per token was the
+        // whole cost; the actual per-token inference is a few ms.
+        let mut enc_vals: Vec<Tensor<f32>> = Vec::with_capacity(N_LAYERS * 2);
+        for slot in 0..N_LAYERS * 2 {
+            let e = match Array4::from_shape_vec(
+                (1, N_HEADS, enc_len, HEAD_DIM),
+                std::mem::take(&mut enc_kv[slot]),
+            ) {
+                Ok(a) => a,
+                Err(_) => return text.to_string(),
+            };
+            match Tensor::from_array(e) {
+                Ok(t) => enc_vals.push(t),
+                Err(_) => return text.to_string(),
+            }
+        }
+        let mask_val = match Array2::from_shape_vec((1, enc_len), attn.clone())
+            .ok()
+            .and_then(|a| Tensor::from_array(a).ok())
         {
-            let Ok(mut decoder) = c.decoder.lock() else {
+            Some(t) => t,
+            None => return text.to_string(),
+        };
+        // Precompute the (allocated) tensor names so the hot loop does no
+        // per-step string formatting.
+        let dec_key_names: Vec<String> = (0..N_LAYERS)
+            .flat_map(|i| [format!("past_key_values.{i}.decoder.key"), format!("past_key_values.{i}.decoder.value")])
+            .collect();
+        let enc_key_names: Vec<String> = (0..N_LAYERS)
+            .flat_map(|i| [format!("past_key_values.{i}.encoder.key"), format!("past_key_values.{i}.encoder.value")])
+            .collect();
+        let present_names: Vec<String> = (0..N_LAYERS)
+            .flat_map(|i| [format!("present.{i}.decoder.key"), format!("present.{i}.decoder.value")])
+            .collect();
+
+        let Ok(mut decoder) = c.decoder_past.lock() else {
+            return text.to_string();
+        };
+        for _ in 1..max_steps {
+            let dec_input = match Array2::from_shape_vec((1, 1), vec![next_tok]) {
+                Ok(a) => a,
+                Err(_) => return text.to_string(),
+            };
+            let Ok(dec_t) = Tensor::from_array(dec_input) else {
                 return text.to_string();
             };
-            let outputs = match decoder.run(decoder_inputs) {
+            let mut inputs: Vec<(String, SessionInputValue)> = Vec::with_capacity(2 + N_LAYERS * 4);
+            inputs.push(("input_ids".into(), dec_t.into()));
+            inputs.push(("encoder_attention_mask".into(), (&mask_val).into()));
+            for slot in 0..N_LAYERS * 2 {
+                let d = match Array4::from_shape_vec(
+                    (1, N_HEADS, dec_seq, HEAD_DIM),
+                    dec_kv[slot].clone(),
+                ) {
+                    Ok(a) => a,
+                    Err(_) => return text.to_string(),
+                };
+                let Ok(dt) = Tensor::from_array(d) else {
+                    return text.to_string();
+                };
+                inputs.push((dec_key_names[slot].clone(), dt.into()));
+                inputs.push((enc_key_names[slot].clone(), (&enc_vals[slot]).into()));
+            }
+
+            let outputs = match decoder.run(inputs) {
                 Ok(o) => o,
                 Err(_) => return text.to_string(),
             };
-            let (shape, data) = match outputs["logits"].try_extract_tensor::<f32>() {
-                Ok(t) => t,
+            next_tok = match outputs["logits"].try_extract_tensor::<f32>() {
+                Ok((_, data)) => argmax(data),
                 Err(_) => return text.to_string(),
             };
-            if shape.len() != 3 || shape[0] != 1 || shape[1] as usize != cur || shape[2] as usize != vocab {
-                return text.to_string();
+            if next_tok == EOS {
+                break;
             }
-            logits_data = data.to_vec();
+            // Only the decoder cache grows; encoder cache is constant.
+            for slot in 0..N_LAYERS * 2 {
+                match outputs[present_names[slot].as_str()].try_extract_tensor::<f32>() {
+                    Ok((_, d)) => dec_kv[slot] = d.to_vec(),
+                    Err(_) => return text.to_string(),
+                }
+            }
+            dec_seq += 1;
+            out_ids_i64.push(next_tok);
         }
-
-        let last = cur - 1;
-        let base = last * vocab;
-        
-        let next = logits_data[base..base+vocab]
-            .iter()
-            .enumerate()
-            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
-            .map(|(i, _)| i as i64)
-            .unwrap();
-
-        if next == 1 {
-            break;
-        }
-        dec_ids.push(next);
     }
 
-    let out_ids: Vec<u32> = dec_ids[1..].iter().map(|&x| x as u32).collect();
+    let out_ids: Vec<u32> = out_ids_i64.iter().map(|&x| x as u32).collect();
     let corrected = match c.tokenizer.decode(&out_ids, true) {
         Ok(s) => s.trim().to_string(),
         Err(_) => return text.to_string(),

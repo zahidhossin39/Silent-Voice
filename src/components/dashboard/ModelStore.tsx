@@ -1,8 +1,11 @@
 import { useMemo, useState, useEffect } from "react";
 import Page from "../shared/Page";
+import ConfirmDialog from "../shared/ConfirmDialog";
+import { ROW_ACTION, ROW_ACTION_PRIMARY, ROW_ACTION_DANGER } from "./hf/HfBrowser";
 import {
   STT_MODELS,
   TTS_MODELS,
+  TTS_SAMPLE_TEXT,
   sttLanguage,
 } from "../../services/catalog";
 import { formatMB } from "../../services/format";
@@ -311,15 +314,29 @@ function TtsCard({
   const cancelStore = useModelStore((s) => s.cancel);
   const remove = useModelStore((s) => s.removeTts);
   const [playing, setPlaying] = useState(false);
+  const [confirmRemove, setConfirmRemove] = useState(false);
+  const [confirmLargeDownload, setConfirmLargeDownload] = useState(false);
+
+  const startDownload = () => {
+    downloadCustomTts(voice.id, voice.url_onnx, voice.url_json, voice.size_mb);
+  };
 
   const download = () => {
-    downloadCustomTts(voice.id, voice.url_onnx, voice.url_json, voice.size_mb);
+    if (voice.size_mb >= 800) {
+      setConfirmLargeDownload(true);
+    } else {
+      startDownload();
+    }
   };
 
   const handlePreview = async () => {
     setPlaying(true);
     try {
-      await ttsSpeakText("This is a preview of the voice.");
+      // A voice can only pronounce its own language — English text through a
+      // Bangla model comes out as gibberish, which reads as a broken voice.
+      await ttsSpeakText(
+        TTS_SAMPLE_TEXT[voice.language] ?? TTS_SAMPLE_TEXT.default
+      );
     } finally {
       setPlaying(false);
     }
@@ -332,134 +349,175 @@ function TtsCard({
       ? Math.round((progress.downloaded_bytes / progress.total_bytes) * 100)
       : 0;
   const chip = TTS_QUALITY_CHIP[voice.quality];
+  // Up to 3 action buttons can show at once (Preview + Select + Remove) — wider
+  // than STT/LLM rows (max 2), so this column reserves more fixed width.
+  const [expanded, setExpanded] = useState(false);
 
   return (
     <div
-      className={`group relative rounded-xl border ${
-        active
-          ? "border-sv-accent/40"
-          : "border-sv-border"
-      } bg-sv-surface transition-colors duration-75 hover:bg-sv-surface-2/40 flex flex-wrap items-center gap-x-5 gap-y-2 px-4 py-3`}
+      onMouseEnter={() => setExpanded(true)}
+      onMouseLeave={() => setExpanded(false)}
+      className={`rounded-xl border ${
+        active ? "border-sv-accent/40" : "border-sv-border"
+      } bg-sv-surface transition-colors duration-75 hover:bg-sv-surface-2/40 px-4 py-3`}
     >
-      <div className="flex min-w-[230px] max-w-[420px] flex-1 items-center gap-3">
-        <ProviderLogo provider={voice.engine} size={32} />
-        <div className="min-w-0 flex-1 flex flex-col gap-1.5">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <span
+          className="h-2 w-2 shrink-0 rounded-full bg-sv-good"
+          title="Fits well — voices run on CPU"
+        />
+        <ProviderLogo provider={voice.engine} size={30} />
+        <div className="flex min-w-[150px] max-w-[380px] flex-1 flex-col gap-0.5">
           <div className="flex items-center gap-2">
-            <span
-              className="h-1.5 w-1.5 shrink-0 rounded-full bg-sv-good"
-              title="Fits well"
-            />
             <span className="truncate text-[13px] font-semibold text-sv-text">{voice.label}</span>
-            <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${chip.cls}`}>
-              {chip.label}
-            </span>
-            {active && <span className="shrink-0 rounded bg-sv-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-sv-accent">In use</span>}
-            {pinned && <span className="shrink-0 rounded bg-sv-surface-2 px-1.5 py-0.5 text-[10px] text-sv-muted">Pinned</span>}
+            {active ? (
+              <span className="shrink-0 rounded bg-sv-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-sv-accent">In use</span>
+            ) : (
+              <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${chip.cls}`}>{chip.label}</span>
+            )}
           </div>
-          <div className="truncate tabular-nums text-[11px] text-sv-muted">
-            {voice.engine} · {voice.language} · {formatMB(voice.size_mb)}
-          </div>
+          <div className="truncate text-[11px] text-sv-muted">{voice.engine} · {voice.language}</div>
           {progress?.status === "error" && (
             <div className="truncate text-[11px] text-sv-bad">{progress.error}</div>
           )}
         </div>
-      </div>
 
-      <div className="flex w-[300px] shrink-0 flex-col gap-1">
-        <MetricBar label="naturalness" value={ttsNaturalnessScore(voice.quality)} caption={ttsNaturalnessLabel(voice.quality)} />
-        <MetricBar label="speed" value={ttsSpeedScore(voice.quality)} caption={ttsSpeedLabel(voice.quality)} />
-      </div>
-
-      <div className="ml-auto flex shrink-0 items-center gap-2">
-        <div className="flex shrink-0 items-center">
-          {downloaded && !active && (
-            <button
-              onClick={handlePreview}
-              disabled={playing}
-              className="mr-2 rounded-lg px-2.5 py-1.5 text-xs font-medium text-sv-text transition-colors duration-75 hover:bg-sv-surface-2 disabled:opacity-50"
-            >
-              {playing ? "Playing…" : "Preview"}
-            </button>
-          )}
-
-          {isDownloading || isPaused ? (
-            <div className="flex items-center gap-1.5">
-              <div className="flex w-28 items-center gap-2">
-                {!progress || progress.total_bytes === 0 ? (
-                  <>
-                    <div className="h-1.5 flex-1 overflow-hidden rounded-full border border-sv-border bg-sv-surface-2">
-                      <div className="h-full w-1/3 rounded-full bg-sv-accent animate-[sv-indeterminate_1.1s_ease-in-out_infinite]" />
-                    </div>
-                    <span className="w-8 text-right tabular-nums text-[11px] text-sv-muted">
-                      {isPaused ? "Paused" : "Starting…"}
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <div className="h-1.5 flex-1 overflow-hidden rounded-full border border-sv-border bg-sv-surface-2">
-                      <div className={`h-full ${isPaused ? "bg-sv-muted" : "bg-sv-accent"} transition-all duration-75`} style={{ width: `${pct}%` }} />
-                    </div>
-                    <span className="w-8 text-right tabular-nums text-[11px] text-sv-muted">{pct}%</span>
-                  </>
-                )}
-              </div>
-              {isDownloading ? (
-                <button
-                  onClick={() => pauseStore(voice.id)}
-                  title="Pause download"
-                  className="p-1 text-sv-muted transition-colors duration-75 hover:text-sv-text"
-                >
-                  <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1" /><rect x="14" y="4" width="4" height="16" rx="1" /></svg>
-                </button>
-              ) : (
-                <button
-                  onClick={download}
-                  title="Resume download"
-                  className="p-1 text-sv-accent transition-colors duration-75 hover:text-sv-accent/80"
-                >
-                  <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><polygon points="5,3 19,12 5,21" /></svg>
-                </button>
-              )}
-              <button
-                onClick={() => cancelStore(voice.id)}
-                title="Cancel download"
-                className="p-1 text-sv-muted transition-colors duration-75 hover:text-sv-bad"
-              >
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-              </button>
-            </div>
-          ) : downloaded ? (
-            <div className="flex items-center gap-2">
-              {!active && (
-                <button
-                  onClick={onSelect}
-                  className="rounded-lg border border-sv-border bg-sv-surface-2 px-3 py-1.5 text-xs font-medium text-sv-text transition-colors duration-75 hover:border-sv-accent hover:text-sv-accent"
-                >
-                  Select
-                </button>
-              )}
-              <button
-                onClick={() => remove(voice.id)}
-                className="rounded-lg border border-sv-border px-2.5 py-1.5 text-xs font-medium text-sv-muted transition-colors duration-75 hover:border-sv-bad/40 hover:bg-sv-bad/10 hover:text-sv-bad"
-              >
-                Remove
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={download}
-              disabled={isDownloading}
-              className="rounded-lg border border-sv-border bg-sv-surface-2 px-3 py-1.5 text-xs font-medium text-sv-text transition-colors duration-75 hover:border-sv-accent hover:text-sv-accent"
-            >
-              Download
-            </button>
-          )}
+        <div className="hidden md:flex w-[172px] shrink-0 flex-col gap-1">
+          <MetricBar label="naturalness" value={ttsNaturalnessScore(voice.quality)} />
+          <MetricBar label="speed" value={ttsSpeedScore(voice.quality)} />
         </div>
 
-        <button onClick={onTogglePin} title={pinned ? "Unpin" : "Pin to top"} className={`transition-colors duration-75 ${pinned ? "text-sv-accent" : "text-sv-muted/40 hover:text-sv-accent"}`}>
-          <svg viewBox="0 0 24 24" width="16" height="16" fill={pinned ? "currentColor" : "none"} stroke={pinned ? "none" : "currentColor"} strokeWidth={pinned ? undefined : "1.75"} strokeLinecap="round" strokeLinejoin="round"><path d="M12 2.5l2.9 6.2 6.6.6-5 4.6 1.4 6.6L12 17l-5.9 3.5L7.5 14l-5-4.6 6.6-.6L12 2.5z" /></svg>
-        </button>
+        <div className="hidden sm:block w-[86px] shrink-0 text-right tabular-nums">
+          <div className="text-[12.5px] font-semibold text-sv-text">{formatMB(voice.size_mb)}</div>
+        </div>
+
+        <div className="ml-auto flex w-[270px] shrink-0 items-center justify-end gap-2">
+          <div className="flex shrink-0 items-center gap-2">
+            {downloaded && !active && (
+              <button
+                onClick={handlePreview}
+                disabled={playing}
+                className={`${ROW_ACTION} border-sv-border text-sv-text hover:border-sv-accent hover:text-sv-accent disabled:opacity-50`}
+              >
+                {playing ? "Playing…" : "Preview"}
+              </button>
+            )}
+
+            {isDownloading || isPaused ? (
+              <div className="flex items-center gap-1.5">
+                <div className="flex w-28 items-center gap-2">
+                  {!progress || progress.total_bytes === 0 ? (
+                    <>
+                      <div className="h-1.5 flex-1 overflow-hidden rounded-full border border-sv-border bg-sv-surface-2">
+                        <div className="h-full w-1/3 rounded-full bg-sv-accent animate-[sv-indeterminate_1.1s_ease-in-out_infinite]" />
+                      </div>
+                      <span className="w-8 text-right tabular-nums text-[11px] text-sv-muted">
+                        {isPaused ? "Paused" : "Starting…"}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <div className="h-1.5 flex-1 overflow-hidden rounded-full border border-sv-border bg-sv-surface-2">
+                        <div className={`h-full ${isPaused ? "bg-sv-muted" : "bg-sv-accent"} transition-all duration-75`} style={{ width: `${pct}%` }} />
+                      </div>
+                      <span className="w-8 text-right tabular-nums text-[11px] text-sv-muted">{pct}%</span>
+                    </>
+                  )}
+                </div>
+                {isDownloading ? (
+                  <button
+                    onClick={() => pauseStore(voice.id)}
+                    title="Pause download"
+                    className="p-1 text-sv-muted transition-colors duration-75 hover:text-sv-text"
+                  >
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1" /><rect x="14" y="4" width="4" height="16" rx="1" /></svg>
+                  </button>
+                ) : (
+                  <button
+                    onClick={download}
+                    title="Resume download"
+                    className="p-1 text-sv-accent transition-colors duration-75 hover:text-sv-accent/80"
+                  >
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><polygon points="5,3 19,12 5,21" /></svg>
+                  </button>
+                )}
+                <button
+                  onClick={() => cancelStore(voice.id)}
+                  title="Cancel download"
+                  className="p-1 text-sv-muted transition-colors duration-75 hover:text-sv-bad"
+                >
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                </button>
+              </div>
+            ) : downloaded ? (
+              <div className="flex items-center gap-2">
+                {!active && (
+                  <button onClick={onSelect} className={ROW_ACTION_PRIMARY}>
+                    Select
+                  </button>
+                )}
+                <button onClick={() => setConfirmRemove(true)} className={ROW_ACTION_DANGER}>
+                  Remove
+                </button>
+              </div>
+            ) : (
+              <button onClick={download} disabled={isDownloading} className={ROW_ACTION_PRIMARY}>
+                Download
+              </button>
+            )}
+          </div>
+
+          <button onClick={onTogglePin} title={pinned ? "Unpin" : "Pin to top"} className={`transition-colors duration-75 ${pinned ? "text-sv-accent" : "text-sv-muted/40 hover:text-sv-accent"}`}>
+            <svg viewBox="0 0 24 24" width="16" height="16" fill={pinned ? "currentColor" : "none"} stroke={pinned ? "none" : "currentColor"} strokeWidth={pinned ? undefined : "1.75"} strokeLinecap="round" strokeLinejoin="round"><path d="M12 2.5l2.9 6.2 6.6.6-5 4.6 1.4 6.6L12 17l-5.9 3.5L7.5 14l-5-4.6 6.6-.6L12 2.5z" /></svg>
+          </button>
+        </div>
       </div>
+
+      <div
+        className="grid transition-[grid-template-rows] duration-200 ease-out"
+        style={{ gridTemplateRows: expanded ? "1fr" : "0fr" }}
+      >
+        <div className="overflow-hidden">
+          <div className="flex items-center gap-6 border-t border-sv-border pt-2 mt-2 text-[11px] text-sv-muted tabular-nums">
+            <div><span className="mr-1.5 text-sv-muted">naturalness</span>{ttsNaturalnessLabel(voice.quality)}</div>
+            <div><span className="mr-1.5 text-sv-muted">speed</span>{ttsSpeedLabel(voice.quality)}</div>
+          </div>
+        </div>
+      </div>
+
+      <ConfirmDialog
+        open={confirmRemove}
+        title="Remove this voice?"
+        message={
+          <>
+            This deletes <span className="text-sv-text">{voice.label}</span> from disk. You can
+            download it again later.
+          </>
+        }
+        confirmLabel="Remove"
+        onConfirm={() => {
+          remove(voice.id);
+          setConfirmRemove(false);
+        }}
+        onCancel={() => setConfirmRemove(false)}
+      />
+
+      <ConfirmDialog
+        open={confirmLargeDownload}
+        title="Large download"
+        message={
+          <>
+            <span className="text-sv-text">{voice.label}</span> is {formatMB(voice.size_mb)}. Make
+            sure you're on a connection you're okay using that much data on.
+          </>
+        }
+        confirmLabel="Download"
+        onConfirm={() => {
+          setConfirmLargeDownload(false);
+          startDownload();
+        }}
+        onCancel={() => setConfirmLargeDownload(false)}
+      />
     </div>
   );
 }
@@ -477,7 +535,7 @@ function TabButton({
     <button
       onClick={onClick}
       className={`rounded-md px-4 py-1.5 transition ${
-        active ? "bg-sv-accent text-white" : "text-sv-muted hover:text-sv-text"
+        active ? "bg-sv-accent text-sv-on-accent" : "text-sv-muted hover:text-sv-text"
       }`}
     >
       {children}

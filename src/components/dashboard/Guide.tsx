@@ -13,9 +13,9 @@ export default function Guide() {
         
         {/* HERO SECTION / QUICK START */}
         <section className="mb-20">
-          <div className="rounded-2xl border border-sv-border bg-sv-surface p-8 lg:p-12">
+          <div className="rounded-2xl border border-sv-border bg-sv-surface p-8 md:p-12">
             <h2 className="mb-10 text-2xl font-bold text-sv-text">Quick Start</h2>
-            <div className="flex flex-col lg:flex-row items-center justify-between gap-12">
+            <div className="flex flex-col md:flex-row items-center justify-between gap-12">
               <div className="flex-1 space-y-8">
                 <Step n={1} title="Click any input">
                   Focus on any text field (chat, code, email).
@@ -27,7 +27,7 @@ export default function Guide() {
                   Your words are instantly typed at the cursor.
                 </Step>
               </div>
-              <div className="w-full lg:w-auto flex justify-center">
+              <div className="w-full md:w-auto flex justify-center">
                 <HeroVisual />
               </div>
             </div>
@@ -38,7 +38,7 @@ export default function Guide() {
         <div className="flex flex-col gap-16">
           <section>
             <SectionTitle title="Hands-free dictation" accent="var(--color-sv-sec-dictation)" icon={<MicrophoneIcon />} />
-            <div className="flex flex-col lg:flex-row lg:items-start gap-8">
+            <div className="flex flex-col md:flex-row md:items-start gap-8">
               <div className="flex-1">
                 <p className="text-base text-sv-muted max-w-[65ch] mb-8 leading-relaxed">
                   Tap <Kbd>{hotkey}</Kbd> <strong className="text-sv-text font-medium">twice quickly</strong> to lock recording on. Let go of the keyboard and speak freely. Press once more to stop and paste.
@@ -47,7 +47,7 @@ export default function Guide() {
                   Recording can also be started and stopped from the <strong className="text-sv-text font-medium">tray icon</strong> menu, without using the keyboard at all.
                 </p>
               </div>
-              <div className="w-full lg:max-w-[420px]">
+              <div className="w-full md:max-w-[420px]">
                 <div className="p-4 rounded-2xl bg-sv-surface-2/30 w-fit flex items-center justify-center">
                   <KeyboardDoubleTapVisual hotkey={hotkey} />
                 </div>
@@ -59,7 +59,7 @@ export default function Guide() {
 
           <section>
             <SectionTitle title="AI rewrite modes" accent="var(--color-sv-sec-replace)" icon={<BrainIcon />} />
-            <div className="flex flex-col lg:flex-row lg:items-start gap-8">
+            <div className="flex flex-col md:flex-row md:items-start gap-8">
               <div className="flex-1">
                 <p className="text-base text-sv-muted max-w-[65ch] mb-8 leading-relaxed">
                   In the <strong className="text-sv-text font-medium">Modes</strong> tab, have AI instantly format your speech. Turn raw thoughts into formal emails, bullet points, or clean code comments.
@@ -68,7 +68,7 @@ export default function Guide() {
                   When an AI rewrite fails for any reason, the <strong className="text-sv-text font-medium">raw transcription is pasted instead</strong> — you never lose your words.
                 </p>
               </div>
-              <div className="w-full lg:max-w-[420px]">
+              <div className="w-full md:max-w-[420px]">
                 <div className="p-4 rounded-2xl bg-sv-surface-2/30 w-fit flex items-center justify-center">
                   <AIModeVisual />
                 </div>
@@ -80,7 +80,7 @@ export default function Guide() {
 
           <section>
             <SectionTitle title="Inline proofreading" accent="var(--color-sv-sec-vocab)" icon={<BookIcon />} />
-            <div className="flex flex-col lg:flex-row lg:items-start gap-8">
+            <div className="flex flex-col md:flex-row md:items-start gap-8">
               <div className="flex-1">
                 <p className="text-base text-sv-muted max-w-[65ch] mb-8 leading-relaxed">
                   Silent Voice underlines spelling errors in <span className="border-b-2 border-red-500 pb-0.5 font-medium text-sv-text">red</span> and grammar issues in <span className="border-b-2 border-blue-500 pb-0.5 font-medium text-sv-text">blue</span> as you type in almost any app's text field (English only).
@@ -99,7 +99,7 @@ export default function Guide() {
                   </div>
                 </div>
               </div>
-              <div className="w-full lg:max-w-[420px]">
+              <div className="w-full md:max-w-[420px]">
                 <div className="w-fit flex items-center justify-center">
                   <ProofreadingVisual />
                 </div>
@@ -111,7 +111,7 @@ export default function Guide() {
 
           <section>
             <SectionTitle title="Choosing a model" accent="var(--color-sv-sec-perf)" icon={<GaugeIcon />} />
-            <div className="flex flex-col lg:flex-row lg:items-start gap-8">
+            <div className="flex flex-col md:flex-row md:items-start gap-8">
               <div className="flex-1">
                 <p className="text-base text-sv-muted max-w-[65ch] mb-8 leading-relaxed">
                   Without a dedicated GPU, <strong className="text-sv-text font-medium">smaller is faster</strong>. Models, voices, history and logs all live under <code className="rounded bg-sv-surface-2 px-1.5 py-0.5 text-xs text-sv-accent">%APPDATA%\SilentVoice\</code> — nothing is uploaded anywhere by default.
@@ -122,7 +122,7 @@ export default function Guide() {
                   <DotRow color="bg-sv-bad" text="Too heavy (needs better GPU)" />
                 </ul>
               </div>
-              <div className="w-full lg:max-w-[420px]">
+              <div className="w-full md:max-w-[420px]">
                 <div className="p-4 rounded-2xl bg-sv-surface-2/30 w-fit flex items-center justify-center">
                   <ModelScaleVisual />
                 </div>
@@ -134,13 +134,13 @@ export default function Guide() {
 
           <section>
             <SectionTitle title="The floating pill" accent="var(--color-sv-sec-system)" icon={<AppIcon />} />
-            <div className="flex flex-col lg:flex-row lg:items-start gap-8">
+            <div className="flex flex-col md:flex-row md:items-start gap-8">
               <div className="flex-1">
                 <p className="text-base text-sv-muted max-w-[65ch] leading-relaxed">
                   Your always-on-top companion. Drag to move, right-click for options.
                 </p>
               </div>
-              <div className="w-full lg:max-w-[420px]">
+              <div className="w-full md:max-w-[420px]">
                 <div className="flex flex-col gap-4 w-full max-w-[320px]">
                   <PillRow label="Idle — waiting" active={false}>
                     <span className="h-[2px] w-4 rounded-full bg-sv-muted" />
@@ -416,7 +416,7 @@ function ProofreadingVisual() {
         {/* Hover Suggestion Box Mockup */}
         <div className="rounded-xl border border-sv-border bg-sv-surface p-3 max-w-[260px] mx-auto animate-in fade-in slide-in-from-top-2 duration-300">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-[9px] font-bold text-red-500 uppercase tracking-wider">Spelling Issue</span>
+            <span className="text-[10px] font-bold text-sv-bad uppercase tracking-wider">Spelling Issue</span>
             <span className="text-[9px] text-sv-muted">Hovered (0.25s)</span>
           </div>
           <p className="text-xs text-sv-text mb-2.5 font-medium">Did you mean <span className="text-sv-accent font-semibold">errors</span>?</p>

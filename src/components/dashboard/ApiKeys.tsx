@@ -1,5 +1,6 @@
 import { useState } from "react";
 import Page from "../shared/Page";
+import ConfirmDialog from "../shared/ConfirmDialog";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { apiGenerate, apiListModels, apiTestStt } from "../../services/tauriBridge";
 import type { ApiProvider, ApiUse } from "../../types";
@@ -97,6 +98,7 @@ export default function ApiKeys() {
   const updateProvider = useSettingsStore((s) => s.updateProvider);
   const deleteProvider = useSettingsStore((s) => s.deleteProvider);
 
+  const [pendingDelete, setPendingDelete] = useState<ApiProvider | null>(null);
   const [preset, setPreset] = useState(PRESETS[0].name);
   const [testResult, setTestResult] = useState<Record<string, string>>({});
   const [models, setModels] = useState<Record<string, string[]>>({});
@@ -188,7 +190,7 @@ export default function ApiKeys() {
           </select>
           <button
             onClick={add}
-            className="rounded-lg bg-sv-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-sv-accent-hover"
+            className="rounded-lg bg-sv-accent px-3 py-1.5 text-sm font-medium text-sv-on-accent hover:bg-sv-accent-hover"
           >
             + Add provider
           </button>
@@ -227,7 +229,7 @@ export default function ApiKeys() {
               <div className="mb-3 flex items-center justify-between">
                 <h3 className="font-medium">{p.name}</h3>
                 <button
-                  onClick={() => deleteProvider(p.id)}
+                  onClick={() => setPendingDelete(p)}
                   className="text-xs text-sv-muted hover:text-sv-bad"
                 >
                   Remove
@@ -342,7 +344,17 @@ export default function ApiKeys() {
                   Test connection
                 </button>
                 {testResult[p.id] && (
-                  <span className="text-xs text-sv-muted">
+                  // Colour by outcome: a failed connection test rendered in muted
+                  // grey reads as ordinary helper text, so the ✗ was the only cue.
+                  <span
+                    className={`text-xs ${
+                      testResult[p.id].startsWith("✓")
+                        ? "text-sv-good"
+                        : testResult[p.id].startsWith("✗")
+                        ? "text-sv-bad"
+                        : "text-sv-muted"
+                    }`}
+                  >
                     {testResult[p.id]}
                   </span>
                 )}
@@ -351,6 +363,22 @@ export default function ApiKeys() {
           ))}
         </div>
       )}
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        title="Remove this provider?"
+        message={
+          <>
+            This deletes <span className="text-sv-text">{pendingDelete?.name}</span> and its
+            saved API key. You'll have to paste the key again to re-add it.
+          </>
+        }
+        confirmLabel="Remove"
+        onConfirm={() => {
+          if (pendingDelete) deleteProvider(pendingDelete.id);
+          setPendingDelete(null);
+        }}
+        onCancel={() => setPendingDelete(null)}
+      />
     </Page>
   );
 }

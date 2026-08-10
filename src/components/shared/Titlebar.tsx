@@ -1,9 +1,23 @@
+import { useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { isTauri } from "../../services/tauriBridge";
 
 const appWindow = isTauri() ? getCurrentWindow() : null;
 
 export function Titlebar() {
+  const [maximized, setMaximized] = useState(false);
+
+  useEffect(() => {
+    if (!appWindow) return;
+    appWindow.isMaximized().then(setMaximized);
+    const unlisten = appWindow.onResized(() => {
+      appWindow.isMaximized().then(setMaximized);
+    });
+    return () => {
+      unlisten.then((f) => f());
+    };
+  }, []);
+
   return (
     <div
       data-tauri-drag-region
@@ -12,7 +26,7 @@ export function Titlebar() {
       <div className="flex h-full">
         {/* Minimize */}
         <button
-          className="flex h-full w-12 items-center justify-center text-sv-muted hover:bg-white/10 hover:text-sv-text"
+          className="flex h-full w-12 items-center justify-center text-sv-muted hover:bg-sv-surface-2 hover:text-sv-text"
           onClick={() => appWindow?.minimize()}
           title="Minimize"
         >
@@ -21,27 +35,41 @@ export function Titlebar() {
           </svg>
         </button>
 
-        {/* Maximize */}
+        {/* Maximize / Restore */}
         <button
-          className="flex h-full w-12 items-center justify-center text-sv-muted hover:bg-white/10 hover:text-sv-text"
+          className="flex h-full w-12 items-center justify-center text-sv-muted hover:bg-sv-surface-2 hover:text-sv-text"
           onClick={() => appWindow?.toggleMaximize()}
-          title="Maximize"
+          title={maximized ? "Restore" : "Maximize"}
         >
-          <svg
-            viewBox="0 0 24 24"
-            width="12"
-            height="12"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-          </svg>
+          {maximized ? (
+            <svg
+              viewBox="0 0 24 24"
+              width="12"
+              height="12"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <rect x="6" y="3" width="15" height="15" rx="2" ry="2" />
+              <path d="M3 8v13h13" />
+            </svg>
+          ) : (
+            <svg
+              viewBox="0 0 24 24"
+              width="12"
+              height="12"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+            </svg>
+          )}
         </button>
 
         {/* Close */}
         <button
-          className="flex h-full w-12 items-center justify-center text-sv-muted hover:bg-red-500 hover:text-white"
+          className="flex h-full w-12 items-center justify-center text-sv-muted hover:bg-sv-bad hover:text-white"
           onClick={() => appWindow?.close()}
           title="Close"
         >

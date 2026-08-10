@@ -9,6 +9,8 @@ import {
   recommendDeviceDefaults,
   startMicProbe,
   stopMicProbe,
+  startRecording,
+  stopAndTranscribe,
 } from "../../services/tauriBridge";
 import HotkeyRecorder from "../shared/HotkeyRecorder";
 import ProviderLogo from "../shared/ProviderLogo";
@@ -42,6 +44,7 @@ const STEPS = [
   "Pick a model",
   "Check your mic",
   "Set your hotkey",
+  "Try it",
   "Done",
 ] as const;
 
@@ -57,6 +60,10 @@ export default function Onboarding() {
 
   const [step, setStep] = useState(0);
   const [hotkeyError, setHotkeyError] = useState<string | null>(null);
+  const [selfTestRecording, setSelfTestRecording] = useState(false);
+  const [selfTesting, setSelfTesting] = useState(false);
+  const [selfTestText, setSelfTestText] = useState<string | null>(null);
+  const [selfTestErr, setSelfTestErr] = useState<string | null>(null);
 
   const recommendedId = useMemo(() => recommendId(hardware), [hardware]);
   const [choice, setChoice] = useState<string | null>(null);
@@ -104,9 +111,38 @@ export default function Onboarding() {
     });
   }
 
+  async function startSelfTest() {
+    setSelfTestErr(null);
+    setSelfTestText(null);
+    try {
+      await startRecording(settings.audio_device);
+      setSelfTestRecording(true);
+    } catch (e) {
+      setSelfTestErr(`Couldn't start recording — check your microphone in Settings. (${String(e)})`);
+    }
+  }
+
+  async function stopSelfTest() {
+    setSelfTestRecording(false);
+    setSelfTesting(true);
+    try {
+      const text = await stopAndTranscribe(
+        settings.active_stt_model,
+        settings.language
+      );
+      setSelfTestText(text);
+    } catch (e) {
+      setSelfTestErr(`Transcription failed — try again. (${String(e)})`);
+    } finally {
+      setSelfTesting(false);
+    }
+  }
+
   const selDl = progress[selectedId];
   const selDownloading = selDl?.status === "downloading";
   const selDownloaded = downloaded.has(selectedId);
+  const selfTestReady =
+    !!settings.active_stt_model && downloaded.has(settings.active_stt_model);
   const selPct =
     selDl && selDl.total_bytes > 0
       ? Math.round((selDl.downloaded_bytes / selDl.total_bytes) * 100)
@@ -150,11 +186,11 @@ export default function Onboarding() {
                 provider yourself.
               </p>
               <p className="mt-3 text-sm text-sv-muted">
-                Two quick steps to get set up.
+                A few quick steps and you'll be dictating.
               </p>
               <button
                 onClick={() => setStep(1)}
-                className="mt-6 w-full rounded-lg bg-sv-accent px-4 py-2.5 text-sm font-medium text-white hover:bg-sv-accent-hover"
+                className="mt-6 w-full rounded-lg bg-sv-accent px-4 py-2.5 text-sm font-medium text-sv-on-accent hover:bg-sv-accent-hover"
               >
                 Get started
               </button>
@@ -176,7 +212,7 @@ export default function Onboarding() {
                     <span className="text-xs font-medium uppercase tracking-wide text-sv-muted">
                       Your device
                     </span>
-                    <span className="rounded-full bg-sv-accent px-2 py-0.5 text-[10px] font-medium text-white">
+                    <span className="rounded-full bg-sv-accent px-2 py-0.5 text-[10px] font-medium text-sv-on-accent">
                       {reco.tier}
                     </span>
                   </div>
@@ -224,7 +260,7 @@ export default function Onboarding() {
                               {m.label}
                             </span>
                             {isRec && (
-                              <span className="shrink-0 rounded-full bg-sv-accent px-2 py-0.5 text-[10px] font-medium text-white">
+                              <span className="shrink-0 rounded-full bg-sv-accent px-2 py-0.5 text-[10px] font-medium text-sv-on-accent">
                                 Recommended
                               </span>
                             )}
@@ -263,7 +299,7 @@ export default function Onboarding() {
                       applySelection(selectedId);
                       download(selectedId);
                     }}
-                    className="w-full rounded-lg bg-sv-accent px-3 py-2 text-xs font-medium text-white hover:bg-sv-accent-hover"
+                    className="w-full rounded-lg bg-sv-accent px-3 py-2 text-xs font-medium text-sv-on-accent hover:bg-sv-accent-hover"
                   >
                     Download selected model
                   </button>
@@ -282,7 +318,7 @@ export default function Onboarding() {
                     applySelection(selectedId);
                     setStep(2);
                   }}
-                  className="flex-1 rounded-lg bg-sv-accent px-4 py-2 text-sm font-medium text-white hover:bg-sv-accent-hover"
+                  className="flex-1 rounded-lg bg-sv-accent px-4 py-2 text-sm font-medium text-sv-on-accent hover:bg-sv-accent-hover"
                 >
                   {selDownloaded ? "Continue" : "Continue — I'll download later"}
                 </button>
@@ -332,7 +368,7 @@ export default function Onboarding() {
                 </button>
                 <button
                   onClick={() => setStep(3)}
-                  className="flex-1 rounded-lg bg-sv-accent px-4 py-2 text-sm font-medium text-white hover:bg-sv-accent-hover"
+                  className="flex-1 rounded-lg bg-sv-accent px-4 py-2 text-sm font-medium text-sv-on-accent hover:bg-sv-accent-hover"
                 >
                   Continue
                 </button>
@@ -366,7 +402,7 @@ export default function Onboarding() {
                 </button>
                 <button
                   onClick={() => setStep(4)}
-                  className="flex-1 rounded-lg bg-sv-accent px-4 py-2 text-sm font-medium text-white hover:bg-sv-accent-hover"
+                  className="flex-1 rounded-lg bg-sv-accent px-4 py-2 text-sm font-medium text-sv-on-accent hover:bg-sv-accent-hover"
                 >
                   Continue
                 </button>
@@ -375,6 +411,67 @@ export default function Onboarding() {
           )}
 
           {step === 4 && (
+            <div>
+              <h2 className="text-lg font-semibold">Try it out</h2>
+              <p className="mt-1 text-sm text-sv-muted">
+                A quick check so you know it works before you rely on it. Record
+                a sentence, then stop — your words appear right here (nothing is
+                pasted).
+              </p>
+              {!selfTestReady ? (
+                <div className="mt-4 rounded-xl border border-sv-border bg-sv-surface-2 p-4 text-sm text-sv-muted">
+                  Download your model on the first step to try a live
+                  transcription — or skip this and do it anytime later.
+                </div>
+              ) : (
+                <div className="mt-4 space-y-3">
+                  <button
+                    onClick={selfTestRecording ? stopSelfTest : startSelfTest}
+                    disabled={selfTesting}
+                    className={`w-full rounded-lg px-4 py-2.5 text-sm font-medium text-white disabled:opacity-50 ${
+                      selfTestRecording
+                        ? "bg-sv-bad hover:opacity-90"
+                        : "bg-sv-accent hover:bg-sv-accent-hover"
+                    }`}
+                  >
+                    {selfTesting
+                      ? "Transcribing…"
+                      : selfTestRecording
+                      ? "Stop & transcribe"
+                      : "Record a test"}
+                  </button>
+                  {selfTestText !== null && (
+                    <div className="rounded-xl border border-sv-border bg-sv-bg p-3 text-sm">
+                      {selfTestText.trim()
+                        ? `“${selfTestText.trim()}”`
+                        : "No speech detected — try again, a little louder."}
+                    </div>
+                  )}
+                  {selfTestErr && (
+                    <p className="text-xs text-sv-bad">{selfTestErr}</p>
+                  )}
+                </div>
+              )}
+              <div className="mt-6 flex gap-2">
+                <button
+                  onClick={() => setStep(3)}
+                  disabled={selfTestRecording || selfTesting}
+                  className="rounded-lg border border-sv-border px-4 py-2 text-sm text-sv-muted hover:text-sv-text disabled:opacity-50"
+                >
+                  Back
+                </button>
+                <button
+                  onClick={() => setStep(5)}
+                  disabled={selfTestRecording || selfTesting}
+                  className="flex-1 rounded-lg bg-sv-accent px-4 py-2 text-sm font-medium text-sv-on-accent hover:bg-sv-accent-hover disabled:opacity-50"
+                >
+                  Continue
+                </button>
+              </div>
+            </div>
+          )}
+
+          {step === 5 && (
             <div className="text-center">
               <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-sv-good/15 text-sv-good">
                 <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -390,7 +487,7 @@ export default function Onboarding() {
               </p>
               <button
                 onClick={finish}
-                className="mt-6 w-full rounded-lg bg-sv-accent px-4 py-2.5 text-sm font-medium text-white hover:bg-sv-accent-hover"
+                className="mt-6 w-full rounded-lg bg-sv-accent px-4 py-2.5 text-sm font-medium text-sv-on-accent hover:bg-sv-accent-hover"
               >
                 Start using Silent Voice
               </button>
@@ -398,7 +495,7 @@ export default function Onboarding() {
           )}
         </div>
 
-        {step > 0 && step < 4 && (
+        {step > 0 && step < 5 && (
           <button
             onClick={finish}
             className="mx-auto mt-4 block text-xs text-sv-muted hover:text-sv-text"

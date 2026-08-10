@@ -20,7 +20,7 @@ use std::sync::Mutex;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 use windows::core::{implement, Interface};
-use windows::Win32::Foundation::{CloseHandle, HANDLE};
+use windows::Win32::Foundation::{CloseHandle, HANDLE, RECT};
 use windows::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED, SAFEARRAY,
 };
@@ -57,10 +57,11 @@ const IGNORE_EXES: &[&str] = &[
 ];
 const MAX_TEXT: i32 = 6000;
 const POLL_MS: u64 = 250;
-// While squiggles are on screen, poll faster so they track typing/scrolling
-// closely — this is what keeps the "stale trail" short. There is no reliable
-// UIA event for scroll/window-move, so this path stays a poll on purpose.
-const ACTIVE_POLL_MS: u64 = 100;
+// While squiggles are on screen, poll fast so they track typing/scrolling and
+// — importantly — so a full delete is NOTICED quickly and the underlines clear
+// in sync with the text instead of trailing it. There is no reliable UIA event
+// for scroll/window-move, so this path stays a poll on purpose.
+const ACTIVE_POLL_MS: u64 = 60;
 // Editable field focused but stable (no new errors): poll gently — still
 // catches typing within ~800ms, far cheaper than 250ms forever.
 const FIELD_IDLE_MS: u64 = 800;
@@ -142,6 +143,11 @@ fn watcher(app: AppHandle) {
         // ~3 polls at ACTIVE_POLL_MS = about 300ms of cover for a UIA hiccup.
         const LOST_GRACE_POLLS: u32 = 3;
         let mut lost_polls: u32 = 0;
+        // How many consecutive still polls before underlines come back after a
+        // scroll. 2 × 60ms ≈ 120ms — long enough to not flicker mid-flick,
+        // short enough to feel immediate once the text stops.
+        const SCROLL_SETTLE_POLLS: u32 = 2;
+        let mut scroll_settle: u32 = 0;
         // poll_once already computes exactly why a cycle produced nothing; it
         // used to be discarded, which left "squiggles don't show up yet" with
         // no evidence to diagnose from. Logged on transition only — logging
@@ -152,6 +158,10 @@ fn watcher(app: AppHandle) {
         // WhatsApp, but a system-wide CPU/memory cost) — so they're only
         // engaged while the user's toggle is actually ON.
         let mut a11y_engaged = false;
+        // First real lint pays a cold-start (GECToR ONNX ~100MB + Harper dict).
+        // Warm both once, off-thread, the moment proofreading engages so the
+        // user's first dictation isn't the one that hitches.
+        let mut warmed = false;
         loop {
             let timeout = Duration::from_millis(if !last_squiggles.is_empty() {
                 ACTIVE_POLL_MS
@@ -267,6 +277,20 @@ fn watcher(app: AppHandle) {
                 let _ = automation.AddFocusChangedEventHandler(None, &handler);
                 a11y_engaged = true;
             }
+            if !warmed {
+                warmed = true;
+                let sens = gector_sensitivity.clone();
+                std::thread::spawn(move || {
+                    // Loads + caches the Harper linter and the GECToR session so
+                    // the first real check doesn't. Result discarded.
+                    let _ = proofread::check(
+                        "This is a warmup sentance to preload the models.",
+                        "",
+                        &[],
+                        &sens,
+                    );
+                });
+            }
 
             // A panic anywhere in the poll (Harper, GECToR, UIA) must not
             // kill this thread — squiggles going permanently dead is worse
@@ -323,6 +347,33 @@ fn watcher(app: AppHandle) {
                 last_reason = reason;
             }
             
+            // Scroll debounce. A UIA rect read is a cross-process COM call, so
+            // it can never keep up with a live scroll — redrawing mid-scroll
+            // just drags stale underlines across the text, which reads as a
+            // glitch. Instead: the instant positions move, hide everything;
+            // bring it back once the view has been still for a couple of polls.
+            // Detecting by rect delta (rather than a scroll event) is
+            // deliberate — Chromium's UIA scroll events are unreliable.
+            let moved = !squiggles.is_empty()
+                && squiggles.len() == last_squiggles.len()
+                && squiggles
+                    .iter()
+                    .zip(last_squiggles.iter())
+                    .any(|(a, b)| (a.x - b.x).abs() > 2 || (a.y - b.y).abs() > 2);
+            if moved {
+                scroll_settle = SCROLL_SETTLE_POLLS;
+            } else if scroll_settle > 0 {
+                scroll_settle -= 1;
+            }
+            if scroll_settle > 0 {
+                if was_active {
+                    let _ = overlay_tx.send(Vec::new());
+                    was_active = false;
+                }
+                last_squiggles = squiggles;
+                continue;
+            }
+
             if active {
                 lost_polls = 0;
                 last_squiggles = squiggles.clone();
@@ -412,6 +463,10 @@ fn poll_once(
             Some(e) => e,
             None => return (Vec::new(), "no text element"),
         };
+        // The field's own screen box. Rects that fall outside it belong to text
+        // scrolled out of view — UIA still reports rects for some of those, and
+        // drawing them left underlines stranded below/above the visible field.
+        let el_rect = el.CurrentBoundingRectangle().unwrap_or(RECT::default());
         let pattern: IUIAutomationTextPattern = match el
             .GetCurrentPattern(UIA_TextPatternId)
             .and_then(|unk| unk.cast())
@@ -451,6 +506,15 @@ fn poll_once(
             Err(_) => return (Vec::new(), "GetText failed"),
         };
         if text.trim().is_empty() {
+            // The field was cleared (select-all delete, or the last words
+            // erased). That is the ultimate "big edit" — hide the strips NOW
+            // instead of waiting out the transient-miss grace, which left
+            // underlines hanging for a second or more after the text was gone.
+            // Same reasoning as the big_edit wipe below; the empty path just
+            // returned before reaching it.
+            if was_active {
+                let _ = overlay_tx.send(Vec::new());
+            }
             last_text.clear();
             last_chars.clear();
             issues.clear();
@@ -493,6 +557,21 @@ fn poll_once(
                     }
                     if w < 2.0 || h < 2.0 {
                         continue;
+                    }
+                    // Clip to the field: a word scrolled out of view must not
+                    // leave a floating underline behind. Small tolerance so a
+                    // partially-clipped last line still counts.
+                    if el_rect.right > el_rect.left {
+                        let (l, t, r, b) = (
+                            el_rect.left as f64,
+                            el_rect.top as f64,
+                            el_rect.right as f64,
+                            el_rect.bottom as f64,
+                        );
+                        let cy = y + h / 2.0;
+                        if cy < t - 1.0 || cy > b + 1.0 || x + w < l - 1.0 || x > r + 1.0 {
+                            continue;
+                        }
                     }
                     // Two lints on the same span (e.g. spelling + style) would
                     // stack identical strips — keep the first.
@@ -605,8 +684,23 @@ unsafe fn checkable_range(pattern: &IUIAutomationTextPattern) -> Option<IUIAutom
     if let Ok(arr) = pattern.GetVisibleRanges() {
         if let Ok(len) = arr.Length() {
             if len >= 1 {
-                if let Ok(r) = arr.GetElement(0) {
-                    return Some(r);
+                if let Ok(first) = arr.GetElement(0) {
+                    // Chromium/Electron editors return ONE visible range PER
+                    // VISIBLE LINE. Taking only GetElement(0) checked just the
+                    // first line — every wrapped line below it was never read.
+                    // Stretch the first range's end to the LAST visible range's
+                    // end so the whole on-screen block is one checkable range
+                    // (still skips text scrolled out of view).
+                    if len > 1 {
+                        if let Ok(last) = arr.GetElement(len - 1) {
+                            let _ = first.MoveEndpointByRange(
+                                TextPatternRangeEndpoint_End,
+                                &last,
+                                TextPatternRangeEndpoint_End,
+                            );
+                        }
+                    }
+                    return Some(first);
                 }
             }
         }

@@ -29,6 +29,7 @@ const PILL_BG = "#0e1116";
 export default function OverlayApp() {
   const [state, setState] = useState<RecordingState>("idle");
   const [tts, setTts] = useState<TtsState>("idle");
+  const [level, setLevel] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
 
   const ttsControls = (tts === "speaking" || tts === "paused") && state === "idle";
@@ -45,6 +46,14 @@ export default function OverlayApp() {
       "pipeline://state",
       (p) => setState(p.state)
     );
+    return () => {
+      unlisten.then((f) => f());
+    };
+  }, []);
+
+  // Live mic loudness (0–100) drives the recording waveform's bar heights.
+  useEffect(() => {
+    const unlisten = listenEvent<number>("pipeline://level", (v) => setLevel(v));
     return () => {
       unlisten.then((f) => f());
     };
@@ -89,7 +98,7 @@ export default function OverlayApp() {
       ) : ttsControls ? (
         <TtsControlBar tts={tts} />
       ) : (
-        <RecordingOverlay state={state} tts={tts} />
+        <RecordingOverlay state={state} tts={tts} level={level} />
       )}
     </div>
   );

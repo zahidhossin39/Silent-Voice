@@ -39,3 +39,10 @@ pub fn paste_at_cursor(text: &str) -> Result<(), String> {
 
     Ok(())
 }
+
+/// Put text on the clipboard WITHOUT pasting. Used when a safety guard blocks
+/// an automatic paste, so the user can paste it themselves with Ctrl+V.
+pub fn set_clipboard(text: &str) -> Result<(), String> {
+    let mut clipboard = Clipboard::new().map_err(|e| e.to_string())?;
+    clipboard.set_text(text.to_string()).map_err(|e| e.to_string())
+}

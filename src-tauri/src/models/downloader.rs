@@ -112,31 +112,7 @@ pub async fn download_tts_model(
             return Ok(false);
         }
 
-        let out = tokio::task::spawn_blocking({
-            let archive = archive.clone();
-            let dest = registry::tts_models_dir();
-            move || {
-                let mut cmd = std::process::Command::new("tar");
-                cmd.arg("-xf").arg(&archive).arg("-C").arg(&dest);
-                #[cfg(windows)]
-                {
-                    use std::os::windows::process::CommandExt;
-                    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-                    cmd.creation_flags(CREATE_NO_WINDOW);
-                }
-                cmd.output()
-            }
-        })
-        .await
-        .map_err(|e| e.to_string())?
-        .map_err(|e| format!("could not run tar: {e}"))?;
-        let _ = std::fs::remove_file(&archive);
-        if !out.status.success() {
-            return Err(format!(
-                "voice archive extraction failed: {}",
-                String::from_utf8_lossy(&out.stderr)
-            ));
-        }
+        extract_tar_bz2(archive, registry::tts_models_dir(), false).await?;
         if registry::sherpa_voice_model(&voice_id).is_none() {
             return Err("voice archive did not contain the expected files".into());
         }
@@ -178,6 +154,72 @@ pub fn delete_tts_model(voice_id: &str) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// Extract a `.tar.bz2` into `dest` on a blocking thread (bsdtar on Windows 10+
+/// auto-detects bzip2), then delete the archive. `strip_top_folder` drops the
+/// archive's own top-level directory so files land directly in `dest`. Shared
+/// by the sherpa TTS-voice and STT-model download paths.
+async fn extract_tar_bz2(
+    archive: std::path::PathBuf,
+    dest: std::path::PathBuf,
+    strip_top_folder: bool,
+) -> Result<(), String> {
+    let out = tokio::task::spawn_blocking({
+        let archive = archive.clone();
+        move || {
+            let mut cmd = std::process::Command::new("tar");
+            cmd.arg("-xf").arg(&archive);
+            if strip_top_folder {
+                cmd.arg("--strip-components=1");
+            }
+            cmd.arg("-C").arg(&dest);
+            #[cfg(windows)]
+            {
+                use std::os::windows::process::CommandExt;
+                const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+                cmd.creation_flags(CREATE_NO_WINDOW);
+            }
+            cmd.output()
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| format!("could not run tar: {e}"))?;
+    let _ = std::fs::remove_file(&archive);
+    if !out.status.success() {
+        return Err(format!(
+            "archive extraction failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        ));
+    }
+    Ok(())
+}
+
+/// Download a sherpa STT model (Moonshine): a `.tar.bz2` whose top-level folder
+/// is the k2-fsa release name. We fetch it, extract with the system `tar`
+/// (bsdtar on Windows 10+ auto-detects bzip2), and strip the archive's own
+/// top folder so the files land directly in models_dir()/<model_id>/.
+pub async fn download_stt_archive(
+    app: AppHandle,
+    model_id: String,
+    url: String,
+    stop_flag: Option<&DownloadStopFlag>,
+) -> Result<bool, String> {
+    registry::ensure_dirs().map_err(|e| e.to_string())?;
+    let dest_dir = registry::stt_model_dir(&model_id);
+    let archive = registry::models_dir().join(format!("{model_id}.tar.bz2"));
+
+    if !download_to(app.clone(), model_id.clone(), url, archive.clone(), stop_flag).await? {
+        return Ok(false);
+    }
+
+    std::fs::create_dir_all(&dest_dir).map_err(|e| e.to_string())?;
+    extract_tar_bz2(archive, dest_dir, true).await?;
+    if !registry::sherpa_stt_installed(&model_id) {
+        return Err("model archive did not contain the expected files".into());
+    }
+    Ok(true)
 }
 
 pub async fn download_vad_model(app: AppHandle, stop_flag: Option<&DownloadStopFlag>) -> Result<bool, String> {
@@ -278,6 +320,7 @@ pub fn clean_part_and_emit_cancelled(app: &AppHandle, model_id: &str) {
     let mut candidate_parts = vec![
         registry::models_dir().join(format!("ggml-{model_id}.bin.part")),
         registry::models_dir().join(format!("{model_id}.part")),
+        registry::models_dir().join(format!("{model_id}.tar.bz2.part")),
         registry::llm_model_path(model_id).with_file_name(format!("{model_id}.gguf.part")),
         registry::tts_models_dir().join(format!("{model_id}.onnx.part")),
         registry::tts_models_dir().join(format!("{model_id}.tar.bz2.part")),
@@ -562,6 +605,13 @@ async fn fetch_to_file(
 }
 
 pub fn delete_model(model_id: &str) -> Result<(), String> {
+    // Sherpa STT models (Moonshine) are a whole directory; Whisper models are a
+    // single ggml .bin file. A whisper id never names a directory, so checking
+    // both is safe.
+    let dir = registry::stt_model_dir(model_id);
+    if dir.is_dir() {
+        std::fs::remove_dir_all(&dir).map_err(|e| e.to_string())?;
+    }
     let path = registry::model_path(model_id);
     if path.exists() {
         std::fs::remove_file(&path).map_err(|e| e.to_string())?;

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import Page from "../shared/Page";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useModelStore } from "../../stores/modelStore";
@@ -21,6 +21,8 @@ import {
   deleteVadModel,
   recommendDeviceDefaults,
   pruneAudioClips,
+  copyDiagnostics,
+  copyToClipboard,
 } from "../../services/tauriBridge";
 import type { DeviceRecommendation } from "../../types";
 import HotkeyRecorder from "../shared/HotkeyRecorder";
@@ -75,6 +77,7 @@ export default function Settings() {
   const downloadedTts = useModelStore((s) => s.downloadedTts);
   const { hardware } = useHardwareInfo();
   const [updateMsg, setUpdateMsg] = useState("");
+  const [diagMsg, setDiagMsg] = useState("");
   const [devices, setDevices] = useState<string[]>([]);
   const [hotkeyError, setHotkeyError] = useState<string | null>(null);
 
@@ -130,8 +133,10 @@ export default function Settings() {
     setSettings({ hotkey: accelerator });
     try {
       await setHotkey(accelerator);
-    } catch (e) {
-      setHotkeyError(`Failed to register: ${e}`);
+    } catch {
+      setHotkeyError(
+        "Couldn't set that shortcut — another app or the system may already use it. Try a different combination."
+      );
     }
   }
 
@@ -139,7 +144,7 @@ export default function Settings() {
 
   return (
     <Page title="Settings" subtitle="Dictation, audio, and appearance">
-      <div className="gap-5 lg:columns-2 lg:gap-5">
+      <div className="gap-5 md:columns-2 md:gap-5">
         <Section title="Dictation" accent="var(--color-sv-sec-dictation)" icon={<MicrophoneIcon />}>
 
           <div className="border-b border-sv-border/60 py-3.5">
@@ -163,6 +168,15 @@ export default function Settings() {
               <Toggle
                 checked={settings.toggle_mode}
                 onChange={(v) => setSettings({ toggle_mode: v })}
+              />
+            </Row>
+            <Row
+              label="Transcribe while you speak"
+              hint="Transcribes finished sentences mid-recording. Rarely helps and can slow things down on 4-core CPUs — for faster dictation, pick a lighter speech model instead (Model Store)."
+            >
+              <Toggle
+                checked={settings.chunk_on_silence}
+                onChange={(v) => setSettings({ chunk_on_silence: v })}
               />
             </Row>
             <Row
@@ -211,7 +225,7 @@ export default function Settings() {
             </select>
           </Row>
           {settings.stt_cloud_provider_id === null && (
-            <Row label="Active STT model">
+            <Row label="Speech model">
               <select
                 value={settings.active_stt_model}
                 onChange={(e) =>
@@ -278,27 +292,21 @@ export default function Settings() {
           </Row>
 
           <Row
-            label="Grammar correction"
-            hint="Fix grammar in dictated text before pasting (Raw mode). Skipped when an AI mode is active."
+            label="Grammar model"
+            hint="Not used for pasted text anymore — kept on disk for the upcoming inline grammar upgrade."
           >
             {(() => {
               if (coeditReady) {
                 return (
-                  <div className="flex items-center gap-3">
-                    <button
-                      onClick={async () => {
-                        await deleteCoeditModel();
-                        setCoeditReady(false);
-                      }}
-                      className="rounded-lg border border-sv-border px-2.5 py-1 text-xs text-sv-text hover:border-red-500 hover:text-red-500"
-                    >
-                      Remove
-                    </button>
-                    <Toggle
-                      checked={settings.coedit_enabled}
-                      onChange={(v) => setSettings({ coedit_enabled: v })}
-                    />
-                  </div>
+                  <button
+                    onClick={async () => {
+                      await deleteCoeditModel();
+                      setCoeditReady(false);
+                    }}
+                    className="rounded-lg border border-sv-border px-2.5 py-1 text-xs text-sv-text hover:border-sv-bad hover:text-sv-bad"
+                  >
+                    Remove
+                  </button>
                 );
               }
               const downloading = coeditFetching || coeditProgress?.status === "downloading";
@@ -356,7 +364,7 @@ export default function Settings() {
                 />
               </Row>
               <Row
-                label="Context grammar (neural)"
+                label="Context grammar"
                 hint="AI pass that catches correctly-spelled wrong words"
               >
                 {(() => {
@@ -368,7 +376,7 @@ export default function Settings() {
                             await deleteGectorModel();
                             setGectorReady(false);
                           }}
-                          className="rounded-lg border border-sv-border px-2.5 py-1 text-xs text-sv-text hover:border-red-500 hover:text-red-500"
+                          className="rounded-lg border border-sv-border px-2.5 py-1 text-xs text-sv-text hover:border-sv-bad hover:text-sv-bad"
                         >
                           Remove
                         </button>
@@ -467,7 +475,7 @@ export default function Settings() {
               type="range"
               min={0}
               max={100}
-              step={5}
+              step={1}
               value={settings.input_sensitivity}
               onChange={(e) =>
                 setSettings({ input_sensitivity: Number(e.target.value) })
@@ -492,7 +500,7 @@ export default function Settings() {
                       await deleteVadModel();
                       setVadReady(false);
                     }}
-                    className="rounded-lg border border-sv-border px-2.5 py-1 text-xs text-sv-text hover:border-red-500 hover:text-red-500"
+                    className="rounded-lg border border-sv-border px-2.5 py-1 text-xs text-sv-text hover:border-sv-bad hover:text-sv-bad"
                   >
                     Remove
                   </button>
@@ -746,8 +754,8 @@ export default function Settings() {
             />
           </Row>
           <Row
-            label="High performance mode"
-            hint="Uses more CPU threads for faster transcription (may slow other apps)"
+            label="Speed boost (uses more CPU)"
+            hint="Lets you tune how many CPU cores transcription uses. On CPUs that already use all their cores by default, there's nothing extra to unlock."
           >
             <Toggle
               checked={settings.high_performance}
@@ -756,32 +764,44 @@ export default function Settings() {
           </Row>
           {settings.high_performance &&
             (() => {
-              const cores = hardware?.logical_cores ?? 4;
-              const def = Math.max(2, Math.floor(cores / 2));
-              // 0 = auto (all cores). Show the effective value on the slider.
+              const physical = hardware?.physical_cores ?? 4;
+              const logical = Math.max(hardware?.logical_cores ?? physical, physical);
+              // Balanced default = one thread per physical core. The slider can
+              // go up to the logical (hyper-thread) count for anyone who wants
+              // to try, but on-device tests show it barely moves the needle.
+              const def = Math.min(8, Math.max(2, physical));
+              if (logical <= def) {
+                return (
+                  <div className="mt-0.5 py-3.5 text-xs text-sv-muted">
+                    Transcription already uses all {physical} of your CPU's
+                    cores. Speed comes from your speech model, not more threads —
+                    pick a lighter model in the Model Store for faster dictation.
+                  </div>
+                );
+              }
               const value = Math.min(
-                cores,
-                Math.max(def, settings.performance_threads || cores)
+                logical,
+                Math.max(def, settings.performance_threads || def)
               );
-              const fill =
-                cores > def ? ((value - def) / (cores - def)) * 100 : 100;
+              const fill = ((value - def) / (logical - def)) * 100;
               return (
                 <div className="py-3.5">
                   <div className="flex items-center justify-between">
                     <div className="text-sm">CPU threads</div>
                     <span className="text-xs tabular-nums text-sv-muted">
-                      {value} / {cores}
+                      {value} / {logical}
                     </span>
                   </div>
                   <div className="mt-0.5 text-xs text-sv-muted">
-                    How many CPU threads transcription may use. Default (balanced)
-                    is {def} — you can't go below that. Higher = faster, but
-                    leaves less for other apps. Your CPU has {cores} threads.
+                    Threads transcription may use — default {def} (one per core).
+                    You can push it to {logical}, but on this CPU it makes almost
+                    no difference: your speech-model choice matters far more.
+                    Fewer leaves more for other apps.
                   </div>
                   <input
                     type="range"
                     min={def}
-                    max={cores}
+                    max={logical}
                     step={1}
                     value={value}
                     onChange={(e) =>
@@ -925,6 +945,25 @@ export default function Settings() {
               Check for updates
             </button>
           </Row>
+          <Row
+            label="Copy diagnostics"
+            hint={diagMsg || "Copies app + system info and recent logs, so you can paste them when reporting a problem"}
+          >
+            <button
+              onClick={async () => {
+                const text = await copyDiagnostics();
+                if (text) {
+                  await copyToClipboard(text);
+                  setDiagMsg("Copied — paste it anywhere to share");
+                } else {
+                  setDiagMsg("Diagnostics need the desktop app");
+                }
+              }}
+              className="rounded-lg border border-sv-border px-3 py-1.5 text-xs text-sv-text hover:bg-sv-surface-2"
+            >
+              Copy diagnostics
+            </button>
+          </Row>
         </Section>
       </div>
     </Page>
@@ -987,6 +1026,11 @@ function Section({
   );
 }
 
+// Lets a control inside a Row borrow the Row's label as its accessible name.
+// The label is a plain <div> beside the control rather than a <label for=…>, so
+// without this every Toggle announced as an unnamed button.
+const RowLabelContext = createContext<string | undefined>(undefined);
+
 function Row({
   label,
   hint,
@@ -1002,7 +1046,9 @@ function Row({
         <div className="text-[13px]">{label}</div>
         {hint && <div className="mt-0.5 text-[11px] leading-relaxed text-sv-muted max-w-[46ch]">{hint}</div>}
       </div>
-      <div className="shrink-0">{children}</div>
+      <div className="shrink-0">
+        <RowLabelContext.Provider value={label}>{children}</RowLabelContext.Provider>
+      </div>
     </div>
   );
 }
@@ -1026,7 +1072,7 @@ function ThemeToggle({
           onClick={() => onChange(o.id)}
           className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition ${
             value === o.id
-              ? "bg-sv-accent text-white"
+              ? "bg-sv-accent text-sv-on-accent"
               : "text-sv-muted hover:text-sv-text"
           }`}
         >
@@ -1062,11 +1108,18 @@ function Toggle({
   checked: boolean;
   onChange: (v: boolean) => void;
 }) {
+  const rowLabel = useContext(RowLabelContext);
   return (
     <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={rowLabel}
       onClick={() => onChange(!checked)}
-      className={`relative h-6 w-11 rounded-full transition-colors duration-75 ${
-        checked ? "bg-sv-accent" : "bg-sv-surface-2"
+      className={`relative h-6 w-11 rounded-full border transition-colors duration-75 ${
+        checked
+          ? "border-transparent bg-sv-accent"
+          : "border-sv-border bg-sv-surface-2"
       }`}
     >
       <span

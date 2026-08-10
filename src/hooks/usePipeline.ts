@@ -3,6 +3,7 @@ import { listenEvent } from "../services/tauriBridge";
 import { useHistoryStore } from "../stores/historyStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useUiStore } from "../stores/uiStore";
+import { useAnnounceStore } from "../stores/announceStore";
 import { applyDownloadProgress } from "../stores/modelStore";
 import type { RecordingState, DownloadProgress } from "../types";
 
@@ -29,6 +30,7 @@ export function usePipeline() {
   const activeModeId = useSettingsStore((s) => s.settings.active_mode_id);
   const setRecordingState = useUiStore((s) => s.setRecordingState);
   const setError = useUiStore((s) => s.setError);
+  const announce = useAnnounceStore((s) => s.announce);
 
   useEffect(() => {
     const unsubs = [
@@ -47,8 +49,13 @@ export function usePipeline() {
           audio_ms: r.audio_ms,
           audio_file: r.audio_file,
         });
+        const words = r.processed_text.trim().split(/\s+/).filter(Boolean).length;
+        announce(`Dictation done — ${words} ${words === 1 ? "word" : "words"} ready at the cursor.`);
       }),
-      listenEvent<string>("pipeline://error", (e) => setError(e)),
+      listenEvent<string>("pipeline://error", (e) => {
+        setError(e);
+        announce(e);
+      }),
       listenEvent<DownloadProgress>("download://progress", (p) =>
         applyDownloadProgress(p)
       ),
@@ -56,5 +63,5 @@ export function usePipeline() {
     return () => {
       unsubs.forEach((u) => u.then((fn) => fn()));
     };
-  }, [addFull, activeModeId, setRecordingState, setError]);
+  }, [addFull, activeModeId, setRecordingState, setError, announce]);
 }

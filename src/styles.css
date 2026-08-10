@@ -10,6 +10,10 @@
   --color-sv-muted: #8b93a7;
   --color-sv-accent: #f97316;
   --color-sv-accent-hover: #ea580c;
+  /* Dark text sits on the orange accent — white on #f97316 is only ~2.6:1 (fails
+     AA); this warm near-black clears 7:1 on both the dark (#f97316) and light
+     (#ea580c) accent fills. */
+  --color-sv-on-accent: #1a1200;
   --color-sv-good: #22c55e;
   --color-sv-warn: #eab308;
   --color-sv-bad: #ef4444;
@@ -35,6 +39,14 @@ html.theme-light {
   --color-sv-muted: #5c6473;
   --color-sv-accent: #ea580c;
   --color-sv-accent-hover: #c2410c;
+
+  /* Status colors need their own light-theme values: the dark-theme greens and
+     yellows are tuned for a near-black surface and land at 1.9–2.3:1 on white,
+     which is unreadable at the 10–13px sizes they're used at. These are the
+     darkened equivalents that clear 4.5:1 on #ffffff. */
+  --color-sv-good: #15803d;
+  --color-sv-warn: #a16207;
+  --color-sv-bad: #dc2626;
 
   /* Settings per-section accents — L=0.52, C=0.13. Hue varies, kept away from orange (48). */
   --color-sv-sec-dictation: oklch(0.52 0.13 250);
@@ -120,16 +132,24 @@ body {
 .sv-slider {
   -webkit-appearance: none;
   appearance: none;
-  height: 6px;
+  /* Element height is the actual vertical hit area for a range input — 6px
+     was too thin to grab reliably. Padding widens the tap target while the
+     background-clip keeps the visible track the same slim 6px. */
+  height: 20px;
+  padding: 7px 0;
+  background-clip: content-box;
   border-radius: 9999px;
-  background: linear-gradient(
+  background-color: var(--color-sv-surface-2);
+  background-image: linear-gradient(
     to right,
     var(--color-sv-accent) 0%,
     var(--color-sv-accent) var(--sv-slider-fill, 50%),
-    var(--color-sv-surface-2) var(--sv-slider-fill, 50%)
+    transparent var(--sv-slider-fill, 50%)
   );
   outline: none;
   cursor: pointer;
+  /* Smooth the discrete step jumps of the fill without lagging behind a drag. */
+  transition: background 90ms linear;
 }
 .sv-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
@@ -140,6 +160,14 @@ body {
   background: #ffffff;
   border: none;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  transition: transform 90ms ease-out, box-shadow 90ms ease-out;
+}
+.sv-slider:hover::-webkit-slider-thumb {
+  transform: scale(1.1);
+}
+.sv-slider:active::-webkit-slider-thumb {
+  transform: scale(1.2);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
 }
 
 /* Overlay expand animation (idle pill → recording pill) */
@@ -157,4 +185,57 @@ body {
 @keyframes sv-indeterminate {
   0%   { transform: translateX(-100%); }
   100% { transform: translateX(300%); }
+}
+
+/* Home "you're ready to dictate" reward — the message and its hotkey key fade
+   up once when every setup check finally passes. */
+@keyframes sv-ready-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes sv-ready-glow {
+  0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-sv-accent) 55%, transparent); }
+  100% { box-shadow: 0 0 0 9px transparent; }
+}
+.sv-ready { animation: sv-ready-in 500ms ease-out both; }
+.sv-ready-key { animation: sv-ready-glow 1.4s ease-out; }
+
+/* Keyboard focus. Applied via :where() so specificity stays 0 and any
+   component-level focus style still wins. Without this, ~140 of the app's
+   interactive elements had no visible focus at all. */
+:where(a, button, [role="button"], [role="switch"], [role="slider"], input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-sv-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Reduced motion. The pill's looping pulse is what makes recording/processing/
+   read-aloud tell each other apart, so this does NOT blanket-kill animation —
+   it parks each bar at a distinguishable STATIC state (full height, and the
+   dimmer opacity kept for "processing") and only stops the looping and the
+   long sweeps. Color still separates recording (orange) from read-aloud (blue). */
+@media (prefers-reduced-motion: reduce) {
+  .sv-bar,
+  .sv-bar-tts {
+    animation: none;
+    transform: scaleY(1);
+    opacity: 1;
+  }
+  .sv-bar-slow {
+    animation: none;
+    transform: scaleY(1);
+    opacity: 0.65;
+  }
+  .sv-ready,
+  .sv-ready-key {
+    animation: none;
+  }
+  .sv-slider,
+  .sv-slider::-webkit-slider-thumb {
+    transition: none;
+  }
+  .sv-slider:hover::-webkit-slider-thumb,
+  .sv-slider:active::-webkit-slider-thumb {
+    transform: none;
+  }
 }

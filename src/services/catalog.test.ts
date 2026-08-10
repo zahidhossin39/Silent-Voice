@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { STT_MODELS, LLM_MODELS } from "./catalog";
+import { STT_MODELS, LLM_MODELS, isSherpaEngine } from "./catalog";
 
 describe("STT_MODELS", () => {
   // Every other test here loops over the catalogue, so they would all pass
@@ -10,9 +10,21 @@ describe("STT_MODELS", () => {
   });
 
   // The Rust downloader derives the saved filename from this convention, so a mismatch means the app downloads a file it then cannot find.
+  // Only applies to Whisper models — sherpa models (Moonshine, SenseVoice)
+  // ship as a .tar.bz2 archive extracted into a folder, not a ggml .bin file.
   it("follows the ggml-<id>.bin filename convention", () => {
     for (const model of STT_MODELS) {
+      if (isSherpaEngine(model.engine)) continue;
       expect(model.file, `Model ${model.id} filename convention`).toBe(`ggml-${model.id}.bin`);
+    }
+  });
+
+  // Sherpa models must carry an archive URL (there's no base-URL fallback).
+  it("sherpa models have an https archive url", () => {
+    for (const model of STT_MODELS) {
+      if (!isSherpaEngine(model.engine)) continue;
+      expect(model.url, `Model ${model.id} archive url`).toBeTruthy();
+      expect(model.url!.startsWith("https://")).toBe(true);
     }
   });
 

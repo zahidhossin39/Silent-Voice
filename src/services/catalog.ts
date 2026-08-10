@@ -7,6 +7,13 @@ export const WHISPER_BASE_URL =
 // ============================================================
 // STT models (Whisper) — from build plan §4
 // ============================================================
+// Whether a model runs on the sherpa-onnx engine (downloaded as a .tar.bz2
+// archive) instead of whisper.cpp. Single source of truth so adding a new
+// sherpa family is one edit, not several scattered engine checks.
+export function isSherpaEngine(engine: SttModel["engine"]): boolean {
+  return engine === "moonshine" || engine === "sense-voice";
+}
+
 export const STT_MODELS: SttModel[] = [
   // ── Tiny ──────────────────────────────────────────────────
   {
@@ -66,6 +73,65 @@ export const STT_MODELS: SttModel[] = [
     multilingual: true,
     preset: "balanced",
     best_for: "Balanced multilingual",
+  },
+
+  // ── Moonshine (sherpa-onnx engine) ────────────────────────
+  // Runs on the already-bundled sherpa-onnx DLLs — no extra binary. Variable-
+  // length encoder (no Whisper 30s padding tax), native punctuation + casing,
+  // English-only. Measured on an i7-8650U: 3-6x faster than Whisper tiny at
+  // equal/better accuracy. Downloaded + extracted from a .tar.bz2 archive.
+  {
+    id: "moonshine-tiny-en",
+    file: "moonshine-tiny-en", // folder name; not a .bin
+    url: "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-moonshine-tiny-en-int8.tar.bz2",
+    engine: "moonshine",
+    family: "Moonshine",
+    provider: "Useful Sensors",
+    label: "Moonshine Tiny (English)",
+    size_mb: 108,
+    ram_mb: 320,
+    speed_label: "~15x realtime",
+    wer: "~5%",
+    multilingual: false,
+    preset: "speed",
+    best_for: "Fastest English, auto-punctuation",
+  },
+  {
+    id: "moonshine-base-en",
+    file: "moonshine-base-en",
+    url: "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-moonshine-base-en-int8.tar.bz2",
+    engine: "moonshine",
+    family: "Moonshine",
+    provider: "Useful Sensors",
+    label: "Moonshine Base (English)",
+    size_mb: 251,
+    ram_mb: 600,
+    speed_label: "~10x realtime",
+    wer: "~3.4%",
+    multilingual: false,
+    preset: "balanced",
+    best_for: "Fast + accurate English, auto-punctuation",
+  },
+
+  // ── SenseVoice (sherpa-onnx engine) ───────────────────────
+  // Non-autoregressive (encoder-only) — near-instant CPU decode, native
+  // punctuation + casing + inverse-text-normalization, and multilingual
+  // (unlike Moonshine's English-only). Reuses the same bundled sherpa DLLs.
+  {
+    id: "sense-voice-small",
+    file: "sense-voice-small", // folder name; not a .bin
+    url: "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17.tar.bz2",
+    engine: "sense-voice",
+    family: "SenseVoice",
+    provider: "Alibaba FunASR",
+    label: "SenseVoice Small (Multilingual)",
+    size_mb: 156,
+    ram_mb: 500,
+    speed_label: "~25x realtime",
+    wer: "~5%",
+    multilingual: true,
+    preset: "balanced",
+    best_for: "Fast multilingual (EN/ZH/JA/KO/Yue), auto-punctuation",
   },
 
   // ── Small ─────────────────────────────────────────────────
@@ -200,7 +266,9 @@ export const STT_MODELS: SttModel[] = [
     multilingual: false,
     preset: "accuracy",
     best_for: "Fast + accurate English (6x faster than Large)",
-    url: "https://huggingface.co/distil-whisper/distil-large-v3.5-ggml/resolve/main/ggml-distil-large-v3.5.bin",
+    // This repo publishes a bare `ggml-model.bin`, not the ggml-<id>.bin name
+    // the other Distil entries use — the local `file` name above is unaffected.
+    url: "https://huggingface.co/distil-whisper/distil-large-v3.5-ggml/resolve/main/ggml-model.bin",
   },
   {
     id: "distil-large-v3",

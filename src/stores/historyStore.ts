@@ -48,7 +48,9 @@ interface HistoryState {
   add: (entry: Omit<HistoryEntry, "id">) => void;
   addFull: (entry: HistoryEntry) => void;
   update: (id: number, processedText: string) => void;
+  retranscribe: (id: number, text: string, modelId: string) => void;
   remove: (id: number) => void;
+  restore: (entry: HistoryEntry) => void;
   clear: () => void;
   reprune: () => void;
 }
@@ -95,8 +97,31 @@ export const useHistoryStore = create<HistoryState>()(
         if (isTauri()) saveHistory(entries);
       },
 
+      // Replace an entry's text with a fresh transcription and record which
+      // model produced it. Both raw and processed are set (no LLM was applied)
+      // so the displayed text and any future edit-learning stay consistent.
+      retranscribe: (id, text, modelId) => {
+        const entries = get().entries.map((e) =>
+          e.id === id
+            ? { ...e, raw_text: text, processed_text: text, model_id: modelId }
+            : e
+        );
+        set({ entries });
+        if (isTauri()) saveHistory(entries);
+      },
+
       remove: (id) => {
         const entries = get().entries.filter((e) => e.id !== id);
+        set({ entries });
+        if (isTauri()) saveHistory(entries);
+      },
+
+      // Undo a single delete: re-insert the entry and keep the list newest-first
+      // (adding it back at its original chronological spot, not the top).
+      restore: (entry) => {
+        const entries = prune(
+          [entry, ...get().entries].sort((a, b) => b.timestamp - a.timestamp)
+        );
         set({ entries });
         if (isTauri()) saveHistory(entries);
       },

@@ -20,25 +20,24 @@ const DOUBLE_TAP_WINDOW_MS: u64 = 450;
 
 /// Resolve how many CPU threads inference should use.
 ///
-/// Counts PHYSICAL cores, not logical ones: one thread already saturates a
-/// core's vector units, so a hyperthread sibling adds cache contention and, on
-/// a laptop chip, power draw that lowers the all-core turbo clock.
-/// - high_performance OFF → all physical cores, capped at 8 (whisper.cpp stops
-///   scaling past that, and the cap leaves headroom on many-core machines).
-/// - high_performance ON  → the user's chosen `performance_threads`, clamped to
-///   [default, physical cores]; 0 means "auto" = all physical cores. Shared by STT (whisper)
-///   and sherpa TTS so both honor the Performance setting identically.
+/// Balanced default is one thread per PHYSICAL core: on-device benchmarks show
+/// going up to the logical (hyperthread) count is within measurement noise, so
+/// physical cores get the speed without the extra power/heat under multitasking.
+/// - high_performance OFF → one thread per physical core, capped at 8.
+/// - high_performance ON  → the user's chosen `performance_threads`, allowed up
+///   to the LOGICAL core count for those who want to try; 0 means "auto" = all
+///   logical cores. Shared by STT (whisper) and sherpa TTS.
 pub fn resolve_thread_count(high_performance: bool, performance_threads: u32) -> u32 {
-    let count = super::hardware::physical_core_count() as u32;
-    let cores = if count > 0 { count } else { 4 };
-    let default = cores.clamp(2, 8);
+    let physical = (super::hardware::physical_core_count().max(1)) as u32;
+    let logical = (super::hardware::logical_core_count().max(physical as usize)) as u32;
+    let default = physical.clamp(2, 8);
     if !high_performance {
         return default;
     }
     if performance_threads == 0 {
-        cores
+        logical.clamp(default, 16)
     } else {
-        performance_threads.clamp(default, cores)
+        performance_threads.clamp(2, logical)
     }
 }
 
@@ -105,7 +104,7 @@ fn tidy_ai_output(s: &str) -> String {
 /// spoken trigger and the text to substitute for it (e.g. "my email" →
 /// "a@b.com"). Matching is case-insensitive. Longer triggers are applied first
 /// so a more specific phrase wins over a shorter one it contains.
-fn apply_replacements(text: &str, pairs: &[(String, String)]) -> String {
+pub(crate) fn apply_replacements(text: &str, pairs: &[(String, String)]) -> String {
     let mut ordered: Vec<&(String, String)> = pairs
         .iter()
         .filter(|(t, _)| !t.trim().is_empty())
@@ -282,18 +281,65 @@ pub fn on_pressed(app: &AppHandle) {
 pub fn start_capture(app: &AppHandle) {
     let state = app.state::<AppState>();
 
-    // Remember which app the user is dictating into (per-app profiles).
+    // First-run guard: refuse to record into a dead pipeline when no local
+    // speech model is selected yet. Bring the dashboard forward and say why,
+    // instead of failing with a raw error only after the user has spoken.
+    {
+        let (model_id, stt_source) = state
+            .config
+            .lock()
+            .map(|c| (c.model_id.clone(), c.stt_source.clone()))
+            .unwrap_or_default();
+        if stt_source != "cloud" && model_id.trim().is_empty() {
+            if let Some(win) = app.get_webview_window("main") {
+                let _ = win.show();
+                let _ = win.unminimize();
+                let _ = win.set_focus();
+            }
+            report_error(
+                app,
+                "stt",
+                "No speech model selected yet — open the Model Store and download one to start dictating.",
+            );
+            return;
+        }
+    }
+
+    // Remember which app the user is dictating into (per-app profiles), and the
+    // exact window, so the paste path can detect focus theft mid-processing.
     if let Some(exe) = foreground::foreground_app() {
         if let Ok(mut a) = state.active_app.lock() {
             *a = exe;
         }
     }
+    state.target_hwnd.store(
+        foreground::foreground_hwnd(),
+        std::sync::atomic::Ordering::Relaxed,
+    );
 
-    let device = state
-        .config
-        .lock()
-        .ok()
-        .and_then(|c| c.audio_device.clone());
+    let (device, chunk_cfg) = match state.config.lock() {
+        Ok(cfg) => {
+            let dev = cfg.audio_device.clone();
+            let should_spawn = cfg.chunk_on_silence
+                && cfg.stt_source == "local"
+                && registry::vad_dir().join("silero_vad.onnx").exists();
+            let chunk_cfg = if should_spawn {
+                let threads = resolve_thread_count(cfg.high_performance, cfg.performance_threads);
+                Some(crate::audio::segmenter::ChunkCfg {
+                    model_id: cfg.model_id.clone(),
+                    language: cfg.language.clone(),
+                    vocabulary: cfg.vocabulary.clone(),
+                    use_gpu: cfg.use_gpu,
+                    threads,
+                    input_sensitivity: cfg.input_sensitivity,
+                })
+            } else {
+                None
+            };
+            (dev, chunk_cfg)
+        }
+        Err(_) => (None, None),
+    };
 
     let mut slot = match state.recorder.lock() {
         Ok(s) => s,
@@ -304,17 +350,42 @@ pub fn start_capture(app: &AppHandle) {
     }
     match Recorder::start(device) {
         Ok(rec) => {
+            let level = rec.level_handle();
+            let generation = state.segmenter.reset();
+            if let Some(cfg) = chunk_cfg {
+                crate::audio::segmenter::spawn(
+                    app.clone(),
+                    state.segmenter.clone(),
+                    cfg,
+                    generation,
+                );
+            }
             *slot = Some(rec);
             overlay::show_overlay(app);
             overlay::mark_active(app); // cancel any pending auto-hide from before
             emit_state(app, "recording");
 
-            // Pre-warm the grammar model while the user speaks so it's ready before
-            // transcription finishes (no cold-start stall before paste).
-            let prewarm = state.config.lock().map(|c| c.coedit_enabled).unwrap_or(false);
-            if prewarm {
-                std::thread::spawn(|| crate::coedit::prewarm());
-            }
+            // Stream live mic loudness to the pill/waveform (~60ms cadence) so
+            // the bars track the real voice. Stops when the recorder is taken
+            // (release → stop), off the RT thread entirely.
+            let level_app = app.clone();
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    tokio::time::sleep(Duration::from_millis(60)).await;
+                    let recording = level_app
+                        .state::<AppState>()
+                        .recorder
+                        .lock()
+                        .map(|s| s.is_some())
+                        .unwrap_or(false);
+                    if !recording {
+                        break;
+                    }
+                    let v = f32::from_bits(level.load(std::sync::atomic::Ordering::Relaxed));
+                    let _ = level_app.emit("pipeline://level", v);
+                }
+            });
+
         }
         Err(e) => {
             report_error(app, "audio", &e);
@@ -446,6 +517,7 @@ fn finalize_recording(app: AppHandle) {
 
         let recorder: Option<Recorder> = {
             let state = app.state::<AppState>();
+            state.segmenter.stop.store(true, std::sync::atomic::Ordering::Relaxed);
             if let Ok(mut tap) = state.tap.lock() {
                 tap.last_tap_at = None;
             }
@@ -472,6 +544,18 @@ fn finalize_recording(app: AppHandle) {
     });
 }
 
+fn join_parts(a: &str, b: &str) -> String {
+    let a_trim = a.trim();
+    let b_trim = b.trim();
+    if a_trim.is_empty() {
+        b_trim.to_string()
+    } else if b_trim.is_empty() {
+        a_trim.to_string()
+    } else {
+        format!("{a_trim} {b_trim}")
+    }
+}
+
 /// Core audio post-processing pipeline: writes WAV, transcribes via Whisper,
 /// runs active AI mode processing, pastes to active window, and records in history.
 pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: std::time::Instant) {
@@ -490,7 +574,6 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
         input_sensitivity,
         replacements,
         app_profiles,
-        coedit_enabled,
         mode_id,
         mut mode_source,
         mut mode_prompt,
@@ -523,7 +606,6 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
             cfg.input_sensitivity,
             cfg.replacements.clone(),
             cfg.app_profiles.clone(),
-            cfg.coedit_enabled,
             cfg.mode_id.clone(),
             cfg.mode_source.clone(),
             cfg.mode_prompt.clone(),
@@ -562,67 +644,96 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
         report_error(&app, "storage", &e.to_string());
     }
 
+    let seg = {
+        let state = app.state::<AppState>();
+        state.segmenter.clone()
+    };
+    // Sentences already transcribed in the background while the key was held,
+    // and how much of the clip they cover. Empty unless chunking actually fired.
+    let (prefix, tail_start) = seg.prefix();
+    let chunked = !prefix.trim().is_empty();
+
+    // Only the audio nobody has transcribed yet. Without chunking that is the
+    // whole clip, so this path stays identical to what it always did.
+    let remaining = &samples[tail_start.min(samples.len())..];
+
     // Input-sensitivity gate: trim leading/trailing audio quieter than the
     // user's threshold (wind, hum). A clip with no speech at all is skipped
     // entirely — no transcription time wasted on noise.
-    let Some(samples) = crate::audio::gate::trim_silence(&samples, input_sensitivity) else {
+    let trimmed = crate::audio::gate::trim_silence(remaining, input_sensitivity);
+    if trimmed.is_none() && !chunked {
         crate::logging::log_info("gate", "clip below sensitivity threshold — skipped");
         go_idle(&app);
         return;
-    };
+    }
+    let clip_len = trimmed.as_ref().map(|c| c.len()).unwrap_or(0);
 
     let wav_path = registry::audio_dir().join("last.wav");
-    if let Err(e) = capture::write_wav(&wav_path, &samples) {
-        report_error(&app, "audio", &e);
-        // pill stays visible; just return to idle state
-        go_idle(&app);
-        return;
-    }
+    let tail_text = match trimmed {
+        // Nothing but silence since the last chunk — the prefix is the whole
+        // result, so there is nothing left to transcribe.
+        None => String::new(),
+        Some(clip) => {
+            if let Err(e) = capture::write_wav(&wav_path, &clip) {
+                report_error(&app, "audio", &e);
+                // pill stays visible; just return to idle state
+                go_idle(&app);
+                return;
+            }
 
-    let threads = resolve_thread_count(high_performance, performance_threads);
+            let threads = resolve_thread_count(high_performance, performance_threads);
 
-    let raw_text = match whisper::transcribe_dispatch(
-        &app,
-        &wav_path,
-        &model_id,
-        threads,
-        &language,
-        &vocabulary,
-        use_gpu,
-        &stt_source,
-        &stt_base_url,
-        &stt_api_key,
-        &stt_cloud_model,
-    )
-    .await
-    {
-        Ok(t) => t,
-        Err(e) => {
-            report_error(&app, "stt", &e);
-            // pill stays visible; just return to idle state
-            go_idle(&app);
-            return;
+            // Watchdog: a wedged sidecar/engine would otherwise freeze the pill
+            // in "processing" forever. Cap the wait at a very generous ceiling
+            // (well beyond any real transcription, including a cold model load),
+            // scaled to clip length, so only a true hang trips it — then reset
+            // the resident whisper-server (in case IT wedged) and recover to idle.
+            let clip_secs = clip.len() / crate::audio::capture::WHISPER_SAMPLE_RATE as usize;
+            let budget = std::time::Duration::from_secs(180 + clip_secs as u64 * 3);
+            let dispatch = whisper::transcribe_dispatch(
+                &app,
+                &wav_path,
+                &model_id,
+                threads,
+                &language,
+                &vocabulary,
+                use_gpu,
+                &stt_source,
+                &stt_base_url,
+                &stt_api_key,
+                &stt_cloud_model,
+            );
+            match tokio::time::timeout(budget, dispatch).await {
+                Ok(Ok(t)) => t,
+                Ok(Err(e)) => {
+                    report_error(&app, "stt", &e);
+                    // pill stays visible; just return to idle state
+                    go_idle(&app);
+                    return;
+                }
+                Err(_) => {
+                    if let Ok(mut server) = app.state::<AppState>().whisper_server.lock() {
+                        server.stop();
+                    }
+                    report_error(
+                        &app,
+                        "stt",
+                        "Transcription timed out and the speech engine was reset — please try again.",
+                    );
+                    go_idle(&app);
+                    return;
+                }
+            }
         }
     };
+
+    let raw_text = join_parts(&prefix, &tail_text);
 
     let raw_text = textfmt::collapse_repeated_words(&raw_text);
 
     let will_run_llm = !raw_text.is_empty()
         && !mode_prompt.is_empty()
         && (mode_source == "local" || mode_source == "api");
-
-    // Meaning-aware grammar correction of the raw transcript. Only when no AI
-    // mode LLM will run (an LLM already fixes grammar). Runs on a blocking
-    // thread (CPU inference). correct() returns the text unchanged if the model
-    // is disabled/not installed or on any failure — the user never loses words.
-    let grammar_text = if coedit_enabled && !will_run_llm && !raw_text.is_empty() {
-        let t = raw_text.clone();
-        tokio::task::spawn_blocking(move || crate::coedit::correct(&t))
-            .await
-            .unwrap_or_else(|_| raw_text.clone())
-    } else {
-        raw_text.clone()
-    };
 
     let processed_text = if will_run_llm {
         let result = match mode_source.as_str() {
@@ -650,7 +761,7 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
             }
         }
     } else {
-        grammar_text
+        raw_text.clone()
     };
 
     // Apply user text-replacement snippets (spoken trigger → inserted text)
@@ -664,6 +775,7 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
     // Paste the processed (or raw) text at the cursor. When the trailing-space
     // toggle is on, append one space just for the paste (history keeps the
     // clean text) so the next dictation has a gap before it.
+    let mut pasted_ok = false;
     if !processed_text.is_empty() {
         let append_space = app
             .state::<AppState>()
@@ -676,8 +788,37 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
         } else {
             processed_text.clone()
         };
-        if let Err(e) = paste::paste_at_cursor(&to_paste) {
+        // Safety guards before auto-typing: never paste into a password/secure
+        // field, and never paste into a different window than the one focused
+        // when recording started (focus can be stolen mid-processing). Either
+        // way, leave the text on the clipboard so the user can paste it and say
+        // why. Both fail OPEN — if detection can't run, a normal paste proceeds.
+        let target_hwnd = app
+            .state::<AppState>()
+            .target_hwnd
+            .load(std::sync::atomic::Ordering::Relaxed);
+        let current_hwnd = foreground::foreground_hwnd();
+        let window_changed =
+            target_hwnd != 0 && current_hwnd != 0 && current_hwnd != target_hwnd;
+        let secure = crate::system::secure_field::focused_is_password();
+        if secure || window_changed {
+            if let Err(e) = paste::set_clipboard(&to_paste) {
+                report_error(&app, "paste", &e);
+            } else {
+                report_error(
+                    &app,
+                    "paste",
+                    if secure {
+                        "Protected field detected — text copied to clipboard (press Ctrl+V to paste it)."
+                    } else {
+                        "The active window changed before pasting — text copied to clipboard (press Ctrl+V to paste it)."
+                    },
+                );
+            }
+        } else if let Err(e) = paste::paste_at_cursor(&to_paste) {
             report_error(&app, "paste", &e);
+        } else {
+            pasted_ok = true;
         }
     }
 
@@ -691,10 +832,19 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
     let audio_file = if save_audio {
         let name = format!("rec-{}.wav", now);
         let dest = registry::audio_clips_dir().join(&name);
-        match std::fs::copy(&wav_path, &dest) {
-            Ok(_) => {
+        // After chunking, last.wav holds only the tail — save the whole
+        // recording instead, so history still plays back everything the user said.
+        let saved = if chunked {
+            capture::write_wav(&dest, &samples).map(|_| samples.len())
+        } else {
+            std::fs::copy(&wav_path, &dest)
+                .map_err(|e| e.to_string())
+                .map(|_| clip_len)
+        };
+        match saved {
+            Ok(len) => {
                 crate::history::prune_clips(audio_clip_limit);
-                audio_ms = Some(samples.len() as i64 * 1000 / crate::audio::capture::WHISPER_SAMPLE_RATE as i64);
+                audio_ms = Some(len as i64 * 1000 / crate::audio::capture::WHISPER_SAMPLE_RATE as i64);
                 Some(name)
             }
             Err(e) => {
@@ -732,6 +882,14 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
             audio_file,
         },
     );
+
+    // Success beat: the words actually landed at the cursor, so flash the pill's
+    // "done" check briefly before returning to idle. Only on a real paste — the
+    // clipboard-fallback and empty-text paths skip it (nothing landed to confirm).
+    if pasted_ok {
+        emit_state(&app, "done");
+        tokio::time::sleep(std::time::Duration::from_millis(700)).await;
+    }
 
     // pill stays visible; just return to idle state
     go_idle(&app);

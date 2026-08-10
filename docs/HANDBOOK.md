@@ -66,8 +66,6 @@ Silent voice/
 │   │   │   └── RecordingOverlay.tsx ← pill content (idle line / recording dot+waveform)
 │   │   └── shared/
 │   │       ├── HotkeyRecorder.tsx   ← click-to-capture hotkey input (any combo OR solo key)
-│   │       ├── ModelCard.tsx        ← STT model card with download + compat badge
-│   │       ├── Badge.tsx
 │   │       ├── Page.tsx
 │   │       └── WaveformVisualizer.tsx
 │   ├── hooks/
@@ -892,8 +890,9 @@ All toggles live in Settings and are pushed to Rust via `set_behavior` /
   now have a fixed `min-w-[168px]` with `justify-end`, the star pinned left
   via `mr-auto`, and "Download"/"Select" buttons and the state-text span both
   fixed to `w-[84px]` — so every row aligns regardless of that model's
-  download/active state. Applies to `ModelCard.tsx` (STT) and the local
-  `LlmCard`/`TtsCard` in `ModelStore.tsx`.
+  download/active state. Applies to the STT/LLM rows in `hf/HfBrowser.tsx` and
+  the `TtsCard` in `ModelStore.tsx`. (The old standalone `ModelCard.tsx`/
+  `Badge.tsx` were removed in v0.1.8 — unused after the HF-browser rewrite.)
 - **Scroll position bug fix (v0.1.6):** `<main>` in `App.tsx` is a single
   persistent scroll container across all routes (`<Routes>` only swaps its
   children, `<main>` itself never unmounts) — switching pages used to keep

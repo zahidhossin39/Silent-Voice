@@ -27,6 +27,37 @@ export const BUILTIN_MODES: Mode[] = [
     builtin: true,
   },
   {
+    id: "flow",
+    name: "Whisper Flow",
+    icon: "wind",
+    system_prompt: `You clean up dictated speech into natural written text. Keep the speaker's own words and tone — never paraphrase, summarize, or add anything of your own. Write the result once; never repeat it.
+
+Do this:
+- Remove fillers: um, uh, ah, er, like, you know, kind of, sort of, basically, I mean.
+- Remove stutters and repeated words ("I was I was going" becomes "I was going").
+- Fix capitalization and punctuation.
+- Apply self-corrections: on "no wait", "actually", "scratch that", or "or rather", keep only the final version the speaker settled on.
+- When the speaker lists items, keep the sentence that introduces the list, then put each item on its OWN line as "1.", "2.", "3." with a line break after each. Drop spoken scaffolding like "the first one is".
+
+Never repeat any sentence or list. Never write the words "new line", "new paragraph", or "bullet point" literally.
+
+Example:
+Input: okay so i wanna test something let's make a list and the first one could be paper second one pencil and third one eraser
+Output:
+Okay, I want to test something. Let's make a list:
+
+1. Paper
+2. Pencil
+3. Eraser
+
+Output ONLY the cleaned text, nothing else.`,
+    description:
+      "Wispr Flow-style dictation: keeps your own words and tone, strips 'um's, fixes punctuation, applies your spoken self-corrections, and formats spoken lists as 1, 2, 3.",
+    model_source: "local",
+    model_id: "llama-3.2-1b-instruct-q4",
+    builtin: true,
+  },
+  {
     id: "formal",
     name: "Formal",
     icon: "briefcase",

@@ -93,6 +93,25 @@ pub async fn transcribe(
     vocabulary: &str,
     use_gpu: bool,
 ) -> Result<String, String> {
+    // Sherpa-onnx models (Moonshine, SenseVoice) are directories, not ggml .bin
+    // files, and run through a different engine. Route them before the whisper
+    // path. `vocabulary`/`use_gpu` don't apply (CPU, no prompt-biasing hook);
+    // `language` is ignored too — Moonshine is English-only and SenseVoice
+    // auto-detects per clip.
+    if registry::stt_engine(model_id) != registry::SttEngine::Whisper {
+        if !registry::sherpa_stt_installed(model_id) {
+            return Err(format!("model '{model_id}' is not downloaded"));
+        }
+        let app = app.clone();
+        let audio_path = audio_path.to_string();
+        let model_id = model_id.to_string();
+        return tokio::task::spawn_blocking(move || {
+            crate::system::sherpa_stt::transcribe_file(&app, &audio_path, &model_id, threads)
+        })
+        .await
+        .map_err(|e| e.to_string())?;
+    }
+
     let model_path = registry::model_path(model_id);
     if !model_path.exists() {
         return Err(format!(

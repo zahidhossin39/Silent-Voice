@@ -127,6 +127,16 @@ export async function downloadModel(
   return invoke<boolean>("download_model", { modelId, url, fileName });
 }
 
+/// Download a sherpa STT model (Moonshine): a .tar.bz2 archive extracted into a
+/// folder. `url` is the archive URL from the catalog.
+export async function downloadSttArchive(
+  modelId: string,
+  url: string
+): Promise<boolean> {
+  if (!isTauri()) return false;
+  return invoke<boolean>("download_stt_archive", { modelId, url });
+}
+
 export async function pauseDownload(modelId: string): Promise<void> {
   if (!isTauri()) return;
   await invoke<void>("pause_download", { modelId });
@@ -140,6 +150,14 @@ export async function cancelDownload(modelId: string): Promise<void> {
 export async function deleteModel(modelId: string): Promise<void> {
   if (!isTauri()) return;
   await invoke<void>("delete_model", { modelId });
+}
+
+/// Re-transcribe a saved history clip with the currently active model.
+/// Returns the fresh text and the model id that produced it.
+export async function retranscribeClip(
+  fileName: string
+): Promise<{ text: string; model_id: string }> {
+  return invoke<{ text: string; model_id: string }>("retranscribe_clip", { fileName });
 }
 
 // ---------------- Runtime config + hotkey ----------------
@@ -208,6 +226,7 @@ export async function setBehavior(
   pillAutoHide: boolean,
   appendTrailingSpace: boolean,
   coeditEnabled: boolean,
+  chunkOnSilence: boolean,
   saveAudio: boolean,
   audioClipLimit: number
 ): Promise<void> {
@@ -225,12 +244,39 @@ export async function setBehavior(
       pillAutoHide,
       appendTrailingSpace,
       coeditEnabled,
+      chunkOnSilence,
       saveAudio,
       audioClipLimit,
     });
   } catch (e) {
     console.warn("set_behavior failed", e);
   }
+}
+
+// One pasteable blob of app + system info and recent logs, for bug reports.
+export async function copyDiagnostics(): Promise<string> {
+  if (!isTauri()) return "";
+  try {
+    return await invoke<string>("copy_diagnostics");
+  } catch (e) {
+    console.warn("copy_diagnostics failed", e);
+    return "";
+  }
+}
+
+// Manual record → transcribe (returns the text, does NOT paste). Used by the
+// onboarding self-test.
+export async function startRecording(device: string | null): Promise<void> {
+  if (!isTauri()) return;
+  await invoke<void>("start_recording", { device });
+}
+
+export async function stopAndTranscribe(
+  modelId: string,
+  language: string
+): Promise<string> {
+  if (!isTauri()) return "";
+  return await invoke<string>("stop_and_transcribe", { modelId, language });
 }
 
 // Add/remove the per-user Windows Run-key entry ("Launch at startup").

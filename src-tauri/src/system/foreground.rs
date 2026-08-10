@@ -46,3 +46,17 @@ pub fn foreground_app() -> Option<String> {
 pub fn foreground_app() -> Option<String> {
     None
 }
+
+/// Raw handle (as isize) of the current foreground window, 0 if none. Captured
+/// when recording starts and compared at paste time so text is never typed into
+/// a window that stole focus mid-processing.
+#[cfg(windows)]
+pub fn foreground_hwnd() -> isize {
+    use windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
+    unsafe { GetForegroundWindow().0 as isize }
+}
+
+#[cfg(not(windows))]
+pub fn foreground_hwnd() -> isize {
+    0
+}

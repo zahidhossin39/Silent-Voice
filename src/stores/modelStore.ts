@@ -4,6 +4,7 @@ import type { DownloadProgress, LlmModel } from "../types";
 import {
   listDownloadedModels,
   downloadModel as bridgeDownload,
+  downloadSttArchive as bridgeDownloadSttArchive,
   pauseDownload as bridgePause,
   cancelDownload as bridgeCancel,
   deleteModel as bridgeDelete,
@@ -19,6 +20,7 @@ import {
   WHISPER_BASE_URL,
   LLM_MODELS,
   TTS_MODELS,
+  isSherpaEngine,
 } from "../services/catalog";
 
 interface ModelState {
@@ -99,8 +101,16 @@ export const useModelStore = create<ModelState>()(
     if (!model) return;
     startProgress(set, modelId, model.size_mb * 1024 * 1024);
     try {
-      const downloadUrl = model.url ?? WHISPER_BASE_URL + model.file;
-      const ok = await bridgeDownload(modelId, downloadUrl, model.file);
+      // Sherpa models (Moonshine, SenseVoice) are a .tar.bz2 archive extracted
+      // into a folder; Whisper models are a single ggml .bin file.
+      const ok =
+        isSherpaEngine(model.engine)
+          ? await bridgeDownloadSttArchive(modelId, model.url!)
+          : await bridgeDownload(
+              modelId,
+              model.url ?? WHISPER_BASE_URL + model.file,
+              model.file
+            );
       if (!ok) return;
       set((s) => {
         const downloaded = new Set(s.downloaded);

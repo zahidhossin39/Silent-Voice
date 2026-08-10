@@ -48,6 +48,17 @@ pub fn physical_core_count() -> usize {
     })
 }
 
+/// Cached logical (hyperthreaded) processor count. Also on the per-dictation
+/// path via resolve_thread_count, so compute it once.
+pub fn logical_core_count() -> usize {
+    static N: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    *N.get_or_init(|| {
+        std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4)
+    })
+}
+
 pub fn detect() -> HardwareInfo {
     let mut sys = System::new_all();
     sys.refresh_all();

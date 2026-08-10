@@ -1,4 +1,5 @@
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -15,6 +16,11 @@ pub enum Control {
 pub struct Recorder {
     ctrl_tx: Sender<Control>,
     samples_rx: Receiver<Vec<f32>>,
+    buffer: Arc<Mutex<Vec<f32>>>,
+    in_sample_rate: Arc<AtomicU32>,
+    // Live 0–100 loudness of the most recent audio frame (f32 bits), updated on
+    // the capture thread so the pill/waveform can react to the real voice.
+    level: Arc<AtomicU32>,
 }
 
 impl Recorder {
@@ -22,9 +28,18 @@ impl Recorder {
     pub fn start(device_name: Option<String>) -> Result<Self, String> {
         let (ctrl_tx, ctrl_rx) = mpsc::channel::<Control>();
         let (samples_tx, samples_rx) = mpsc::channel::<Vec<f32>>();
+        let buffer = Arc::new(Mutex::new(Vec::<f32>::new()));
+        let in_sample_rate = Arc::new(AtomicU32::new(0));
+        let level = Arc::new(AtomicU32::new(0));
+
+        let buf_clone = buffer.clone();
+        let rate_clone = in_sample_rate.clone();
+        let level_clone = level.clone();
 
         thread::spawn(move || {
-            if let Err(e) = capture_loop(device_name, ctrl_rx, &samples_tx) {
+            if let Err(e) =
+                capture_loop(device_name, ctrl_rx, &samples_tx, buf_clone, rate_clone, level_clone)
+            {
                 eprintln!("[audio] capture error: {e}");
                 let _ = samples_tx.send(Vec::new());
             }
@@ -33,7 +48,42 @@ impl Recorder {
         Ok(Self {
             ctrl_tx,
             samples_rx,
+            buffer,
+            in_sample_rate,
+            level,
         })
+    }
+
+    /// A handle to the live 0–100 loudness value, for a throttled emitter to
+    /// stream to the UI without touching the audio buffer or the RT thread.
+    pub fn level_handle(&self) -> Arc<AtomicU32> {
+        self.level.clone()
+    }
+
+    /// Resample and return native-rate mono samples in `[from_raw..]` as 16 kHz,
+    /// plus the new raw watermark. Called repeatedly while recording.
+    pub fn snapshot_16k(&self, from_raw: usize) -> (Vec<f32>, usize) {
+        let rate = self.in_sample_rate.load(Ordering::Relaxed);
+        if rate == 0 {
+            return (Vec::new(), from_raw);
+        }
+        // Copy the new samples out under the lock, then release it BEFORE
+        // resampling: the cpal capture callback locks this same buffer on every
+        // audio frame, so holding it across the resample would stall the
+        // real-time thread and risk dropped samples.
+        let (native, len) = {
+            let buf = match self.buffer.lock() {
+                Ok(b) => b,
+                Err(_) => return (Vec::new(), from_raw),
+            };
+            let len = buf.len();
+            if from_raw >= len {
+                return (Vec::new(), len);
+            }
+            (buf[from_raw..len].to_vec(), len)
+        };
+        let resampled = resample_linear(&native, rate, WHISPER_SAMPLE_RATE);
+        (resampled, len)
     }
 
     /// Stop recording and return mono samples resampled to 16 kHz.
@@ -47,6 +97,9 @@ fn capture_loop(
     device_name: Option<String>,
     ctrl_rx: Receiver<Control>,
     samples_tx: &Sender<Vec<f32>>,
+    buffer: Arc<Mutex<Vec<f32>>>,
+    in_sample_rate: Arc<AtomicU32>,
+    level: Arc<AtomicU32>,
 ) -> Result<(), String> {
     let host = cpal::default_host();
     let device = match device_name {
@@ -61,11 +114,12 @@ fn capture_loop(
     };
 
     let config = device.default_input_config().map_err(|e| e.to_string())?;
-    let in_sample_rate = config.sample_rate().0;
+    let in_sample_rate_val = config.sample_rate().0;
+    in_sample_rate.store(in_sample_rate_val, Ordering::Relaxed);
     let channels = config.channels() as usize;
 
-    let buffer = Arc::new(Mutex::new(Vec::<f32>::new()));
     let buf_for_cb = buffer.clone();
+    let level_for_cb = level.clone();
 
     let err_fn = |e| eprintln!("[audio] stream error: {e}");
 
@@ -73,7 +127,7 @@ fn capture_loop(
     let stream = match config.sample_format() {
         cpal::SampleFormat::F32 => device.build_input_stream(
             &config.into(),
-            move |data: &[f32], _| push_mono(&buf_for_cb, data, channels),
+            move |data: &[f32], _| push_mono(&buf_for_cb, data, channels, &level_for_cb),
             err_fn,
             None,
         ),
@@ -81,7 +135,7 @@ fn capture_loop(
             &config.into(),
             move |data: &[i16], _| {
                 let floats: Vec<f32> = data.iter().map(|s| *s as f32 / 32768.0).collect();
-                push_mono(&buf_for_cb, &floats, channels);
+                push_mono(&buf_for_cb, &floats, channels, &level_for_cb);
             },
             err_fn,
             None,
@@ -93,7 +147,7 @@ fn capture_loop(
                     .iter()
                     .map(|s| (*s as f32 - 32768.0) / 32768.0)
                     .collect();
-                push_mono(&buf_for_cb, &floats, channels);
+                push_mono(&buf_for_cb, &floats, channels, &level_for_cb);
             },
             err_fn,
             None,
@@ -109,14 +163,17 @@ fn capture_loop(
     drop(stream);
 
     let captured = buffer.lock().map_err(|e| e.to_string())?.clone();
-    let resampled = resample_linear(&captured, in_sample_rate, WHISPER_SAMPLE_RATE);
+    let resampled = resample_linear(&captured, in_sample_rate_val, WHISPER_SAMPLE_RATE);
     samples_tx.send(resampled).map_err(|e| e.to_string())?;
     Ok(())
 }
 
-/// Downmix interleaved frames to mono and append to the shared buffer.
-fn push_mono(buffer: &Arc<Mutex<Vec<f32>>>, data: &[f32], channels: usize) {
+/// Downmix interleaved frames to mono, append to the shared buffer, and update
+/// the live loudness value for the reactive waveform. The RMS is over the frame
+/// just added (a few hundred samples) — cheap enough for the RT callback.
+fn push_mono(buffer: &Arc<Mutex<Vec<f32>>>, data: &[f32], channels: usize, level: &Arc<AtomicU32>) {
     if let Ok(mut buf) = buffer.lock() {
+        let start = buf.len();
         if channels <= 1 {
             buf.extend_from_slice(data);
         } else {
@@ -125,6 +182,7 @@ fn push_mono(buffer: &Arc<Mutex<Vec<f32>>>, data: &[f32], channels: usize) {
                 buf.push(avg);
             }
         }
+        level.store(level_of(&buf[start..]).to_bits(), Ordering::Relaxed);
     }
 }
 

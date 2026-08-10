@@ -65,6 +65,7 @@ export function useRuntimeSync() {
   const pillAutoHide = useSettingsStore((s) => s.settings.pill_auto_hide);
   const appendTrailingSpace = useSettingsStore((s) => s.settings.append_trailing_space);
   const coeditEnabled = useSettingsStore((s) => s.settings.coedit_enabled);
+  const chunkOnSilence = useSettingsStore((s) => s.settings.chunk_on_silence);
   const saveAudio = useSettingsStore((s) => s.settings.save_audio);
   const audioClipLimit = useSettingsStore((s) => s.settings.audio_clip_limit);
   const ttsVoice = useSettingsStore((s) => s.settings.active_tts_voice);
@@ -127,22 +128,30 @@ export function useRuntimeSync() {
   }, [snippets]);
 
   useEffect(() => {
-    setBehavior(
-      toggleMode,
-      inputSensitivity,
-      inlineProofread,
-      highPerformance,
-      performanceThreads,
-      proofreadDisabledRules,
-      gectorSensitivity,
-      proofreadIgnoreApps.split(",").map((a) => a.trim()).filter(Boolean),
-      pillAutoHide,
-      appendTrailingSpace,
-      coeditEnabled,
-      saveAudio,
-      audioClipLimit
-    );
-  }, [toggleMode, inputSensitivity, inlineProofread, highPerformance, performanceThreads, proofreadDisabledRules, gectorSensitivity, proofreadIgnoreApps, pillAutoHide, appendTrailingSpace, coeditEnabled, saveAudio, audioClipLimit]);
+    // Debounced: dragging a slider (sensitivity, threads) changes these every
+    // few ms, and firing an IPC round-trip per tick is what makes the sliders
+    // feel janky. These settings only matter on the next dictation, so waiting
+    // for the drag to settle costs nothing.
+    const id = setTimeout(() => {
+      setBehavior(
+        toggleMode,
+        inputSensitivity,
+        inlineProofread,
+        highPerformance,
+        performanceThreads,
+        proofreadDisabledRules,
+        gectorSensitivity,
+        proofreadIgnoreApps.split(",").map((a) => a.trim()).filter(Boolean),
+        pillAutoHide,
+        appendTrailingSpace,
+        coeditEnabled,
+        chunkOnSilence,
+        saveAudio,
+        audioClipLimit
+      );
+    }, 150);
+    return () => clearTimeout(id);
+  }, [toggleMode, inputSensitivity, inlineProofread, highPerformance, performanceThreads, proofreadDisabledRules, gectorSensitivity, proofreadIgnoreApps, pillAutoHide, appendTrailingSpace, coeditEnabled, chunkOnSilence, saveAudio, audioClipLimit]);
 
   useEffect(() => {
     setAutostart(autoStart);

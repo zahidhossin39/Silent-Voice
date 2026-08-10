@@ -26,6 +26,8 @@ export default function Modes() {
   const addMode = useSettingsStore((s) => s.addMode);
   const updateMode = useSettingsStore((s) => s.updateMode);
   const deleteMode = useSettingsStore((s) => s.deleteMode);
+  const togglePinMode = useSettingsStore((s) => s.togglePinMode);
+  const resetMode = useSettingsStore((s) => s.resetMode);
   const downloadedLlm = useModelStore((s) => s.downloadedLlm);
   const customLlm = useModelStore((s) => s.customLlm);
 
@@ -58,7 +60,9 @@ export default function Modes() {
     if (!editing) return;
     if (!editing.name.trim()) return;
     if (modes.some((m) => m.id === editing.id)) {
-      updateMode(editing.id, editing);
+      // Editing a built-in marks it customized so a future prompt fix
+      // shipped in BUILTIN_MODES doesn't silently overwrite the user's edit.
+      updateMode(editing.id, editing.builtin ? { ...editing, customized: true } : editing);
     } else {
       addMode({ ...editing, id: editing.id || `custom_${Date.now()}` });
     }
@@ -70,7 +74,10 @@ export default function Modes() {
     if (a.id === activeId) return -1;
     if (b.id === activeId) return 1;
 
-    // 2. Custom modes (newest first)
+    // 2. Pinned modes next
+    if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
+
+    // 3. Custom modes (newest first)
     const getTimestamp = (id: string) => {
       if (id.startsWith("custom_")) {
         const tsStr = id.split("_")[1];
@@ -97,7 +104,7 @@ export default function Modes() {
           actions={
             <button
               onClick={() => setEditing({ ...EMPTY })}
-              className="rounded-lg bg-sv-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-sv-accent-hover"
+              className="rounded-lg bg-sv-accent px-3 py-1.5 text-sm font-medium text-sv-on-accent hover:bg-sv-accent-hover"
             >
               + New mode
             </button>
@@ -137,21 +144,45 @@ export default function Modes() {
                 className={`rounded-xl border p-4 ${
                   activeId === m.id
                     ? "border-sv-accent/40 bg-sv-accent/5"
+                    : m.pinned
+                    ? "border-sv-border bg-sv-surface ring-1 ring-sv-accent/15"
                     : "border-sv-border bg-sv-surface"
                 }`}
               >
-                <div className="flex items-start justify-between">
-                  <div>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
                     <h3 className="font-medium">{m.name}</h3>
                     <p className="mt-0.5 line-clamp-2 text-xs text-sv-muted">
                       {m.description || m.system_prompt}
                     </p>
                   </div>
-                  {m.builtin && (
-                    <span className="whitespace-nowrap shrink-0 rounded border border-sv-border/50 bg-sv-surface-2 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wider text-sv-muted">
-                      built-in
-                    </span>
-                  )}
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    {m.builtin && (
+                      <span className="whitespace-nowrap rounded border border-sv-border/50 bg-sv-surface-2 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wider text-sv-muted">
+                        {m.customized ? "edited" : "built-in"}
+                      </span>
+                    )}
+                    <button
+                      onClick={() => togglePinMode(m.id)}
+                      title={m.pinned ? "Unpin" : "Pin to top"}
+                      className={`transition-colors duration-75 ${
+                        m.pinned ? "text-sv-accent" : "text-sv-muted/40 hover:text-sv-accent"
+                      }`}
+                    >
+                      <svg
+                        viewBox="0 0 24 24"
+                        width="15"
+                        height="15"
+                        fill={m.pinned ? "currentColor" : "none"}
+                        stroke={m.pinned ? "none" : "currentColor"}
+                        strokeWidth={m.pinned ? undefined : "1.75"}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M12 2.5l2.9 6.2 6.6.6-5 4.6 1.4 6.6L12 17l-5.9 3.5L7.5 14l-5-4.6 6.6-.6L12 2.5z" />
+                      </svg>
+                    </button>
+                  </div>
                 </div>
                 {previews[m.id] && (
                   <div className="mt-3 rounded-lg bg-sv-surface-2 p-3 text-xs">
@@ -187,6 +218,15 @@ export default function Modes() {
                       className="rounded-lg border border-transparent px-2.5 py-1.5 text-xs font-medium text-sv-muted transition-colors duration-75 hover:border-sv-bad/40 hover:bg-sv-bad/10 hover:text-sv-bad"
                     >
                       Delete
+                    </button>
+                  )}
+                  {m.builtin && m.customized && (
+                    <button
+                      onClick={() => resetMode(m.id)}
+                      title="Discard your edits and restore the original"
+                      className="rounded-lg border border-transparent px-2.5 py-1.5 text-xs font-medium text-sv-muted transition-colors duration-75 hover:border-sv-border hover:text-sv-text"
+                    >
+                      Reset
                     </button>
                   )}
                   {m.model_source !== "none" &&
@@ -233,7 +273,6 @@ function Editor({
   downloadedLlm: Set<string>;
   customLlm: LlmModel[];
 }) {
-  const readonly = mode.builtin;
   const providers = useSettingsStore((s) => s.providers);
   const [testing, setTesting] = useState(false);
   const [testOut, setTestOut] = useState<string | null>(null);
@@ -281,30 +320,38 @@ function Editor({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="w-full max-w-lg rounded-xl border border-sv-border bg-sv-surface p-5">
-        <h2 className="mb-4 text-lg font-semibold">
-          {readonly ? mode.name : mode.id ? "Edit mode" : "New mode"}
+    // items-start + overflow-y-auto + my-auto: stays centred when it fits, and
+    // becomes scrollable when it doesn't. With items-center the panel overflowed
+    // equally out of both ends of the fixed box, putting Save out of reach at
+    // the app's own minimum window height (560px).
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 p-4">
+      <div className="my-auto w-full max-w-lg rounded-xl border border-sv-border bg-sv-surface p-5">
+        <h2 className="mb-1 text-lg font-semibold">
+          {mode.id ? "Edit mode" : "New mode"}
         </h2>
-        <label className="mb-3 block text-sm">
+        {mode.builtin && (
+          <p className="mb-4 text-[11px] text-sv-muted">
+            This is a built-in mode. Edit it freely — your changes are kept even after
+            app updates, and you can Reset it back to the original anytime.
+          </p>
+        )}
+        <label className="mb-3 mt-4 block text-sm">
           <span className="mb-1 block text-sv-muted">Name</span>
           <input
             value={mode.name}
-            disabled={readonly}
             onChange={(e) => onChange({ ...mode, name: e.target.value })}
-            className="w-full rounded-lg border border-sv-border bg-sv-bg px-3 py-2 disabled:opacity-60"
+            className="w-full rounded-lg border border-sv-border bg-sv-bg px-3 py-2"
           />
         </label>
         <label className="mb-3 block text-sm">
           <span className="mb-1 block text-sv-muted">Instructions sent to the AI</span>
           <textarea
             value={mode.system_prompt}
-            disabled={readonly}
             rows={5}
             onChange={(e) =>
               onChange({ ...mode, system_prompt: e.target.value })
             }
-            className="w-full resize-none rounded-lg border border-sv-border bg-sv-bg px-3 py-2 text-sm disabled:opacity-60"
+            className="w-full resize-none rounded-lg border border-sv-border bg-sv-bg px-3 py-2 text-sm"
           />
         </label>
         <div className="mb-4 grid grid-cols-2 gap-3 text-sm">
@@ -312,11 +359,10 @@ function Editor({
             <span className="mb-1 block text-sv-muted">Processing</span>
             <select
               value={mode.model_source}
-              disabled={readonly}
               onChange={(e) =>
                 onChange({ ...mode, model_source: e.target.value as ModelSource })
               }
-              className="w-full rounded-lg border border-sv-border bg-sv-bg px-3 py-2 disabled:opacity-60"
+              className="w-full rounded-lg border border-sv-border bg-sv-bg px-3 py-2"
             >
               <option value="none">None (raw transcription)</option>
               <option value="local">Built-in (on-device model)</option>
@@ -328,11 +374,10 @@ function Editor({
               <span className="mb-1 block text-sv-muted">Provider</span>
               <select
                 value={mode.provider_id ?? ""}
-                disabled={readonly}
                 onChange={(e) =>
                   onChange({ ...mode, provider_id: e.target.value })
                 }
-                className="w-full rounded-lg border border-sv-border bg-sv-bg px-3 py-2 disabled:opacity-60"
+                className="w-full rounded-lg border border-sv-border bg-sv-bg px-3 py-2"
               >
                 <option value="">Select provider…</option>
                 {providers.map((p) => (
@@ -347,9 +392,8 @@ function Editor({
               <span className="mb-1 block text-sv-muted">Local model</span>
               <select
                 value={mode.model_id}
-                disabled={readonly}
                 onChange={(e) => onChange({ ...mode, model_id: e.target.value })}
-                className="w-full rounded-lg border border-sv-border bg-sv-bg px-3 py-2 disabled:opacity-60"
+                className="w-full rounded-lg border border-sv-border bg-sv-bg px-3 py-2"
               >
                 {localModels.length === 0 && (
                   <option value={mode.model_id}>
@@ -397,7 +441,7 @@ function Editor({
                   (mode.model_source === "local" && !localReady) ||
                   (mode.model_source === "api" && !provider)
                 }
-                className="rounded-lg bg-sv-accent px-3 py-1 text-xs font-medium text-white hover:bg-sv-accent-hover disabled:opacity-50"
+                className="rounded-lg bg-sv-accent px-3 py-1 text-xs font-medium text-sv-on-accent hover:bg-sv-accent-hover disabled:opacity-50"
               >
                 {testing ? "Running…" : "▶ Test"}
               </button>
@@ -423,14 +467,14 @@ function Editor({
           >
             Close
           </button>
-          {!readonly && (
-            <button
-              onClick={onSave}
-              className="rounded-lg bg-sv-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-sv-accent-hover"
-            >
-              Save
-            </button>
-          )}
+          <button
+            onClick={onSave}
+            disabled={!mode.name.trim()}
+            title={mode.name.trim() ? undefined : "Give this mode a name first"}
+            className="rounded-lg bg-sv-accent px-3 py-1.5 text-sm font-medium text-sv-on-accent hover:bg-sv-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Save
+          </button>
         </div>
       </div>
     </div>

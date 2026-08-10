@@ -16,6 +16,7 @@ const STATUS_LABEL: Record<string, string> = {
   listening: "Listening",
   recording: "Recording",
   processing: "Processing…",
+  done: "Pasted ✓",
 };
 
 // "Intel(R) Core(TM) i7-8650U CPU @ 1.90GHz" → "Intel Core i7-8650U · 1.90GHz"
@@ -142,9 +143,9 @@ export default function Home() {
           </div>
           <div className="text-sm sm:text-right">
             {allPass ? (
-              <span className="text-sv-text">
+              <span className="sv-ready inline-block text-sv-text">
                 Ready — hold{" "}
-                <kbd className="rounded border border-sv-border bg-sv-surface-2 px-1.5 py-0.5 text-xs font-mono">
+                <kbd className="sv-ready-key rounded border border-sv-border bg-sv-surface-2 px-1.5 py-0.5 text-xs font-mono">
                   {settings.hotkey}
                 </kbd>{" "}
                 to dictate.
@@ -183,7 +184,7 @@ export default function Home() {
                 ? "This device can handle the larger, more accurate models"
                 : "Tiny / Base run best here — larger models will feel slow"}
             </p>
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
               <DeviceTile
                 className="col-span-2"
                 label="Processor"
@@ -202,7 +203,7 @@ export default function Home() {
                 value={`${hardware.free_disk_gb.toFixed(0)} GB`}
               />
               <DeviceTile
-                className="col-span-2 lg:col-span-4"
+                className="col-span-2 md:col-span-4"
                 label="Graphics"
                 value={hardware.gpu_name ?? "None detected"}
                 sub={

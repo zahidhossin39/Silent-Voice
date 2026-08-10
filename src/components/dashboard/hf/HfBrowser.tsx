@@ -1,5 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
+import { Link } from "react-router-dom";
 import ProviderLogo from "../../shared/ProviderLogo";
+import ConfirmDialog from "../../shared/ConfirmDialog";
 import { useHardwareInfo } from "../../../hooks/useHardwareInfo";
 import { LLM_MODELS } from "../../../services/catalog";
 import { llmCompatibility } from "../../../services/recommend";
@@ -11,6 +13,12 @@ import { formatMB, formatGB } from "../../../services/format";
 import SimpleMarkdown from "./SimpleMarkdown";
 import { STT_MODELS, sttLanguage } from "../../../services/catalog";
 import { accuracyScore, speedScore, deviceRealtimeLabel, llmQualityScore, llmSpeedScore, llmSpeedLabel } from "../../../services/modelMetrics";
+
+// Fixed-width action buttons so Select / Remove / Download stay the same size
+// and line up in a column across rows regardless of which state each row is in.
+export const ROW_ACTION = "w-[84px] shrink-0 rounded-lg border px-3 py-1.5 text-center text-xs font-medium transition-colors duration-75";
+export const ROW_ACTION_PRIMARY = `${ROW_ACTION} border-sv-border bg-sv-surface-2 text-sv-text hover:border-sv-accent hover:text-sv-accent`;
+export const ROW_ACTION_DANGER = `${ROW_ACTION} border-sv-border text-sv-muted hover:border-sv-bad/40 hover:bg-sv-bad/10 hover:text-sv-bad`;
 
 // --- Helpers ---
 function formatNdaysAgo(isoDate: string) {
@@ -345,7 +353,7 @@ export default function HfBrowser({ track, categoryFilter, languageFilter }: { t
               </div>
             ))
           ) : searchError ? (
-            <div className="p-4 text-center text-sm text-sv-muted">{!debouncedQuery ? "Hugging Face unreachable" : searchError}</div>
+            <div className="p-4 text-center text-sm text-sv-bad">{!debouncedQuery ? "Hugging Face unreachable" : searchError}</div>
           ) : hfResultsVisible.length === 0 ? (
             <div className="p-4 text-center text-sm text-sv-muted">No models found.</div>
           ) : (
@@ -400,7 +408,9 @@ function SttRow({
   pinned: boolean;
   onTogglePin: () => void;
 }) {
+  const [expanded, setExpanded] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [confirmRemove, setConfirmRemove] = useState(false);
   const downloaded = useModelStore((s) => s.downloaded.has(model.id));
   const progress = useModelStore((s) => s.progress[model.id]);
   const download = useModelStore((s) => s.download);
@@ -441,103 +451,145 @@ function SttRow({
   };
 
   return (
-    <div className={`group relative rounded-xl border ${isActive ? "border-sv-accent/40" : "border-sv-border"} bg-sv-surface transition-colors duration-75 hover:bg-sv-surface-2/40 flex flex-wrap items-center gap-x-5 gap-y-2 px-4 py-3`}>
-      <div className="flex min-w-[230px] max-w-[420px] flex-1 items-center gap-3">
-        <ProviderLogo provider={model.provider} size={32} />
-        <div className="min-w-0 flex-1 flex flex-col gap-1.5">
+    <div
+      onMouseEnter={() => setExpanded(true)}
+      onMouseLeave={() => setExpanded(false)}
+      className={`rounded-xl border ${isActive ? "border-sv-accent/40" : "border-sv-border"} bg-sv-surface transition-colors duration-75 hover:bg-sv-surface-2/40 px-4 py-3`}
+    >
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        {/* Fit dot: the single at-a-glance "does this run well here" cue. The old
+            "May be slow"/"Pinned"/redundant chips are gone — the dot encodes fit,
+            the pin star encodes pinned, so at most one state chip rides the name. */}
+        <span
+          className={`h-2 w-2 shrink-0 rounded-full ${(FIT_DOT as any)[level]}`}
+          title={level === "good" ? "Fits well on your device" : level === "warn" ? "Runs, may be slow on your device" : "Too heavy for your device"}
+        />
+        <ProviderLogo provider={model.provider} size={30} />
+        <div className="flex min-w-[150px] max-w-[380px] flex-1 flex-col gap-0.5">
           <div className="flex items-center gap-2">
-            <span
-              className={`h-1.5 w-1.5 shrink-0 rounded-full ${(FIT_DOT as any)[level]}`}
-              title={level === "good" ? "Fits well" : level === "warn" ? "May be slow" : "Too heavy"}
-            />
             <span className="truncate text-[13px] font-semibold text-sv-text">{model.label}</span>
-            <span className="shrink-0 rounded bg-sv-surface-2 px-1.5 py-0.5 text-[10px] text-sv-muted">Staff Pick</span>
-            {isActive && <span className="shrink-0 rounded bg-sv-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-sv-accent">In use</span>}
-            {pinned && <span className="shrink-0 rounded bg-sv-surface-2 px-1.5 py-0.5 text-[10px] text-sv-muted">Pinned</span>}
-            {level !== "good" && <span className="shrink-0 rounded bg-sv-surface-2 px-1.5 py-0.5 text-[10px] text-sv-text">{level === "warn" ? "May be slow" : "Too heavy"}</span>}
+            {isActive ? (
+              <span className="shrink-0 rounded bg-sv-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-sv-accent">In use</span>
+            ) : (
+              <span className="shrink-0 rounded bg-sv-surface-2 px-1.5 py-0.5 text-[10px] text-sv-muted">Staff Pick</span>
+            )}
           </div>
-          <div className="truncate tabular-nums text-[11px] text-sv-muted">
-             {model.provider} · {formatMB(model.size_mb)} · {model.ram_mb} MB RAM
-          </div>
+          <div className="truncate text-[11px] text-sv-muted">{model.provider}</div>
           {progress?.status === "error" && <div className="truncate text-[11px] text-sv-bad">{progress.error}</div>}
         </div>
-      </div>
 
-      <div className="flex w-[300px] shrink-0 flex-col gap-1">
-        <MetricBar label="accuracy" value={accuracyScore(model.wer)} caption={`~${model.wer.replace("~", "")} word error`} />
-        <MetricBar label="speed" value={speedScore(model.speed_label, hardware)} caption={(deviceRealtimeLabel(model.speed_label, hardware) ?? model.speed_label).replace(" on your device", "").replace("~", "")} />
-      </div>
-
-      <div className="ml-auto flex shrink-0 items-center gap-2">
-        <div className="flex shrink-0 items-center">
-          {isBusy || isPaused ? (
-            <div className="flex items-center gap-1.5">
-              <div className="flex w-28 items-center gap-2">
-                {!progress || progress.total_bytes === 0 ? (
-                  <>
-                    <div className="h-1.5 flex-1 overflow-hidden rounded-full border border-sv-border bg-sv-surface-2">
-                      <div className="h-full w-1/3 rounded-full bg-sv-accent animate-[sv-indeterminate_1.1s_ease-in-out_infinite]" />
-                    </div>
-                    <span className="w-8 text-right tabular-nums text-[11px] text-sv-muted">
-                      {isPaused ? "Paused" : "Starting…"}
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <div className="h-1.5 flex-1 overflow-hidden rounded-full border border-sv-border bg-sv-surface-2">
-                      <div className={`h-full ${isPaused ? "bg-sv-muted" : "bg-sv-accent"} transition-all duration-75`} style={{ width: `${pct}%` }} />
-                    </div>
-                    <span className="w-8 text-right tabular-nums text-[11px] text-sv-muted">{pct}%</span>
-                  </>
-                )}
-              </div>
-              {isDownloading ? (
-                <button
-                  onClick={() => pauseStore(model.id)}
-                  title="Pause download"
-                  className="p-1 text-sv-muted transition-colors duration-75 hover:text-sv-text"
-                >
-                  <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1" /><rect x="14" y="4" width="4" height="16" rx="1" /></svg>
-                </button>
-              ) : (
-                <button
-                  onClick={handleDownload}
-                  title="Resume download"
-                  className="p-1 text-sv-accent transition-colors duration-75 hover:text-sv-accent/80"
-                >
-                  <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><polygon points="5,3 19,12 5,21" /></svg>
-                </button>
-              )}
-              <button
-                onClick={() => cancelStore(model.id)}
-                title="Cancel download"
-                className="p-1 text-sv-muted transition-colors duration-75 hover:text-sv-bad"
-              >
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-              </button>
-            </div>
-          ) : downloaded ? (
-            <div className="flex items-center gap-2">
-              {!isActive && (
-                <button onClick={() => selectStt(model.id)} className="rounded-lg border border-sv-border bg-sv-surface-2 px-3 py-1.5 text-xs font-medium text-sv-text transition-colors duration-75 hover:border-sv-accent hover:text-sv-accent">
-                  Select
-                </button>
-              )}
-              <button onClick={() => remove(model.id)} className="rounded-lg border border-sv-border px-2.5 py-1.5 text-xs font-medium text-sv-muted transition-colors duration-75 hover:border-sv-bad/40 hover:bg-sv-bad/10 hover:text-sv-bad">
-                Remove
-              </button>
-            </div>
-          ) : (
-            <button disabled={isBusy} onClick={handleDownload} className="rounded-lg border border-sv-border bg-sv-surface-2 px-3 py-1.5 text-xs font-medium text-sv-text transition-colors duration-75 hover:border-sv-accent hover:text-sv-accent">
-              Download
-            </button>
-          )}
+        {/* Accuracy + speed — clean neutral bars by default */}
+        <div className="hidden md:flex w-[172px] shrink-0 flex-col gap-1">
+          <MetricBar label="accuracy" value={accuracyScore(model.wer)} />
+          <MetricBar label="speed" value={speedScore(model.speed_label, hardware)} />
         </div>
 
-        <button onClick={onTogglePin} title={pinned ? "Unpin" : "Pin to top"} className={`transition-colors duration-75 ${pinned ? "text-sv-accent" : "text-sv-muted/40 hover:text-sv-accent"}`}>
-          <svg viewBox="0 0 24 24" width="16" height="16" fill={pinned ? "currentColor" : "none"} stroke={pinned ? "none" : "currentColor"} strokeWidth={pinned ? undefined : "1.75"} strokeLinecap="round" strokeLinejoin="round"><path d="M12 2.5l2.9 6.2 6.6.6-5 4.6 1.4 6.6L12 17l-5.9 3.5L7.5 14l-5-4.6 6.6-.6L12 2.5z" /></svg>
-        </button>
+        {/* Size / RAM — its own right-aligned column so it lines up down the list. */}
+        <div className="hidden sm:block w-[86px] shrink-0 text-right tabular-nums">
+          <div className="text-[12.5px] font-semibold text-sv-text">{formatMB(model.size_mb)}</div>
+          <div className="text-[10.5px] text-sv-muted">{model.ram_mb} MB RAM</div>
+        </div>
+
+        <div className="ml-auto flex w-[190px] shrink-0 items-center justify-end gap-2">
+          <div className="flex shrink-0 items-center">
+            {isBusy || isPaused ? (
+              <div className="flex items-center gap-1.5">
+                <div className="flex w-28 items-center gap-2">
+                  {!progress || progress.total_bytes === 0 ? (
+                    <>
+                      <div className="h-1.5 flex-1 overflow-hidden rounded-full border border-sv-border bg-sv-surface-2">
+                        <div className="h-full w-1/3 rounded-full bg-sv-accent animate-[sv-indeterminate_1.1s_ease-in-out_infinite]" />
+                      </div>
+                      <span className="w-8 text-right tabular-nums text-[11px] text-sv-muted">
+                        {isPaused ? "Paused" : "Starting…"}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <div className="h-1.5 flex-1 overflow-hidden rounded-full border border-sv-border bg-sv-surface-2">
+                        <div className={`h-full ${isPaused ? "bg-sv-muted" : "bg-sv-accent"} transition-all duration-75`} style={{ width: `${pct}%` }} />
+                      </div>
+                      <span className="w-8 text-right tabular-nums text-[11px] text-sv-muted">{pct}%</span>
+                    </>
+                  )}
+                </div>
+                {isDownloading ? (
+                  <button
+                    onClick={() => pauseStore(model.id)}
+                    title="Pause download"
+                    className="p-1 text-sv-muted transition-colors duration-75 hover:text-sv-text"
+                  >
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1" /><rect x="14" y="4" width="4" height="16" rx="1" /></svg>
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleDownload}
+                    title="Resume download"
+                    className="p-1 text-sv-accent transition-colors duration-75 hover:text-sv-accent/80"
+                  >
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><polygon points="5,3 19,12 5,21" /></svg>
+                  </button>
+                )}
+                <button
+                  onClick={() => cancelStore(model.id)}
+                  title="Cancel download"
+                  className="p-1 text-sv-muted transition-colors duration-75 hover:text-sv-bad"
+                >
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                </button>
+              </div>
+            ) : downloaded ? (
+              <div className="flex items-center gap-2">
+                {!isActive && (
+                  <button onClick={() => selectStt(model.id)} className={ROW_ACTION_PRIMARY}>
+                    Select
+                  </button>
+                )}
+                <button onClick={() => setConfirmRemove(true)} className={ROW_ACTION_DANGER}>
+                  Remove
+                </button>
+              </div>
+            ) : (
+              <button disabled={isBusy} onClick={handleDownload} className={ROW_ACTION_PRIMARY}>
+                Download
+              </button>
+            )}
+          </div>
+
+          <button onClick={onTogglePin} title={pinned ? "Unpin" : "Pin to top"} className={`transition-colors duration-75 ${pinned ? "text-sv-accent" : "text-sv-muted/40 hover:text-sv-accent"}`}>
+            <svg viewBox="0 0 24 24" width="16" height="16" fill={pinned ? "currentColor" : "none"} stroke={pinned ? "none" : "currentColor"} strokeWidth={pinned ? undefined : "1.75"} strokeLinecap="round" strokeLinejoin="round"><path d="M12 2.5l2.9 6.2 6.6.6-5 4.6 1.4 6.6L12 17l-5.9 3.5L7.5 14l-5-4.6 6.6-.6L12 2.5z" /></svg>
+          </button>
+        </div>
       </div>
+
+      <div
+        className="grid transition-[grid-template-rows] duration-200 ease-out"
+        style={{ gridTemplateRows: expanded ? "1fr" : "0fr" }}
+      >
+        <div className="overflow-hidden">
+          <div className="flex items-center gap-6 border-t border-sv-border pt-2 mt-2 text-[11px] text-sv-muted tabular-nums">
+            <div><span className="mr-1.5 text-sv-muted">accuracy</span>{model.wer.replace("~", "≈")} word error</div>
+            <div><span className="mr-1.5 text-sv-muted">speed</span>{(deviceRealtimeLabel(model.speed_label, hardware) ?? model.speed_label).replace(" on your device", "")}</div>
+          </div>
+        </div>
+      </div>
+
+      <ConfirmDialog
+        open={confirmRemove}
+        title="Remove this model?"
+        message={
+          <>
+            This deletes <span className="text-sv-text">{model.label}</span> ({formatMB(model.size_mb)}) from
+            disk. You can download it again later.
+          </>
+        }
+        confirmLabel="Remove"
+        onConfirm={() => {
+          remove(model.id);
+          setConfirmRemove(false);
+        }}
+        onCancel={() => setConfirmRemove(false)}
+      />
     </div>
   );
 }
@@ -553,7 +605,9 @@ function LlmRow({
   pinned: boolean;
   onTogglePin: () => void;
 }) {
+  const [expanded, setExpanded] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [confirmRemove, setConfirmRemove] = useState(false);
   const downloaded = useModelStore((s) => s.downloadedLlm.has(model.id));
   const progress = useModelStore((s) => s.progress[model.id]);
   const download = useModelStore((s) => s.downloadLlm);
@@ -583,99 +637,142 @@ function LlmRow({
   };
 
   return (
-    <div className={`group relative rounded-xl border ${inUse ? "border-sv-accent/40" : "border-sv-border"} bg-sv-surface transition-colors duration-75 hover:bg-sv-surface-2/40 flex flex-wrap items-center gap-x-5 gap-y-2 px-4 py-3`}>
-      <div className="flex min-w-[230px] max-w-[420px] flex-1 items-center gap-3">
-        <ProviderLogo provider={model.provider} size={32} />
-        <div className="min-w-0 flex-1 flex flex-col gap-1.5">
+    <div
+      onMouseEnter={() => setExpanded(true)}
+      onMouseLeave={() => setExpanded(false)}
+      className={`rounded-xl border ${inUse ? "border-sv-accent/40" : "border-sv-border"} bg-sv-surface transition-colors duration-75 hover:bg-sv-surface-2/40 px-4 py-3`}
+    >
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <span
+          className={`h-2 w-2 shrink-0 rounded-full ${(FIT_DOT as any)[level]}`}
+          title={level === "good" ? "Fits well on your device" : level === "warn" ? "Runs, may be slow on your device" : "Too heavy for your device"}
+        />
+        <ProviderLogo provider={model.provider} size={30} />
+        <div className="flex min-w-[150px] max-w-[380px] flex-1 flex-col gap-0.5">
           <div className="flex items-center gap-2">
-            <span
-              className={`h-1.5 w-1.5 shrink-0 rounded-full ${(FIT_DOT as any)[level]}`}
-              title={level === "good" ? "Fits well" : level === "warn" ? "May be slow" : "Too heavy"}
-            />
             <span className="truncate text-[13px] font-semibold text-sv-text">{model.name}</span>
-            <span className="shrink-0 rounded bg-sv-surface-2 px-1.5 py-0.5 text-[10px] text-sv-muted">Staff Pick</span>
-            {inUse && <span className="shrink-0 rounded bg-sv-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-sv-accent">In use</span>}
-            {pinned && <span className="shrink-0 rounded bg-sv-surface-2 px-1.5 py-0.5 text-[10px] text-sv-muted">Pinned</span>}
-            {level !== "good" && <span className="shrink-0 rounded bg-sv-surface-2 px-1.5 py-0.5 text-[10px] text-sv-text">{level === "warn" ? "May be slow" : "Too heavy"}</span>}
+            {inUse ? (
+              <span className="shrink-0 rounded bg-sv-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-sv-accent">In use</span>
+            ) : (
+              <span className="shrink-0 rounded bg-sv-surface-2 px-1.5 py-0.5 text-[10px] text-sv-muted">Staff Pick</span>
+            )}
           </div>
-          <div className="truncate tabular-nums text-[11px] text-sv-muted">
-             {model.provider} · {model.params} · {formatGB(model.ram_gb)} RAM
-          </div>
+          <div className="truncate text-[11px] text-sv-muted">{model.provider}</div>
           {progress?.status === "error" && <div className="truncate text-[11px] text-sv-bad">{progress.error}</div>}
         </div>
-      </div>
 
-      <div className="flex w-[300px] shrink-0 flex-col gap-1">
-        <MetricBar label="quality" value={llmQualityScore(model.params)} caption={`${model.params} parameters`} />
-        <MetricBar label="speed" value={llmSpeedScore(level)} caption={llmSpeedLabel(level)} />
-      </div>
-
-      <div className="ml-auto flex shrink-0 items-center gap-2">
-        <div className="flex shrink-0 items-center">
-          {isBusy || isPaused ? (
-            <div className="flex items-center gap-1.5">
-              <div className="flex w-28 items-center gap-2">
-                {!progress || progress.total_bytes === 0 ? (
-                  <>
-                    <div className="h-1.5 flex-1 overflow-hidden rounded-full border border-sv-border bg-sv-surface-2">
-                      <div className="h-full w-1/3 rounded-full bg-sv-accent animate-[sv-indeterminate_1.1s_ease-in-out_infinite]" />
-                    </div>
-                    <span className="w-8 text-right tabular-nums text-[11px] text-sv-muted">
-                      {isPaused ? "Paused" : "Starting…"}
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <div className="h-1.5 flex-1 overflow-hidden rounded-full border border-sv-border bg-sv-surface-2">
-                      <div className={`h-full ${isPaused ? "bg-sv-muted" : "bg-sv-accent"} transition-all duration-75`} style={{ width: `${pct}%` }} />
-                    </div>
-                    <span className="w-8 text-right tabular-nums text-[11px] text-sv-muted">{pct}%</span>
-                  </>
-                )}
-              </div>
-              {isDownloading ? (
-                <button
-                  onClick={() => pauseStore(model.id)}
-                  title="Pause download"
-                  className="p-1 text-sv-muted transition-colors duration-75 hover:text-sv-text"
-                >
-                  <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1" /><rect x="14" y="4" width="4" height="16" rx="1" /></svg>
-                </button>
-              ) : (
-                <button
-                  onClick={handleDownload}
-                  title="Resume download"
-                  className="p-1 text-sv-accent transition-colors duration-75 hover:text-sv-accent/80"
-                >
-                  <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><polygon points="5,3 19,12 5,21" /></svg>
-                </button>
-              )}
-              <button
-                onClick={() => cancelStore(model.id)}
-                title="Cancel download"
-                className="p-1 text-sv-muted transition-colors duration-75 hover:text-sv-bad"
-              >
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-              </button>
-            </div>
-          ) : downloaded ? (
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] font-medium text-sv-good">{inUse ? "In use" : "Installed"}</span>
-              <button onClick={() => remove(model.id)} className="rounded-lg border border-sv-border px-2.5 py-1.5 text-xs font-medium text-sv-muted transition-colors duration-75 hover:border-sv-bad/40 hover:bg-sv-bad/10 hover:text-sv-bad">
-                Remove
-              </button>
-            </div>
-          ) : (
-            <button disabled={isBusy} onClick={handleDownload} className="rounded-lg border border-sv-border bg-sv-surface-2 px-3 py-1.5 text-xs font-medium text-sv-text transition-colors duration-75 hover:border-sv-accent hover:text-sv-accent">
-              Download
-            </button>
-          )}
+        <div className="hidden md:flex w-[172px] shrink-0 flex-col gap-1">
+          <MetricBar label="quality" value={llmQualityScore(model.params)} />
+          <MetricBar label="speed" value={llmSpeedScore(level)} />
         </div>
 
-        <button onClick={onTogglePin} title={pinned ? "Unpin" : "Pin to top"} className={`transition-colors duration-75 ${pinned ? "text-sv-accent" : "text-sv-muted/40 hover:text-sv-accent"}`}>
-          <svg viewBox="0 0 24 24" width="16" height="16" fill={pinned ? "currentColor" : "none"} stroke={pinned ? "none" : "currentColor"} strokeWidth={pinned ? undefined : "1.75"} strokeLinecap="round" strokeLinejoin="round"><path d="M12 2.5l2.9 6.2 6.6.6-5 4.6 1.4 6.6L12 17l-5.9 3.5L7.5 14l-5-4.6 6.6-.6L12 2.5z" /></svg>
-        </button>
+        <div className="hidden sm:block w-[86px] shrink-0 text-right tabular-nums">
+          <div className="text-[12.5px] font-semibold text-sv-text">{model.params}</div>
+          <div className="text-[10.5px] text-sv-muted">{formatGB(model.ram_gb)} RAM</div>
+        </div>
+
+        <div className="ml-auto flex w-[190px] shrink-0 items-center justify-end gap-2">
+          <div className="flex shrink-0 items-center">
+            {isBusy || isPaused ? (
+              <div className="flex items-center gap-1.5">
+                <div className="flex w-28 items-center gap-2">
+                  {!progress || progress.total_bytes === 0 ? (
+                    <>
+                      <div className="h-1.5 flex-1 overflow-hidden rounded-full border border-sv-border bg-sv-surface-2">
+                        <div className="h-full w-1/3 rounded-full bg-sv-accent animate-[sv-indeterminate_1.1s_ease-in-out_infinite]" />
+                      </div>
+                      <span className="w-8 text-right tabular-nums text-[11px] text-sv-muted">
+                        {isPaused ? "Paused" : "Starting…"}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <div className="h-1.5 flex-1 overflow-hidden rounded-full border border-sv-border bg-sv-surface-2">
+                        <div className={`h-full ${isPaused ? "bg-sv-muted" : "bg-sv-accent"} transition-all duration-75`} style={{ width: `${pct}%` }} />
+                      </div>
+                      <span className="w-8 text-right tabular-nums text-[11px] text-sv-muted">{pct}%</span>
+                    </>
+                  )}
+                </div>
+                {isDownloading ? (
+                  <button
+                    onClick={() => pauseStore(model.id)}
+                    title="Pause download"
+                    className="p-1 text-sv-muted transition-colors duration-75 hover:text-sv-text"
+                  >
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1" /><rect x="14" y="4" width="4" height="16" rx="1" /></svg>
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleDownload}
+                    title="Resume download"
+                    className="p-1 text-sv-accent transition-colors duration-75 hover:text-sv-accent/80"
+                  >
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><polygon points="5,3 19,12 5,21" /></svg>
+                  </button>
+                )}
+                <button
+                  onClick={() => cancelStore(model.id)}
+                  title="Cancel download"
+                  className="p-1 text-sv-muted transition-colors duration-75 hover:text-sv-bad"
+                >
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                </button>
+              </div>
+            ) : downloaded ? (
+              <div className="flex items-center gap-2">
+                {inUse ? (
+                  <span className="text-[11px] font-medium text-sv-good">In use</span>
+                ) : (
+                  <Link to="/modes" className="whitespace-nowrap rounded-lg border border-sv-border bg-sv-surface-2 px-3 py-1.5 text-xs font-medium text-sv-text transition-colors duration-75 hover:border-sv-accent hover:text-sv-accent">
+                    Assign to a mode
+                  </Link>
+                )}
+                <button onClick={() => setConfirmRemove(true)} className={ROW_ACTION_DANGER}>
+                  Remove
+                </button>
+              </div>
+            ) : (
+              <button disabled={isBusy} onClick={handleDownload} className={ROW_ACTION_PRIMARY}>
+                Download
+              </button>
+            )}
+          </div>
+
+          <button onClick={onTogglePin} title={pinned ? "Unpin" : "Pin to top"} className={`transition-colors duration-75 ${pinned ? "text-sv-accent" : "text-sv-muted/40 hover:text-sv-accent"}`}>
+            <svg viewBox="0 0 24 24" width="16" height="16" fill={pinned ? "currentColor" : "none"} stroke={pinned ? "none" : "currentColor"} strokeWidth={pinned ? undefined : "1.75"} strokeLinecap="round" strokeLinejoin="round"><path d="M12 2.5l2.9 6.2 6.6.6-5 4.6 1.4 6.6L12 17l-5.9 3.5L7.5 14l-5-4.6 6.6-.6L12 2.5z" /></svg>
+          </button>
+        </div>
       </div>
+
+      <div
+        className="grid transition-[grid-template-rows] duration-200 ease-out"
+        style={{ gridTemplateRows: expanded ? "1fr" : "0fr" }}
+      >
+        <div className="overflow-hidden">
+          <div className="flex items-center gap-6 border-t border-sv-border pt-2 mt-2 text-[11px] text-sv-muted tabular-nums">
+            <div><span className="mr-1.5 text-sv-muted">quality</span>{model.params} parameters</div>
+            <div><span className="mr-1.5 text-sv-muted">speed</span>{llmSpeedLabel(level)}</div>
+          </div>
+        </div>
+      </div>
+
+      <ConfirmDialog
+        open={confirmRemove}
+        title="Remove this model?"
+        message={
+          <>
+            This deletes <span className="text-sv-text">{model.name}</span> from disk. You can
+            download it again later.
+          </>
+        }
+        confirmLabel="Remove"
+        onConfirm={() => {
+          remove(model.id);
+          setConfirmRemove(false);
+        }}
+        onCancel={() => setConfirmRemove(false)}
+      />
     </div>
   );
 }
@@ -987,14 +1084,15 @@ function HfDetail({ details, hardware, track }: { details: HfModelDetails; hardw
                               Select
                             </button>
                           ) : (
-                            <span className="text-xs font-medium text-sv-good">Installed</span>
+                            <Link to="/modes" className="rounded-lg border border-sv-border bg-sv-surface-2 px-3 py-1.5 text-xs font-medium text-sv-text transition-colors duration-75 hover:border-sv-accent hover:text-sv-accent">
+                              Assign to a mode
+                            </Link>
                           )
                         )}
                         <button onClick={() => track === "stt" ? removeStt(mId) : removeLlm(mId)} className="rounded-lg border border-sv-border px-2.5 py-1.5 text-xs font-medium text-sv-muted transition-colors duration-75 hover:border-sv-bad/40 hover:bg-sv-bad/10 hover:text-sv-bad">
                           Remove
                         </button>
                       </div>
-                      {!isActive && track === "llm" && <span className="text-[10px] text-sv-muted">Assign it to a mode in the Modes tab</span>}
                     </div>
                   ) : (
                     <button onClick={doDownload} className="rounded-lg border border-sv-border bg-sv-surface-2 px-3 py-1.5 text-xs font-medium text-sv-text transition-colors duration-75 hover:border-sv-accent hover:text-sv-accent">

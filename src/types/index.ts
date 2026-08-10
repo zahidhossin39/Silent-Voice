@@ -47,6 +47,11 @@ export interface SttModel {
   preset: SttPreset;
   best_for: string;
   url?: string; // Optional full download URL (overrides WHISPER_BASE_URL + file)
+  // Which engine runs this model. Absent = "whisper" (whisper.cpp, .bin file).
+  // "moonshine"/"sense-voice" = sherpa-onnx, downloaded as a .tar.bz2 archive
+  // (`url`) and extracted into a folder. Faster + natively punctuated;
+  // Moonshine is English-only, SenseVoice is multilingual.
+  engine?: "whisper" | "moonshine" | "sense-voice";
 }
 
 // ---------- LLM models (for AI processing) ----------
@@ -127,6 +132,11 @@ export interface Mode {
   provider_id?: string; // for model_source "api": which ApiProvider to use
   hotkey?: string;
   builtin: boolean;
+  pinned?: boolean;
+  // Set when a user edits a built-in mode. Marks it as no longer safe to
+  // silently refresh from BUILTIN_MODES when the app ships a prompt fix —
+  // the user's own edit wins instead.
+  customized?: boolean;
 }
 
 // ---------- API providers ----------
@@ -178,7 +188,8 @@ export type RecordingState =
   | "idle"
   | "listening"
   | "recording"
-  | "processing";
+  | "processing"
+  | "done"; // brief success beat after text lands at the cursor, then back to idle
 
 export interface Settings {
   hotkey: string;
@@ -198,6 +209,7 @@ export interface Settings {
   input_sensitivity: number; // 0-100 (Discord-style): how loud a sound must be to count as speech
   inline_proofread: boolean; // squiggles under spelling/grammar errors in any app's text field (English)
   coedit_enabled: boolean; // AI grammar correction of dictated text (CoEdIT); off = raw transcript
+  chunk_on_silence: boolean; // background transcription at natural silence boundaries
   proofread_disabled_rules: string[]; // Harper rule ids the user turned off (plus our "Filler" pseudo-rule)
   gector_sensitivity: "relaxed" | "balanced" | "aggressive";
   proofread_ignore_apps: string; // comma-separated exe-name substrings where squiggles are suppressed
