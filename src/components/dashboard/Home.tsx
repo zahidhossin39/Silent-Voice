@@ -39,6 +39,7 @@ export default function Home() {
   const recordingState = useUiStore((s) => s.recordingState);
   const entries = useHistoryStore((s) => s.entries);
   const today = useTodayStats(entries);
+  const strip = useStripStats(entries);
   const lastError = useUiStore((s) => s.lastError);
   const setError = useUiStore((s) => s.setError);
 
@@ -147,6 +148,55 @@ export default function Home() {
                 to dictate
               </span>
             )}
+          </div>
+          <div className="mt-5 shrink-0 border-t border-sv-border pt-4">
+            <div className="mb-2.5 flex items-baseline justify-between">
+              <span className="text-[10px] font-semibold uppercase tracking-[0.13em] text-sv-muted">
+                Last 12 weeks
+              </span>
+              <span className="text-[11px] text-sv-muted tabular-nums">
+                {strip.windowWords > 0
+                  ? `${strip.windowWords.toLocaleString()} words · ${strip.savedMin} min saved`
+                  : "Nothing dictated yet"}
+              </span>
+            </div>
+            {/* Square cells across 12 columns force height = 7/12 of width, so
+                an unconstrained grid would be ~470px tall in this panel. */}
+            <div className="grid max-w-[210px] grid-flow-col grid-rows-7 gap-[3px]">
+              {strip.cells.map((c) => {
+                const bg = c.future
+                  ? "bg-transparent"
+                  : c.level === 0
+                  ? "bg-sv-border/50"
+                  : c.level === 1
+                  ? "bg-sv-accent/25"
+                  : c.level === 2
+                  ? "bg-sv-accent/45"
+                  : c.level === 3
+                  ? "bg-sv-accent/70"
+                  : "bg-sv-accent";
+                const title = c.future
+                  ? undefined
+                  : `${c.words === 0 ? "No dictation" : `${c.words} words`} · ${new Date(c.ms).toLocaleDateString()}`;
+
+                return (
+                  <div
+                    key={c.ms}
+                    title={title}
+                    className={`aspect-square rounded-[3px] ${bg}`}
+                  />
+                );
+              })}
+            </div>
+            <div className="mt-2 flex items-center justify-end gap-1 text-[10px] text-sv-muted">
+              Less
+              <span className="h-2 w-2 rounded-[2px] bg-sv-border/50" />
+              <span className="h-2 w-2 rounded-[2px] bg-sv-accent/25" />
+              <span className="h-2 w-2 rounded-[2px] bg-sv-accent/45" />
+              <span className="h-2 w-2 rounded-[2px] bg-sv-accent/70" />
+              <span className="h-2 w-2 rounded-[2px] bg-sv-accent" />
+              More
+            </div>
           </div>
         </div>
 
@@ -469,6 +519,70 @@ function useTodayStats(entries: HistoryEntry[]) {
     const typeMs = (words / TYPING_WPM) * 60_000;
     const savedMin = Math.max(0, Math.round((typeMs - speakMs) / 60_000));
     return { words, count, savedMin: String(savedMin) };
+  }, [entries]);
+}
+
+function useStripStats(entries: HistoryEntry[]) {
+  return useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const start = new Date(today);
+    // Sunday of 11 weeks ago, so the 84 cells form 12 whole Sun..Sat columns
+    start.setDate(start.getDate() - start.getDay() - 77);
+
+    const startMs = start.getTime();
+    const todayMs = today.getTime();
+
+    const buckets = new Map<number, { words: number; speakMs: number }>();
+    for (const e of entries) {
+      if (e.timestamp < startMs) continue;
+      const d = new Date(e.timestamp);
+      d.setHours(0, 0, 0, 0);
+      const dayMs = d.getTime();
+
+      let b = buckets.get(dayMs);
+      if (!b) {
+        b = { words: 0, speakMs: 0 };
+        buckets.set(dayMs, b);
+      }
+      b.words += countWords(e.processed_text || e.raw_text);
+      b.speakMs += e.duration_ms;
+    }
+
+    const cells = [];
+    let windowWords = 0;
+    let windowSpeakMs = 0;
+
+    for (let i = 0; i < 84; i++) {
+      const d = new Date(startMs);
+      d.setDate(d.getDate() + i);
+      const ms = d.getTime();
+
+      const b = buckets.get(ms);
+      const words = b?.words ?? 0;
+
+      let level = 0;
+      if (words > 0) {
+        if (words < 100) level = 1;
+        else if (words < 300) level = 2;
+        else if (words < 700) level = 3;
+        else level = 4;
+      }
+
+      cells.push({
+        ms,
+        words,
+        future: ms > todayMs,
+        level,
+      });
+
+      windowWords += words;
+      if (b) windowSpeakMs += b.speakMs;
+    }
+
+    const typeMs = (windowWords / TYPING_WPM) * 60_000;
+    const savedMin = Math.max(0, Math.round((typeMs - windowSpeakMs) / 60_000));
+    return { cells, windowWords, savedMin: String(savedMin) };
   }, [entries]);
 }
 
