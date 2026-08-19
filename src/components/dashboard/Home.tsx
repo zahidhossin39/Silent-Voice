@@ -197,7 +197,6 @@ export default function Home() {
                 <div>
                   <div className="text-lg font-semibold tabular-nums text-sv-text">
                     {strip.activeDays}
-                    <span className="text-sm font-medium text-sv-muted"> / 84 days</span>
                   </div>
                   <div className="text-[11px] text-sv-muted">days you dictated</div>
                 </div>
