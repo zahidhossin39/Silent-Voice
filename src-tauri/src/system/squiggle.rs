@@ -54,7 +54,47 @@ const TITLE_H: i32 = 30;
 const SUB_H: i32 = 22;
 const ROWS_TOP: i32 = PAD + TITLE_H + 4 + SUB_H + 14;
 const ROW_H: i32 = 48;
-const BG: u32 = 0x00ffffff; // white
+// Popup surface (card background + text). Values come straight from
+// design/popup-final.html's TH table — "sv" (dark) and "light" — converted to
+// GDI COLORREF (0x00BBGGRR). Translucent design values are pre-blended over
+// their own background, since GDI text/fills here are opaque.
+#[derive(Clone, Copy)]
+struct Surface {
+    bg: u32,
+    title: u32,
+    muted: u32,
+    row: u32,
+    line: u32,
+    footer_bg: u32,
+    footer_fg: u32,
+    /// bg as plain RGB, for blending the accent-tinted hover highlight.
+    bg_rgb: (u8, u8, u8),
+}
+
+const SURFACES: [Surface; 2] = [
+    // 0 = Dark (#151a26) — the original look.
+    Surface {
+        bg: 0x00261a15,
+        title: 0x00f2ebe8,        // #e8ebf2
+        muted: 0x00a7938b,        // #8b93a7
+        row: 0x00c4b2aa,          // #aab2c4
+        line: 0x003c312c,         // white .10 over bg
+        footer_bg: 0x00312621,    // white .05 over bg
+        footer_fg: 0x00f2ebe8,
+        bg_rgb: (0x15, 0x1a, 0x26),
+    },
+    // 1 = Light (#ffffff)
+    Surface {
+        bg: 0x00ffffff,
+        title: 0x00281e1a,        // #1a1e28
+        muted: 0x0073645c,        // #5c6473
+        row: 0x0062514a,          // #4a5162
+        line: 0x00e8e8e8,         // black .09 over white
+        footer_bg: 0x00f8f8f8,    // black .028 over white
+        footer_fg: 0x00281e1a,
+        bg_rgb: (0xff, 0xff, 0xff),
+    },
+];
 
 // Accent palettes for the popup border/highlight. Order + RGB values match
 // src/components/dashboard/Theme.tsx PALETTES `dot` colors exactly, so the
@@ -84,6 +124,35 @@ pub fn set_style(idx: usize) {
 fn current_accent() -> (u8, u8, u8) {
     let idx = THEME_IDX.load(Ordering::Relaxed) as usize;
     PALETTES.get(idx).copied().unwrap_or(PALETTES[3])
+}
+
+static SURFACE_IDX: AtomicI32 = AtomicI32::new(0); // dark by default
+
+/// Selects the popup card surface: 0 = dark, 1 = light.
+pub fn set_surface(idx: usize) {
+    SURFACE_IDX.store(idx as i32, Ordering::Relaxed);
+    NEEDS_REDRAW.store(true, Ordering::Relaxed);
+}
+
+fn current_surface() -> Surface {
+    let idx = SURFACE_IDX.load(Ordering::Relaxed) as usize;
+    SURFACES.get(idx).copied().unwrap_or(SURFACES[0])
+}
+
+/// Row hover fill: the chosen accent tinted into the surface, so the highlight
+/// reads correctly on both the dark and light card without a second constant.
+fn hover_color(s: &Surface, accent: (u8, u8, u8)) -> u32 {
+    const A: f32 = 0.22;
+    let mix = |c: u8, b: u8| ((c as f32 * A) + (b as f32 * (1.0 - A))).round() as u32;
+    let r = mix(accent.0, s.bg_rgb.0);
+    let g = mix(accent.1, s.bg_rgb.1);
+    let b = mix(accent.2, s.bg_rgb.2);
+    (b << 16) | (g << 8) | r // COLORREF is 0x00BBGGRR
+}
+
+/// Accent as a GDI COLORREF.
+fn accent_colorref(accent: (u8, u8, u8)) -> u32 {
+    ((accent.2 as u32) << 16) | ((accent.1 as u32) << 8) | accent.0 as u32
 }
 
 /// One flagged word occurrence on screen (word rect in physical pixels).
@@ -246,8 +315,11 @@ unsafe fn render_popup(hwnd: HWND, x: i32, y: i32) {
     let px = std::slice::from_raw_parts_mut(bits as *mut u32, (POPUP_W * height) as usize);
     px.fill(0);
 
-    // 1. Draw white background
-    let bg = CreateSolidBrush(COLORREF(BG));
+    let surface = current_surface();
+    let accent = current_accent();
+
+    // 1. Draw card background
+    let bg = CreateSolidBrush(COLORREF(surface.bg));
     FillRect(memdc, &RECT { left: 0, top: 0, right: POPUP_W, bottom: height }, bg);
     let _ = DeleteObject(bg);
 
@@ -281,7 +353,7 @@ unsafe fn render_popup(hwnd: HWND, x: i32, y: i32) {
         }
     };
     let old_font = SelectObject(memdc, font_title);
-    SetTextColor(memdc, COLORREF(0x00404040));
+    SetTextColor(memdc, COLORREF(surface.title));
     let title_utf16: Vec<u16> = title_text.encode_utf16().collect();
     let _ = TextOutW(memdc, PAD, PAD, &title_utf16);
 
@@ -296,12 +368,12 @@ unsafe fn render_popup(hwnd: HWND, x: i32, y: i32) {
         msg
     };
     SelectObject(memdc, font_sub);
-    SetTextColor(memdc, COLORREF(0x00585858));
+    SetTextColor(memdc, COLORREF(surface.muted));
     let sub_utf16: Vec<u16> = subtitle_text.encode_utf16().collect();
     let _ = TextOutW(memdc, PAD, PAD + TITLE_H + 4, &sub_utf16);
 
     // 5. Draw Separators between suggestion rows
-    let sep_brush = CreateSolidBrush(COLORREF(0x00e8e8e8));
+    let sep_brush = CreateSolidBrush(COLORREF(surface.line));
     for i in 0..(n - 1) {
         let sep_y = ROWS_TOP + (i + 1) * ROW_H;
         FillRect(
@@ -323,8 +395,8 @@ unsafe fn render_popup(hwnd: HWND, x: i32, y: i32) {
         let top = ROWS_TOP + i as i32 * ROW_H;
         let is_hovered = i as i32 == hover;
         if is_hovered {
-            let hb = CreateSolidBrush(COLORREF(0x00CEE0FA));
-            let hp = CreatePen(PS_SOLID, 1, COLORREF(0x00CEE0FA));
+            let hb = CreateSolidBrush(COLORREF(hover_color(&surface, accent)));
+            let hp = CreatePen(PS_SOLID, 1, COLORREF(hover_color(&surface, accent)));
             let old_brush = SelectObject(memdc, hb);
             let old_pen = SelectObject(memdc, hp);
             let _ = RoundRect(
@@ -341,7 +413,7 @@ unsafe fn render_popup(hwnd: HWND, x: i32, y: i32) {
             let _ = DeleteObject(hb);
             let _ = DeleteObject(hp);
         }
-        SetTextColor(memdc, COLORREF(0x00202020));
+        SetTextColor(memdc, COLORREF(surface.row));
         let row_utf16: Vec<u16> = row.encode_utf16().collect();
         let text_y = top + (ROW_H - 24) / 2;
         let _ = TextOutW(memdc, PAD + 6, text_y, &row_utf16);
@@ -350,7 +422,7 @@ unsafe fn render_popup(hwnd: HWND, x: i32, y: i32) {
     // 7. Draw Footer (normal mode only)
     if !is_picker {
         let footer_top = ROWS_TOP + n * ROW_H + 10;
-        let footer_bg = CreateSolidBrush(COLORREF(0x00f1f1f1));
+        let footer_bg = CreateSolidBrush(COLORREF(surface.footer_bg));
         FillRect(
             memdc,
             &RECT {
@@ -365,7 +437,7 @@ unsafe fn render_popup(hwnd: HWND, x: i32, y: i32) {
 
         // Draw 'Add to Dictionary'
         let is_add_hovered = hover == 100;
-        let add_color = if is_add_hovered { 0x00f6823b } else { 0x00303030 };
+        let add_color = if is_add_hovered { accent_colorref(accent) } else { surface.footer_fg };
 
         SelectObject(memdc, font_footer_glyph);
         SetTextColor(memdc, COLORREF(add_color));
@@ -378,7 +450,7 @@ unsafe fn render_popup(hwnd: HWND, x: i32, y: i32) {
 
         // Draw 'Dismiss'
         let is_dismiss_hovered = hover == 101;
-        let dismiss_color = if is_dismiss_hovered { 0x004444ef } else { 0x00303030 };
+        let dismiss_color = if is_dismiss_hovered { accent_colorref(accent) } else { surface.footer_fg };
 
         SelectObject(memdc, font_footer_glyph);
         SetTextColor(memdc, COLORREF(dismiss_color));

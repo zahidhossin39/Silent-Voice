@@ -476,6 +476,19 @@ fn set_popup_style(style: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Card surface for the inline-proofread popup: "dark" (#151a26, the original
+/// look) or "light" (#ffffff). Popup-only like the theme/style above, so the
+/// frontend persists it and re-pushes on startup.
+#[tauri::command]
+fn set_popup_surface(surface: String) -> Result<(), String> {
+    let idx = match surface.as_str() {
+        "light" => 1,
+        _ => 0,
+    };
+    system::squiggle::set_surface(idx);
+    Ok(())
+}
+
 #[tauri::command]
 fn set_app_profiles(state: State<AppState>, profiles: Vec<AppProfile>) -> Result<(), String> {
     let mut cfg = state.config.lock().map_err(|e| e.to_string())?;
@@ -1215,6 +1228,7 @@ pub fn run() {
             set_behavior,
             set_popup_theme,
             set_popup_style,
+            set_popup_surface,
             set_app_profiles,
             set_autostart,
             get_autostart,

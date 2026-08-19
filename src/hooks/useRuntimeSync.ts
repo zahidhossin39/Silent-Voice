@@ -11,6 +11,7 @@ import {
   setTts,
   setPopupTheme,
   setPopupStyle,
+  setPopupSurface,
   listenEvent,
 } from "../services/tauriBridge";
 import type { ResolvedAppProfile } from "../services/tauriBridge";
@@ -76,6 +77,7 @@ export function useRuntimeSync() {
   const autoStart = useSettingsStore((s) => s.settings.auto_start);
   const popupTheme = useSettingsStore((s) => s.settings.popup_theme);
   const popupStyle = useSettingsStore((s) => s.settings.popup_style);
+  const popupSurface = useSettingsStore((s) => s.settings.popup_surface);
   const setSettings = useSettingsStore((s) => s.setSettings);
 
   useEffect(() => {
@@ -172,6 +174,10 @@ export function useRuntimeSync() {
   useEffect(() => {
     setPopupStyle(popupStyle);
   }, [popupStyle]);
+
+  useEffect(() => {
+    setPopupSurface(popupSurface);
+  }, [popupSurface]);
 
   // Resolve per-app profile rules to full mode configs and push to Rust.
   useEffect(() => {

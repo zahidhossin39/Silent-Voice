@@ -336,6 +336,15 @@ export async function setPopupStyle(style: string): Promise<void> {
   }
 }
 
+export async function setPopupSurface(surface: string): Promise<void> {
+  if (!isTauri()) return;
+  try {
+    await invoke<void>("set_popup_surface", { surface });
+  } catch (e) {
+    console.warn("set_popup_surface failed", e);
+  }
+}
+
 export async function ttsStop(): Promise<void> {
   if (!isTauri()) return;
   await invoke<void>("tts_stop");

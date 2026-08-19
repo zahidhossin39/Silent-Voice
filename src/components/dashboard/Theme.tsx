@@ -2,7 +2,7 @@ import { useState } from "react";
 import Page from "../shared/Page";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { APP_THEMES } from "../../services/appThemes";
-import type { PopupTheme, PopupStyle } from "../../types";
+import type { PopupTheme, PopupStyle, PopupSurface } from "../../types";
 
 // Accent palettes for the grammar-suggestion popup. The surface is always the
 // dark card below; only the accent (border ring, primary pill, chips, footer
@@ -25,6 +25,7 @@ const PALETTES: {
 ];
 
 type Accent = (typeof PALETTES)[number];
+type SurfaceTokens = (typeof SURFACES)[PopupSurface];
 
 // The recommended fix: a deep tonal pill with the fix text in the accent color
 // and a small enter-key badge (press-to-apply hint) on the RIGHT. No border.
@@ -56,23 +57,45 @@ const LAYOUTS: { id: PopupStyle; label: string; blurb: string }[] = [
   { id: "compact", label: "Compact", blurb: "Before → after with a filled pill and numbered alternatives — dense and quick." },
 ];
 
-// Dark surface shared by every palette (mirrors squiggle.rs + the design).
-const SURFACE = {
-  bg: "#151a26",
-  fg: "#e8ebf2",
-  muted: "#8b93a7",
-  alt: "#aab2c4",
-  line: "rgba(255,255,255,.10)",
-  footer: "rgba(255,255,255,.045)",
-  chip: "rgba(255,255,255,.05)",
+// Card surfaces — same values as squiggle.rs SURFACES and the TH table in
+// design/popup-final.html. The accent rides on top of whichever is picked.
+const SURFACES: Record<PopupSurface, {
+  bg: string; fg: string; muted: string; alt: string;
+  line: string; footer: string; chip: string;
+}> = {
+  dark: {
+    bg: "#151a26",
+    fg: "#e8ebf2",
+    muted: "#8b93a7",
+    alt: "#aab2c4",
+    line: "rgba(255,255,255,.10)",
+    footer: "rgba(255,255,255,.045)",
+    chip: "rgba(255,255,255,.05)",
+  },
+  light: {
+    bg: "#ffffff",
+    fg: "#1a1e28",
+    muted: "#5c6473",
+    alt: "#4a5162",
+    line: "rgba(0,0,0,.09)",
+    footer: "rgba(0,0,0,.028)",
+    chip: "rgba(0,0,0,.045)",
+  },
 };
+
+const SURFACE_OPTS: { id: PopupSurface; label: string; blurb: string }[] = [
+  { id: "dark", label: "Dark", blurb: "Reads well over editors and dark apps." },
+  { id: "light", label: "Light", blurb: "Classic white card, like most spellcheckers." },
+];
 
 export default function Theme() {
   const popupTheme = useSettingsStore((s) => s.settings.popup_theme);
   const popupStyle = useSettingsStore((s) => s.settings.popup_style);
+  const popupSurface = useSettingsStore((s) => s.settings.popup_surface);
   const appTheme = useSettingsStore((s) => s.settings.app_theme);
   const setSettings = useSettingsStore((s) => s.setSettings);
   const accent = PALETTES.find((p) => p.id === popupTheme) ?? PALETTES[0];
+  const surfaceTokens = SURFACES[popupSurface] ?? SURFACES.dark;
 
   return (
     <Page
@@ -160,7 +183,7 @@ export default function Theme() {
                       {/* `zoom` (not transform:scale) shrinks the popup's actual
                           layout footprint, so it centers cleanly and never clips. */}
                       <div style={{ zoom: 0.52 }}>
-                        <Popup accent={accent} style={l.id} />
+                        <Popup accent={accent} style={l.id} surface={surfaceTokens} />
                       </div>
                     </div>
                     <div>
@@ -170,6 +193,47 @@ export default function Theme() {
                       </div>
                       <div className="mt-0.5 text-xs text-sv-muted">{l.blurb}</div>
                     </div>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+
+          {/* Surface */}
+          <section>
+            <h2 className="mb-3 text-sm font-medium text-sv-muted">Surface</h2>
+            <div className="grid grid-cols-2 gap-3">
+              {SURFACE_OPTS.map((o) => {
+                const selected = o.id === popupSurface;
+                const tokens = SURFACES[o.id];
+                return (
+                  <button
+                    key={o.id}
+                    onClick={() => setSettings({ popup_surface: o.id })}
+                    aria-pressed={selected}
+                    className={`flex items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition ${
+                      selected
+                        ? "border-sv-accent bg-sv-surface-2"
+                        : "border-sv-border bg-sv-surface hover:border-sv-muted/50 hover:bg-sv-surface-2"
+                    }`}
+                  >
+                    <span
+                      className="grid h-9 w-9 shrink-0 place-items-center rounded-lg ring-1 ring-white/10"
+                      style={{ background: tokens.bg }}
+                    >
+                      <span className="text-xs font-semibold" style={{ color: tokens.fg }}>
+                        Aa
+                      </span>
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center gap-1.5 text-sm font-medium text-sv-text">
+                        {o.label}
+                        {selected && <Check className="text-sv-accent" />}
+                      </span>
+                      <span className="block truncate text-xs text-sv-muted">
+                        {o.blurb}
+                      </span>
+                    </span>
                   </button>
                 );
               })}
@@ -226,7 +290,7 @@ export default function Theme() {
         <section className="lg:sticky lg:top-7 lg:self-start">
           <h2 className="mb-3 text-sm font-medium text-sv-muted">Preview</h2>
           <div className="grid min-h-[340px] place-items-center rounded-xl border border-sv-border bg-[repeating-linear-gradient(135deg,#0d1017,#0d1017_12px,#0f131b_12px,#0f131b_24px)] p-6">
-            <Popup accent={accent} style={popupStyle} />
+            <Popup accent={accent} style={popupStyle} surface={surfaceTokens} />
           </div>
           <p className="mt-3 text-center text-xs text-sv-muted">
             Hover a flagged word in your real text to see this. Click the fix to
@@ -246,26 +310,26 @@ function Check({ className = "", style }: { className?: string; style?: React.CS
   );
 }
 
-function Popup({ accent, style }: { accent: Accent; style: PopupStyle }) {
+function Popup({ accent, style, surface }: { accent: Accent; style: PopupStyle; surface: SurfaceTokens }) {
   return style === "compact" ? (
-    <CompactPreview accent={accent} />
+    <CompactPreview accent={accent} surface={surface} />
   ) : (
-    <InsightsPreview accent={accent} />
+    <InsightsPreview accent={accent} surface={surface} />
   );
 }
 
 // Faithful replica of squiggle.rs render_insights.
-function InsightsPreview({ accent }: { accent: Accent }) {
+function InsightsPreview({ accent, surface }: { accent: Accent; surface: SurfaceTokens }) {
   return (
     <div
       className="w-[300px] overflow-hidden rounded-[20px] shadow-2xl"
-      style={{ background: SURFACE.bg, border: `1.5px solid ${accent.dot}` }}
+      style={{ background: surface.bg, border: `1.5px solid ${accent.dot}` }}
     >
       <div className="px-4 pb-3 pt-3.5">
-        <div className="text-[15px] font-semibold" style={{ color: SURFACE.fg }}>
+        <div className="text-[15px] font-semibold" style={{ color: surface.fg }}>
           Grammar Insights
         </div>
-        <div className="mt-0.5 text-[12px]" style={{ color: SURFACE.muted }}>
+        <div className="mt-0.5 text-[12px]" style={{ color: surface.muted }}>
           This sentence needs a small fix
         </div>
       </div>
@@ -273,27 +337,27 @@ function InsightsPreview({ accent }: { accent: Accent }) {
         <PrimaryPill accent={accent} text="their meeting" />
       </div>
       <div className="mt-0.5 px-2.5 pb-1">
-        <div className="px-3.5 py-2 text-[14px]" style={{ color: SURFACE.alt }}>
+        <div className="px-3.5 py-2 text-[14px]" style={{ color: surface.alt }}>
           there meeting
         </div>
         <div
           className="border-t px-3.5 py-2 text-[14px]"
-          style={{ borderColor: SURFACE.line, color: SURFACE.alt }}
+          style={{ borderColor: surface.line, color: surface.alt }}
         >
           they’re meeting
         </div>
       </div>
-      <Footer accent={accent} />
+      <Footer accent={accent} surface={surface} />
     </div>
   );
 }
 
 // Faithful replica of squiggle.rs render_compact.
-function CompactPreview({ accent }: { accent: Accent }) {
+function CompactPreview({ accent, surface }: { accent: Accent; surface: SurfaceTokens }) {
   return (
     <div
       className="w-[300px] overflow-hidden rounded-[20px] px-4 pb-0 pt-3.5 shadow-2xl"
-      style={{ background: SURFACE.bg, border: `1.5px solid ${accent.dot}` }}
+      style={{ background: surface.bg, border: `1.5px solid ${accent.dot}` }}
     >
       {/* Category label */}
       <div className="flex items-center gap-2">
@@ -308,10 +372,10 @@ function CompactPreview({ accent }: { accent: Accent }) {
 
       {/* before → pill */}
       <div className="mt-2.5 flex flex-wrap items-center gap-2">
-        <span className="text-[15px] line-through" style={{ color: SURFACE.muted }}>
+        <span className="text-[15px] line-through" style={{ color: surface.muted }}>
           more better
         </span>
-        <span className="text-[15px]" style={{ color: SURFACE.muted }}>
+        <span className="text-[15px]" style={{ color: surface.muted }}>
           →
         </span>
         <PrimaryPill accent={accent} text="better" />
@@ -326,10 +390,10 @@ function CompactPreview({ accent }: { accent: Accent }) {
           <span
             key={c.t}
             className="inline-flex items-start rounded-lg px-3 py-1.5 text-[14px]"
-            style={{ background: SURFACE.chip, color: SURFACE.alt }}
+            style={{ background: surface.chip, color: surface.alt }}
           >
             {c.t}
-            <sup className="ml-0.5 text-[10px]" style={{ color: SURFACE.muted }}>
+            <sup className="ml-0.5 text-[10px]" style={{ color: surface.muted }}>
               {c.n}
             </sup>
           </span>
@@ -337,26 +401,26 @@ function CompactPreview({ accent }: { accent: Accent }) {
       </div>
 
       {/* explanation */}
-      <p className="mt-3 text-[13px] leading-snug" style={{ color: SURFACE.muted }}>
+      <p className="mt-3 text-[13px] leading-snug" style={{ color: surface.muted }}>
         Using{" "}
-        <span className="font-semibold" style={{ color: SURFACE.fg }}>
+        <span className="font-semibold" style={{ color: surface.fg }}>
           more
         </span>{" "}
         with a comparative adjective is redundant.
       </p>
 
       <div className="-mx-4 mt-3">
-        <Footer accent={accent} />
+        <Footer accent={accent} surface={surface} />
       </div>
     </div>
   );
 }
 
-function Footer({ accent }: { accent: Accent }) {
+function Footer({ accent, surface }: { accent: Accent; surface: SurfaceTokens }) {
   return (
     <div
       className="flex items-center gap-6 px-4 py-3 text-[13px]"
-      style={{ background: SURFACE.footer, color: SURFACE.fg }}
+      style={{ background: surface.footer, color: surface.fg }}
     >
       <span className="flex items-center gap-1.5">
         <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke={accent.dot} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
@@ -365,7 +429,7 @@ function Footer({ accent }: { accent: Accent }) {
         </svg>
         Add to dictionary
       </span>
-      <span className="flex items-center gap-1.5" style={{ color: SURFACE.muted }}>
+      <span className="flex items-center gap-1.5" style={{ color: surface.muted }}>
         <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
           <path d="M6 6l12 12M18 6L6 18" />
         </svg>

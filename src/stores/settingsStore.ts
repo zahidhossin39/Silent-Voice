@@ -75,6 +75,7 @@ const DEFAULT_SETTINGS: Settings = {
   audio_clip_limit: 20,
   popup_theme: "violet",
   popup_style: "insights",
+  popup_surface: "dark",
   app_theme: "orange",
 };
 
