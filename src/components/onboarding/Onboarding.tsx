@@ -40,15 +40,13 @@ function recommendId(hw: HardwareInfo | null): string {
 }
 
 const STEPS = [
-  "Welcome",
-  "Pick a model",
-  "Check your mic",
-  "Set your hotkey",
-  "Try it",
-  "Done",
+  "Choose a model",
+  "Microphone",
+  "Push-to-talk key",
+  "Say something",
 ] as const;
 
-const MIC_STEP = 2;
+const MIC_STEP = 1;
 
 export default function Onboarding() {
   const { hardware, loading } = useHardwareInfo();
@@ -149,76 +147,101 @@ export default function Onboarding() {
       : 0;
 
   return (
-    <div className="flex h-full items-center justify-center overflow-y-auto bg-sv-bg px-6 py-8">
-      <div className="w-full max-w-xl">
-        {/* Step dots */}
-        <div className="mb-6 flex items-center justify-center gap-2">
-          {STEPS.map((label, i) => (
-            <div
-              key={label}
-              className={`h-1.5 rounded-full transition-all ${
-                i === step
-                  ? "w-6 bg-sv-accent"
-                  : i < step
-                  ? "w-1.5 bg-sv-accent/50"
-                  : "w-1.5 bg-sv-surface-2"
-              }`}
-            />
-          ))}
+    <div className="flex h-full bg-sv-bg">
+      <aside className="flex w-56 shrink-0 flex-col border-r border-sv-border bg-sv-surface px-6 py-7">
+        <div>
+          {STEPS.map((label, i) => {
+            const isCompleted = i < step;
+            const isCurrent = i === step;
+            return (
+              <div key={label} className="flex flex-row items-center gap-3 py-2">
+                <div
+                  className={`flex h-[19px] w-[19px] shrink-0 items-center justify-center rounded-full border text-[10px] font-semibold ${
+                    isCompleted
+                      ? "border-sv-good bg-sv-good text-sv-bg"
+                      : isCurrent
+                      ? "border-sv-accent text-sv-accent"
+                      : "border-sv-border text-sv-muted"
+                  }`}
+                >
+                  {isCompleted ? "✓" : i + 1}
+                </div>
+                <div
+                  className={`text-[13px] ${
+                    isCompleted
+                      ? "text-sv-muted"
+                      : isCurrent
+                      ? "font-semibold text-sv-text"
+                      : "text-sv-muted"
+                  }`}
+                >
+                  {label}
+                </div>
+              </div>
+            );
+          })}
         </div>
 
-        <div className="rounded-2xl border border-sv-border bg-sv-surface p-8 shadow-xl">
-          {step === 0 && (
-            <div className="text-center">
-              <svg viewBox="0 0 1024 1024" className="mx-auto mb-4 h-14 w-14 rounded-2xl">
-                <rect x="0" y="0" width="1024" height="1024" rx="224" fill="#0d0f14"/>
-                <rect x="232" y="432" width="80" height="160" rx="40" fill="#f97316"/>
-                <rect x="360" y="352" width="80" height="320" rx="40" fill="#f97316"/>
-                <rect x="488" y="252" width="80" height="520" rx="40" fill="#ffffff"/>
-                <rect x="616" y="352" width="80" height="320" rx="40" fill="#f97316"/>
-                <rect x="744" y="432" width="80" height="160" rx="40" fill="#f97316"/>
-              </svg>
-              <h1 className="text-xl font-semibold">Welcome to Silent Voice</h1>
-              <p className="mt-2 text-sm text-sv-muted">
-                Free, local-first voice-to-text. Hold a hotkey, speak, release
-                — your words appear at the cursor. Everything runs on your
-                device; nothing is sent anywhere unless you turn on a cloud
-                provider yourself.
-              </p>
-              <p className="mt-3 text-sm text-sv-muted">
-                A few quick steps and you'll be dictating.
-              </p>
-              <button
-                onClick={() => setStep(1)}
-                className="mt-6 w-full rounded-lg bg-sv-accent px-4 py-2.5 text-sm font-medium text-sv-on-accent hover:bg-sv-accent-hover"
-              >
-                Get started
-              </button>
-            </div>
-          )}
-
-          {step === 1 && (
+        <div className="mt-6 border-t border-sv-border pt-5">
+          {selDownloading || selDownloaded ? (
             <div>
-              <h2 className="text-lg font-semibold">Pick a starting model</h2>
-              <p className="mt-1 text-sm text-sv-muted">
-                Speed depends on your graphics card and CPU — bigger isn't
-                better on a machine without a dedicated GPU. You can switch
-                anytime in Model Store.
-              </p>
-
-              {reco && (
-                <div className="mt-4 rounded-xl border border-sv-border bg-sv-surface-2 p-4 text-sm">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-medium uppercase tracking-wide text-sv-muted">
-                      Your device
-                    </span>
-                    <span className="rounded-full bg-sv-accent px-2 py-0.5 text-[10px] font-medium text-sv-on-accent">
-                      {reco.tier}
-                    </span>
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-sv-muted">
+                {selDownloaded ? "Ready" : "Downloading"}
+              </div>
+              <div className="mt-1 text-[12.5px]">
+                {STT_MODELS.find((m) => m.id === selectedId)?.label}
+              </div>
+              {selDownloading ? (
+                <div className="mt-2">
+                  <div className="h-1 w-full overflow-hidden rounded-full bg-sv-surface-2">
+                    <div
+                      className="h-full bg-sv-accent transition-all"
+                      style={{ width: `${selPct}%` }}
+                    />
                   </div>
-                  <p className="mt-1.5 text-xs text-sv-muted">{reco.reason}</p>
+                  <div className="mt-1 text-[11px] text-sv-muted">
+                    {selPct}% · {Math.max(0, Math.round(((selDl?.total_bytes ?? 0) - (selDl?.downloaded_bytes ?? 0)) / 1048576))} MB left
+                  </div>
                 </div>
+              ) : (
+                <div className="mt-1 text-[11px] text-sv-good">Ready to use</div>
               )}
+            </div>
+          ) : !loading && hardware ? (
+            <div>
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-sv-muted">
+                Your PC
+              </div>
+              <div className="mt-1 text-[12.5px]">
+                {hardware.logical_cores} cores · {hardware.gpu_vram_gb ? "dedicated GPU" : "no dedicated GPU"}
+              </div>
+              <div className="mt-1 text-[11px] text-sv-muted">
+                {reco?.reason ?? "Smaller models will feel faster here."}
+              </div>
+            </div>
+          ) : null}
+        </div>
+
+        {step < 4 && (
+          <div className="mt-auto">
+            <button
+              onClick={finish}
+              className="text-left text-xs text-sv-muted hover:text-sv-text"
+            >
+              Skip setup
+            </button>
+          </div>
+        )}
+      </aside>
+
+      <div className="flex-1 overflow-y-auto px-9 py-8">
+        <div className="mx-auto max-w-lg">
+          {step === 0 && (
+            <div>
+              <h2 className="text-lg font-semibold">Which voice model?</h2>
+              <p className="mt-1 text-sm text-sv-muted">
+                This does the listening. You can change it later in Model Store.
+              </p>
 
               <div className="mt-4 space-y-2">
                 {loading ? (
@@ -275,63 +298,28 @@ export default function Onboarding() {
                 )}
               </div>
 
-              {/* Download state for the selected model */}
-              <div className="mt-4">
-                {selDownloaded ? (
-                  <div className="rounded-lg bg-sv-good/10 px-3 py-2 text-xs text-sv-good">
-                    ✓ Downloaded and ready
-                  </div>
-                ) : selDownloading ? (
-                  <div>
-                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-sv-surface-2">
-                      <div
-                        className="h-full bg-sv-accent transition-all"
-                        style={{ width: `${selPct}%` }}
-                      />
-                    </div>
-                    <p className="mt-1 text-[11px] text-sv-muted">
-                      Downloading… {selPct}%
-                    </p>
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => {
-                      applySelection(selectedId);
-                      download(selectedId);
-                    }}
-                    className="w-full rounded-lg bg-sv-accent px-3 py-2 text-xs font-medium text-sv-on-accent hover:bg-sv-accent-hover"
-                  >
-                    Download selected model
-                  </button>
-                )}
-              </div>
-
-              <div className="mt-5 flex gap-2">
-                <button
-                  onClick={() => setStep(0)}
-                  className="rounded-lg border border-sv-border px-4 py-2 text-sm text-sv-muted hover:text-sv-text"
-                >
-                  Back
-                </button>
+              <div className="mt-5">
                 <button
                   onClick={() => {
                     applySelection(selectedId);
-                    setStep(2);
+                    if (!selDownloaded && !selDownloading) {
+                      download(selectedId);
+                    }
+                    setStep(1);
                   }}
-                  className="flex-1 rounded-lg bg-sv-accent px-4 py-2 text-sm font-medium text-sv-on-accent hover:bg-sv-accent-hover"
+                  className="w-full rounded-lg bg-sv-accent px-4 py-2.5 text-sm font-medium text-sv-on-accent hover:bg-sv-accent-hover"
                 >
-                  {selDownloaded ? "Continue" : "Continue — I'll download later"}
+                  {selDownloaded ? "Continue" : "Download and continue"}
                 </button>
               </div>
             </div>
           )}
 
-          {step === 2 && (
+          {step === 1 && (
             <div>
-              <h2 className="text-lg font-semibold">Check your microphone</h2>
+              <h2 className="text-lg font-semibold">Can it hear you?</h2>
               <p className="mt-1 text-sm text-sv-muted">
-                Pick the mic you'll dictate with, then speak — the bar should
-                move. If it doesn't, try another device.
+                Speak normally. If the meter doesn't move, pick a different microphone below.
               </p>
 
               <select
@@ -361,13 +349,13 @@ export default function Onboarding() {
 
               <div className="mt-6 flex gap-2">
                 <button
-                  onClick={() => setStep(1)}
+                  onClick={() => setStep(0)}
                   className="rounded-lg border border-sv-border px-4 py-2 text-sm text-sv-muted hover:text-sv-text"
                 >
                   Back
                 </button>
                 <button
-                  onClick={() => setStep(3)}
+                  onClick={() => setStep(2)}
                   className="flex-1 rounded-lg bg-sv-accent px-4 py-2 text-sm font-medium text-sv-on-accent hover:bg-sv-accent-hover"
                 >
                   Continue
@@ -376,7 +364,7 @@ export default function Onboarding() {
             </div>
           )}
 
-          {step === 3 && (
+          {step === 2 && (
             <div>
               <h2 className="text-lg font-semibold">Set your push-to-talk key</h2>
               <p className="mt-1 text-sm text-sv-muted">
@@ -395,13 +383,13 @@ export default function Onboarding() {
               </div>
               <div className="mt-6 flex gap-2">
                 <button
-                  onClick={() => setStep(2)}
+                  onClick={() => setStep(1)}
                   className="rounded-lg border border-sv-border px-4 py-2 text-sm text-sv-muted hover:text-sv-text"
                 >
                   Back
                 </button>
                 <button
-                  onClick={() => setStep(4)}
+                  onClick={() => setStep(3)}
                   className="flex-1 rounded-lg bg-sv-accent px-4 py-2 text-sm font-medium text-sv-on-accent hover:bg-sv-accent-hover"
                 >
                   Continue
@@ -410,7 +398,7 @@ export default function Onboarding() {
             </div>
           )}
 
-          {step === 4 && (
+          {step === 3 && (
             <div>
               <h2 className="text-lg font-semibold">Try it out</h2>
               <p className="mt-1 text-sm text-sv-muted">
@@ -420,8 +408,8 @@ export default function Onboarding() {
               </p>
               {!selfTestReady ? (
                 <div className="mt-4 rounded-xl border border-sv-border bg-sv-surface-2 p-4 text-sm text-sv-muted">
-                  Download your model on the first step to try a live
-                  transcription — or skip this and do it anytime later.
+                  Your model is still downloading — watch the rail on the left.
+                  You can skip this and try it anytime later.
                 </div>
               ) : (
                 <div className="mt-4 space-y-3">
@@ -454,14 +442,14 @@ export default function Onboarding() {
               )}
               <div className="mt-6 flex gap-2">
                 <button
-                  onClick={() => setStep(3)}
+                  onClick={() => setStep(2)}
                   disabled={selfTestRecording || selfTesting}
                   className="rounded-lg border border-sv-border px-4 py-2 text-sm text-sv-muted hover:text-sv-text disabled:opacity-50"
                 >
                   Back
                 </button>
                 <button
-                  onClick={() => setStep(5)}
+                  onClick={() => setStep(4)}
                   disabled={selfTestRecording || selfTesting}
                   className="flex-1 rounded-lg bg-sv-accent px-4 py-2 text-sm font-medium text-sv-on-accent hover:bg-sv-accent-hover disabled:opacity-50"
                 >
@@ -471,7 +459,7 @@ export default function Onboarding() {
             </div>
           )}
 
-          {step === 5 && (
+          {step === 4 && (
             <div className="text-center">
               <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-sv-good/15 text-sv-good">
                 <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -494,15 +482,6 @@ export default function Onboarding() {
             </div>
           )}
         </div>
-
-        {step > 0 && step < 5 && (
-          <button
-            onClick={finish}
-            className="mx-auto mt-4 block text-xs text-sv-muted hover:text-sv-text"
-          >
-            Skip setup
-          </button>
-        )}
       </div>
     </div>
   );
