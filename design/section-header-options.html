@@ -1,0 +1,96 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Section header — three non-gradient designs</title>
+<style>
+  :root{
+    --bg:#0b0e14; --surface:#131722; --surface2:#1b2030; --border:#262c3d;
+    --text:#e6e9f0; --muted:#8b93a7; --accent:#f43f5e; --good:#22c55e;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;padding:40px 34px 90px;background:#05070c;color:var(--text);
+    font-family:ui-sans-serif,system-ui,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased;}
+  h1{font-size:21px;font-weight:650;margin:0 0 4px;}
+  .lead{color:var(--muted);font-size:13px;max-width:760px;line-height:1.5;margin:0 0 6px;}
+  .lead b{color:#cfd4e0;}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:26px;margin-top:26px;align-items:start;}
+  .col{display:flex;flex-direction:column;gap:14px;}
+  .optlabel .big{font-size:15px;font-weight:700;}
+  .optlabel .desc{display:block;font-size:12px;color:var(--muted);line-height:1.45;margin-top:2px;}
+
+  .card{border:1px solid var(--border);border-radius:14px;background:var(--surface);overflow:hidden;}
+  .ic{display:grid;place-items:center;flex-shrink:0;}
+  .ic svg{width:17px;height:17px;}
+  .ct{font-size:14px;font-weight:600;}
+  .cd{font-size:11.5px;color:var(--muted);margin-top:2px;line-height:1.4;}
+  .rows{padding:6px 18px 10px;}
+  .row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 0;border-bottom:1px solid rgba(255,255,255,.06);}
+  .row:last-child{border-bottom:0;}
+  .rl{font-size:13px;}.rh{font-size:11px;color:var(--muted);margin-top:2px;max-width:40ch;line-height:1.4;}
+  .tog{width:40px;height:23px;border-radius:999px;background:var(--accent);position:relative;flex-shrink:0;}
+  .tog.off{background:#3a4152;}
+  .tog i{position:absolute;top:3px;left:20px;width:17px;height:17px;border-radius:50%;background:#fff;}
+  .tog.off i{left:3px;}
+
+  /* CURRENT (reference) — the radial glow */
+  .cur .chead{display:flex;align-items:center;gap:11px;padding:14px 18px;border-bottom:1px solid var(--border);
+    background-image:radial-gradient(140px 70px at 34px 50%, color-mix(in srgb,var(--accent) 22%,transparent), transparent 72%),
+      linear-gradient(to right, color-mix(in srgb,var(--accent) 9%,transparent) 0%, color-mix(in srgb,var(--accent) 4%,transparent) 38%, transparent 68%);}
+  .cur .ic{width:30px;height:30px;border-radius:9px;background:color-mix(in srgb,var(--accent) 20%,transparent);color:var(--accent);}
+
+  /* A · Solid tile + top keyline */
+  .a .chead{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--border);position:relative;}
+  .a .chead::before{content:"";position:absolute;top:0;left:0;right:0;height:2px;background:var(--accent);}
+  .a .ic{width:34px;height:34px;border-radius:9px;background:var(--accent);color:#fff;}
+
+  /* B · Left accent bar, flat */
+  .b .chead{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--border);border-left:3px solid var(--accent);}
+  .b .ic{width:32px;height:32px;border-radius:9px;background:var(--surface2);border:1px solid var(--border);color:var(--accent);}
+
+  /* C · Minimal: no header fill, hairline only */
+  .c .chead{display:flex;align-items:center;gap:11px;padding:15px 18px 12px;}
+  .c .ic{width:30px;height:30px;border-radius:8px;background:transparent;color:var(--accent);}
+  .c .divider{height:1px;background:var(--border);margin:0 18px;}
+</style>
+</head>
+<body>
+  <h1>Section header — three ways, no gradient</h1>
+  <p class="lead">The current header uses a radial + linear color <b>fade</b> behind the icon — that soft glow is the “AI slop” tell. Below: the current one for reference, then three headers built from <b>solid shapes and crisp lines</b>. Same content, rose accent to match your theme.</p>
+
+  <div class="grid">
+    <div class="col">
+      <div class="optlabel"><span class="big">Current</span><span class="desc">radial glow behind the icon — the look you want gone</span></div>
+      <div class="card cur">
+        <div class="chead"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4"/></svg></span><div><div class="ct">Recording</div><div class="cd">How the push-to-talk hotkey behaves and how your voice is captured.</div></div></div>
+        <div class="rows"><div class="row"><div><div class="rl">Double-tap to lock recording</div><div class="rh">Tap the hotkey twice to keep recording hands-free</div></div><span class="tog"><i></i></span></div><div class="row"><div><div class="rl">Auto-hide the pill</div><div class="rh">Fades ~5s after it's done</div></div><span class="tog off"><i></i></span></div></div>
+      </div>
+    </div>
+
+    <div class="col">
+      <div class="optlabel"><span class="big">A · Solid tile + keyline</span><span class="desc">filled accent icon, a 2px accent line across the top edge</span></div>
+      <div class="card a">
+        <div class="chead"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4"/></svg></span><div><div class="ct">Recording</div><div class="cd">How the push-to-talk hotkey behaves and how your voice is captured.</div></div></div>
+        <div class="rows"><div class="row"><div><div class="rl">Double-tap to lock recording</div><div class="rh">Tap the hotkey twice to keep recording hands-free</div></div><span class="tog"><i></i></span></div><div class="row"><div><div class="rl">Auto-hide the pill</div><div class="rh">Fades ~5s after it's done</div></div><span class="tog off"><i></i></span></div></div>
+      </div>
+    </div>
+
+    <div class="col">
+      <div class="optlabel"><span class="big">B · Left accent bar</span><span class="desc">flat surface, a solid rule down the left of the header — editorial</span></div>
+      <div class="card b">
+        <div class="chead"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4"/></svg></span><div><div class="ct">Recording</div><div class="cd">How the push-to-talk hotkey behaves and how your voice is captured.</div></div></div>
+        <div class="rows"><div class="row"><div><div class="rl">Double-tap to lock recording</div><div class="rh">Tap the hotkey twice to keep recording hands-free</div></div><span class="tog"><i></i></span></div><div class="row"><div><div class="rl">Auto-hide the pill</div><div class="rh">Fades ~5s after it's done</div></div><span class="tog off"><i></i></span></div></div>
+      </div>
+    </div>
+
+    <div class="col">
+      <div class="optlabel"><span class="big">C · Minimal hairline</span><span class="desc">no header fill at all — icon, title, and a thin divider</span></div>
+      <div class="card c">
+        <div class="chead"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4"/></svg></span><div><div class="ct">Recording</div><div class="cd">How the push-to-talk hotkey behaves and how your voice is captured.</div></div></div>
+        <div class="divider"></div>
+        <div class="rows"><div class="row"><div><div class="rl">Double-tap to lock recording</div><div class="rh">Tap the hotkey twice to keep recording hands-free</div></div><span class="tog"><i></i></span></div><div class="row"><div><div class="rl">Auto-hide the pill</div><div class="rh">Fades ~5s after it's done</div></div><span class="tog off"><i></i></span></div></div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

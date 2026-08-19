@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Silent Voice — “Change” popup, colour variants</title>
+<style>
+  :root{
+    --card-bg:#151a26; --card-fg:#e8ebf2; --card-muted:#8b93a7;
+    --line:rgba(255,255,255,.10); --inset:rgba(255,255,255,.07); --raise:rgba(255,255,255,.05);
+    --shadow:0 4px 12px -2px rgba(0,0,0,.5), 0 16px 40px -8px rgba(0,0,0,.65);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#0b0e14;color:#e6e9f0;
+       font-family:"Segoe UI",system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased}
+  header{padding:28px 32px 0}
+  h1{font-size:20px;font-weight:600;margin:0 0 4px}
+  .sub{font-size:13px;color:#8b93a7;margin:0 0 20px;max-width:760px;line-height:1.6}
+  .bar{display:flex;flex-wrap:wrap;gap:22px;padding:0 32px 20px;align-items:flex-end}
+  .grp{display:flex;flex-direction:column;gap:7px}
+  .grp>span{font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:#8b93a7}
+  .opts{display:flex;gap:6px;flex-wrap:wrap}
+  .opt{background:#1b2030;border:1px solid #262c3d;color:#e6e9f0;font:inherit;font-size:12px;
+       padding:6px 12px;border-radius:8px;cursor:pointer;transition:border-color .12s,color .12s}
+  .opt:hover{border-color:#3d465e}
+  .opt[aria-pressed="true"]{border-color:#f97316;color:#f97316}
+
+  #stage{padding:26px 32px 70px;min-height:100vh}
+  #stage.doc{background:#fff}
+  #stage.ide{background:#1e1e1e}
+  #stage.slack{background:#3f0e40}
+  #stage.grey{background:#f1f1f1}
+  #stage.photo{background:radial-gradient(circle at 20% 25%,#f472b6 0,transparent 44%),
+    radial-gradient(circle at 78% 30%,#38bdf8 0,transparent 46%),
+    radial-gradient(circle at 45% 85%,#fbbf24 0,transparent 50%),
+    linear-gradient(135deg,#7c3aed,#0ea5e9 55%,#22c55e)}
+  .cbsim{filter:url(#deuter)}
+
+  .grid{display:flex;flex-wrap:wrap;gap:34px;align-items:flex-start}
+  .slot{width:340px}
+  .slot h2{font-size:12px;font-weight:600;margin:0 0 3px}
+  .slot p.why-this{font-size:11.5px;line-height:1.55;margin:0 0 11px}
+  #stage.doc .slot h2,#stage.grey .slot h2{color:#1a1e28}
+  #stage.doc .why-this,#stage.grey .why-this{color:#5c6473}
+  #stage.ide .slot h2{color:#e4e4e4}#stage.ide .why-this{color:#9d9d9d}
+  #stage.slack .slot h2,#stage.photo .slot h2{color:#fff}
+  #stage.slack .why-this,#stage.photo .why-this{color:rgba(255,255,255,.78)}
+
+  .sw{display:flex;gap:5px;margin-top:10px}
+  .sw i{width:15px;height:15px;border-radius:4px;display:block;border:1px solid rgba(255,255,255,.14)}
+
+  /* ---------------- card ---------------- */
+  .card{width:340px;border-radius:14px;overflow:hidden;background:var(--card-bg);color:var(--card-fg);
+        border:1px solid var(--line);box-shadow:var(--shadow),inset 0 1px 0 0 var(--inset);font-size:14px}
+  .pad{padding:13px 17px}
+  .cat{display:flex;align-items:center;gap:7px;margin-bottom:10px}
+  .cat i{width:7px;height:7px;border-radius:50%;flex:none}
+  .cat b{font-size:10.5px;letter-spacing:.075em;text-transform:uppercase;font-weight:600;color:var(--card-muted)}
+
+  .change{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:11px}
+  .old{font-size:15px;text-decoration:line-through;text-decoration-thickness:1px}
+  .new{font-size:15px;font-weight:600}
+  .arw{width:13px;height:13px;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;stroke:var(--card-muted);flex:none}
+  .chip{padding:3px 9px;border-radius:7px}
+
+  .why{font-size:12.5px;line-height:1.5;color:var(--card-muted);margin:0}
+  .why code{font-family:Consolas,monospace;font-size:12px;color:var(--card-fg);opacity:.9}
+
+  .apply{display:inline-flex;align-items:center;gap:8px;border:none;cursor:pointer;font:inherit;
+         font-size:13px;font-weight:600;padding:7px 14px;border-radius:9px}
+  .kbd{font-family:Consolas,monospace;font-size:10.5px;font-weight:600;background:rgba(0,0,0,.2);border-radius:4px;padding:2px 5px}
+
+  .foot{display:flex;align-items:center;gap:16px;padding:10px 17px;border-top:1px solid var(--line);background:var(--raise)}
+  .fbtn{background:none;border:none;cursor:pointer;font:inherit;font-size:12px;color:var(--card-muted);
+        display:inline-flex;align-items:center;gap:6px;padding:0}
+  .fbtn:hover{color:var(--card-fg)}
+  .ico{width:14px;height:14px;flex:none;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute">
+  <filter id="deuter"><feColorMatrix type="matrix" values="
+    0.367 0.861 -0.228 0 0
+    0.280 0.673  0.047 0 0
+   -0.012 0.043  0.969 0 0
+    0     0      0     1 0"/></filter>
+</svg>
+
+<header>
+  <h1>“Change” popup — colour variants</h1>
+  <p class="sub">Same layout you picked. Only the colour strategy differs. Every accent is kept under OKLCH chroma&nbsp;0.14 so it can’t vibrate on dark, and every variant encodes the change with more than hue — strikethrough, arrow, weight and brightness — so it still reads with colour vision deficiency. Turn on the simulator to check.</p>
+</header>
+
+<div class="bar">
+  <div class="grp"><span>Background</span>
+    <div class="opts" id="bgOpts">
+      <button class="opt" data-bg="doc" aria-pressed="true">White doc</button>
+      <button class="opt" data-bg="ide" aria-pressed="false">Dark IDE</button>
+      <button class="opt" data-bg="slack" aria-pressed="false">Slack</button>
+      <button class="opt" data-bg="grey" aria-pressed="false">Grey app</button>
+      <button class="opt" data-bg="photo" aria-pressed="false">Photo</button>
+    </div>
+  </div>
+  <div class="grp"><span>Card surface</span>
+    <div class="opts" id="thOpts">
+      <button class="opt" data-th="sv" aria-pressed="true">Silent Voice dark</button>
+      <button class="opt" data-th="ink" aria-pressed="false">Neutral ink</button>
+      <button class="opt" data-th="light" aria-pressed="false">Light</button>
+    </div>
+  </div>
+  <div class="grp"><span>Check</span>
+    <div class="opts" id="cbOpts">
+      <button class="opt" data-cb="off" aria-pressed="true">Normal vision</button>
+      <button class="opt" data-cb="on" aria-pressed="false">Simulate red–green blindness</button>
+    </div>
+  </div>
+</div>
+
+<div id="stage" class="doc">
+  <div class="grid">
+
+    <div class="slot">
+      <h2>1 · Supportive violet</h2>
+      <p class="why-this">Apple Intelligence’s approach. Violet reads as “improved”, never “wrong”. No red anywhere.</p>
+      <div class="card">
+        <div class="pad">
+          <div class="cat"><i style="background:#a78bfa"></i><b>Grammar</b></div>
+          <div class="change">
+            <span class="old" style="color:#7d8598">more better</span>
+            <svg class="arw" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            <span class="new chip" style="color:#c9b6fd;background:rgba(167,139,250,.14)">better</span>
+          </div>
+          <p class="why">Using <code>more</code> with a comparative adjective is redundant.</p>
+        </div>
+        <div class="foot">
+          <button class="apply" style="background:#7c6bd6;color:#fff">Apply <span class="kbd">↵</span></button>
+          <button class="fbtn" style="margin-left:auto">Dictionary</button>
+          <button class="fbtn">Dismiss</button>
+        </div>
+      </div>
+      <div class="sw"><i style="background:#7d8598"></i><i style="background:#a78bfa"></i><i style="background:#7c6bd6"></i></div>
+    </div>
+
+    <div class="slot">
+      <h2>2 · Calm teal</h2>
+      <p class="why-this">Teal keeps green’s “renewal” without the pass/fail stoplight feel. Coolest, most neutral.</p>
+      <div class="card">
+        <div class="pad">
+          <div class="cat"><i style="background:#2dd4bf"></i><b>Grammar</b></div>
+          <div class="change">
+            <span class="old" style="color:#7d8598">more better</span>
+            <svg class="arw" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            <span class="new chip" style="color:#7fe3d4;background:rgba(45,212,191,.13)">better</span>
+          </div>
+          <p class="why">Using <code>more</code> with a comparative adjective is redundant.</p>
+        </div>
+        <div class="foot">
+          <button class="apply" style="background:#2a9d8f;color:#04211d">Apply <span class="kbd">↵</span></button>
+          <button class="fbtn" style="margin-left:auto">Dictionary</button>
+          <button class="fbtn">Dismiss</button>
+        </div>
+      </div>
+      <div class="sw"><i style="background:#7d8598"></i><i style="background:#2dd4bf"></i><i style="background:#2a9d8f"></i></div>
+    </div>
+
+    <div class="slot">
+      <h2>3 · Amber → blue</h2>
+      <p class="why-this">GitHub’s colourblind diff palette. The only pair that stays fully distinct for every reader.</p>
+      <div class="card">
+        <div class="pad">
+          <div class="cat"><i style="background:#388bfd"></i><b>Grammar</b></div>
+          <div class="change">
+            <span class="old chip" style="color:#e0a370;background:rgba(240,136,62,.12)">more better</span>
+            <svg class="arw" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            <span class="new chip" style="color:#79b8ff;background:rgba(56,139,253,.15)">better</span>
+          </div>
+          <p class="why">Using <code>more</code> with a comparative adjective is redundant.</p>
+        </div>
+        <div class="foot">
+          <button class="apply" style="background:#2f6fd0;color:#fff">Apply <span class="kbd">↵</span></button>
+          <button class="fbtn" style="margin-left:auto">Dictionary</button>
+          <button class="fbtn">Dismiss</button>
+        </div>
+      </div>
+      <div class="sw"><i style="background:#e0a370"></i><i style="background:#79b8ff"></i><i style="background:#2f6fd0"></i></div>
+    </div>
+
+    <div class="slot">
+      <h2>4 · One accent</h2>
+      <p class="why-this">Only one hue in the whole card — your orange. The old text is pure grey. Quietest option.</p>
+      <div class="card">
+        <div class="pad">
+          <div class="cat"><i style="background:#f97316"></i><b>Grammar</b></div>
+          <div class="change">
+            <span class="old" style="color:#767d8f">more better</span>
+            <svg class="arw" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            <span class="new chip" style="color:#fbbf87;background:rgba(249,115,22,.13)">better</span>
+          </div>
+          <p class="why">Using <code>more</code> with a comparative adjective is redundant.</p>
+        </div>
+        <div class="foot">
+          <button class="apply" style="background:#f97316;color:#1a1200">Apply <span class="kbd">↵</span></button>
+          <button class="fbtn" style="margin-left:auto">Dictionary</button>
+          <button class="fbtn">Dismiss</button>
+        </div>
+      </div>
+      <div class="sw"><i style="background:#767d8f"></i><i style="background:#fbbf87"></i><i style="background:#f97316"></i></div>
+    </div>
+
+    <div class="slot">
+      <h2>5 · Soft rows</h2>
+      <p class="why-this">Both sides get a tinted container, GitHub-diff style. Most “colourful”, still low chroma.</p>
+      <div class="card">
+        <div class="pad">
+          <div class="cat"><i style="background:#f472b6"></i><b>Grammar</b></div>
+          <div style="display:flex;flex-direction:column;gap:5px;margin-bottom:11px">
+            <div style="display:flex;align-items:center;gap:9px;padding:6px 10px;border-radius:8px;background:rgba(244,114,182,.10)">
+              <span style="font-family:Consolas,monospace;font-size:12px;color:#e59ac4">−</span>
+              <span class="old" style="color:#e59ac4">more better</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:9px;padding:6px 10px;border-radius:8px;background:rgba(94,208,177,.11)">
+              <span style="font-family:Consolas,monospace;font-size:12px;color:#7fdcc0">+</span>
+              <span class="new" style="color:#7fdcc0">better</span>
+            </div>
+          </div>
+          <p class="why">Using <code>more</code> with a comparative adjective is redundant.</p>
+        </div>
+        <div class="foot">
+          <button class="apply" style="background:#3f9e85;color:#04211b">Apply <span class="kbd">↵</span></button>
+          <button class="fbtn" style="margin-left:auto">Dictionary</button>
+          <button class="fbtn">Dismiss</button>
+        </div>
+      </div>
+      <div class="sw"><i style="background:#e59ac4"></i><i style="background:#7fdcc0"></i><i style="background:#3f9e85"></i></div>
+    </div>
+
+    <div class="slot">
+      <h2>6 · Brightness only</h2>
+      <p class="why-this">No hue difference at all — the fix is simply brighter and heavier. Reads identically for every eye.</p>
+      <div class="card">
+        <div class="pad">
+          <div class="cat"><i style="background:#8b93a7"></i><b>Grammar</b></div>
+          <div class="change">
+            <span class="old" style="color:#6b7386">more better</span>
+            <svg class="arw" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            <span class="new" style="color:#ffffff;font-size:16px">better</span>
+          </div>
+          <p class="why">Using <code>more</code> with a comparative adjective is redundant.</p>
+        </div>
+        <div class="foot">
+          <button class="apply" style="background:#e8ebf2;color:#11151f">Apply <span class="kbd" style="background:rgba(0,0,0,.12)">↵</span></button>
+          <button class="fbtn" style="margin-left:auto">Dictionary</button>
+          <button class="fbtn">Dismiss</button>
+        </div>
+      </div>
+      <div class="sw"><i style="background:#6b7386"></i><i style="background:#fff"></i><i style="background:#e8ebf2"></i></div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  const TH={
+    sv   :{bg:'#151a26',fg:'#e8ebf2',muted:'#8b93a7',line:'rgba(255,255,255,.10)',inset:'rgba(255,255,255,.07)',raise:'rgba(255,255,255,.05)',
+           shadow:'0 4px 12px -2px rgba(0,0,0,.5), 0 16px 40px -8px rgba(0,0,0,.65)'},
+    ink  :{bg:'#18181b',fg:'#f4f4f5',muted:'#a1a1aa',line:'rgba(255,255,255,.11)',inset:'rgba(255,255,255,.08)',raise:'rgba(255,255,255,.05)',
+           shadow:'0 4px 12px -2px rgba(0,0,0,.5), 0 16px 40px -8px rgba(0,0,0,.6)'},
+    light:{bg:'#ffffff',fg:'#1a1e28',muted:'#5c6473',line:'rgba(0,0,0,.09)',inset:'rgba(255,255,255,.9)',raise:'rgba(0,0,0,.028)',
+           shadow:'0 2px 8px -1px rgba(0,0,0,.10), 0 14px 34px -6px rgba(0,0,0,.16)'}
+  };
+  const r=document.documentElement;
+  const press=(g,el)=>g.querySelectorAll('.opt').forEach(b=>b.setAttribute('aria-pressed',String(b===el)));
+  bgOpts.addEventListener('click',e=>{const b=e.target.closest('.opt');if(!b)return;
+    stage.className=b.dataset.bg+(stage.classList.contains('cbsim')?' cbsim':'');press(bgOpts,b);});
+  thOpts.addEventListener('click',e=>{const b=e.target.closest('.opt');if(!b)return;const t=TH[b.dataset.th];
+    r.style.setProperty('--card-bg',t.bg);r.style.setProperty('--card-fg',t.fg);r.style.setProperty('--card-muted',t.muted);
+    r.style.setProperty('--line',t.line);r.style.setProperty('--inset',t.inset);r.style.setProperty('--raise',t.raise);
+    r.style.setProperty('--shadow',t.shadow);press(thOpts,b);});
+  cbOpts.addEventListener('click',e=>{const b=e.target.closest('.opt');if(!b)return;
+    stage.classList.toggle('cbsim',b.dataset.cb==='on');press(cbOpts,b);});
+</script>
+</body>
+</html>

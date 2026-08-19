@@ -9,11 +9,19 @@ import { llmCompatibility } from "../../../services/recommend";
 import { hfSearchModels, hfModelDetails } from "../../../services/tauriBridge";
 import { useModelStore } from "../../../stores/modelStore";
 import { useSettingsStore } from "../../../stores/settingsStore";
-import type { HfSearchItem, HfModelDetails, LlmModel, HardwareInfo, HfFile, SttModel } from "../../../types";
+import type { HfSearchItem, HfModelDetails, LlmModel, HardwareInfo, HfFile, SttModel, SttPreset } from "../../../types";
 import { formatMB, formatGB } from "../../../services/format";
 import SimpleMarkdown from "./SimpleMarkdown";
 import { STT_MODELS, sttLanguage } from "../../../services/catalog";
-import { accuracyScore, speedScore, deviceRealtimeLabel, llmQualityScore, llmSpeedScore, llmSpeedLabel } from "../../../services/modelMetrics";
+import { accuracyScore, speedScore, llmQualityScore, llmSpeedScore, llmSpeedLabel, accuracyCaption, speedCaption } from "../../../services/modelMetrics";
+
+const CATEGORIES: { id: SttPreset | "all"; label: string }[] = [
+  { id: "all", label: "All categories" },
+  { id: "speed", label: "Speed" },
+  { id: "balanced", label: "Balanced" },
+  { id: "accuracy", label: "Accuracy" },
+  { id: "multilingual", label: "Multilingual" },
+];
 
 // Fixed-width action buttons so Select / Remove / Download stay the same size
 // and line up in a column across rows regardless of which state each row is in.
@@ -116,24 +124,34 @@ export function MetricBar({
 }) {
   const pct = Math.round(Math.max(0, Math.min(1, value)) * 100);
   return (
-    <div className="flex items-center gap-2.5">
-      <div className="w-14 shrink-0 text-right text-[11px] lowercase text-sv-muted">{label}</div>
-      <div className="h-1.5 w-[104px] shrink-0 overflow-hidden rounded-full bg-sv-surface-2">
+    <div className="flex items-center gap-2">
+      <div className="w-12 shrink-0 text-right text-[11px] lowercase text-sv-muted">{label}</div>
+      <div className="h-1.5 w-[84px] shrink-0 overflow-hidden rounded-full bg-sv-surface-2">
         <div
           className="h-full rounded-full transition-all"
           style={{ width: `${pct}%`, backgroundColor: "color-mix(in srgb, var(--color-sv-text) 62%, transparent)" }}
         />
       </div>
       {caption && (
-        <div className="text-[11px] tabular-nums text-sv-muted truncate">{caption}</div>
+        <div className="min-w-[38px] text-right text-[13px] font-semibold tabular-nums text-sv-text">{caption}</div>
       )}
     </div>
   );
 }
 
-export default function HfBrowser({ track, categoryFilter, languageFilter }: { track: "llm" | "stt", categoryFilter?: string, languageFilter?: string }) {
+export default function HfBrowser({ track }: { track: "llm" | "stt" }) {
   const { hardware } = useHardwareInfo();
   
+  // Filters state
+  const [category, setCategory] = useState<SttPreset | "all">("all");
+  const [language, setLanguage] = useState<string>("all");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+
+  const languages = useMemo(() => {
+    const set = new Set(STT_MODELS.map(sttLanguage));
+    return ["all", ...Array.from(set).sort()];
+  }, []);
+
   // Search state
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
@@ -267,8 +285,8 @@ export default function HfBrowser({ track, categoryFilter, languageFilter }: { t
   };
 
   const staffPicksRaw = track === "stt" ? STT_MODELS.filter(m => {
-    if (categoryFilter && categoryFilter !== "all" && m.preset !== categoryFilter) return false;
-    if (languageFilter && languageFilter !== "all" && sttLanguage(m) !== languageFilter) return false;
+    if (category && category !== "all" && m.preset !== category) return false;
+    if (language && language !== "all" && sttLanguage(m) !== language) return false;
     return true;
   }) : [
     // Downloaded HF models live only in customLlm, not in the staff-pick
@@ -281,37 +299,74 @@ export default function HfBrowser({ track, categoryFilter, languageFilter }: { t
   
   const staffPicksSorted = [...staffPicksRaw].sort(sortStaffPicks);
   
+  let recommendedSttId: string | null = null;
+  if (track === "stt" && hardware) {
+    const fits = (m: any) => m.ram_mb / 1024 <= hardware.available_ram_gb * 0.8;
+    const roomy = (m: any) => m.ram_mb / 1024 <= hardware.available_ram_gb;
+    const cands = staffPicksSorted.filter(fits).length ? staffPicksSorted.filter(fits) : staffPicksSorted.filter(roomy);
+    if (cands.length) {
+      recommendedSttId = cands.reduce((best: any, m: any) => (accuracyScore(m.wer) > accuracyScore(best.wer) ? m : best)).id;
+    }
+  }
+  
   const hfResultsVisible = searchResults.filter(item => {
     if (hfShowIncompatible) return true;
     const fit = estimateFitFromParams(item.params_b, hardware, item.id.split("/")[1]);
     return fit !== "bad";
   }).sort(sortHfResults);
 
+  const activeFilters = (track === "stt" ? ((category !== "all" ? 1 : 0) + (language !== "all" ? 1 : 0)) : 0) + (hfShowIncompatible ? 1 : 0);
+
   return (
     <div className="flex h-[calc(100vh-140px)] w-full flex-col gap-4">
-      <div className="flex w-full max-w-[1180px] flex-wrap items-center gap-x-4 gap-y-2">
-        <input
-          type="text"
-          placeholder="Search models on Hugging Face..."
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          className="min-w-[220px] flex-1 rounded-lg border border-sv-border bg-sv-bg px-3 py-1.5 text-sm placeholder:text-sv-muted focus:border-sv-accent focus:outline-none"
-        />
-        <Select value={sort} onChange={setSort}>
-          <option value="downloads">Best Match / Downloads</option>
-          <option value="likes">Most Likes</option>
-          <option value="trending">Trending</option>
-          <option value="lastModified">Recently Updated</option>
-        </Select>
-        <label className="flex items-center gap-2 text-sm text-sv-text cursor-pointer whitespace-nowrap">
-          <input 
-            type="checkbox" 
-            checked={hfShowIncompatible}
-            onChange={(e) => setSettings({ hf_show_incompatible: e.target.checked })}
-            className="rounded border-sv-border bg-sv-surface-2 text-sv-accent focus:ring-sv-accent"
+      <div className="flex w-full max-w-[1180px] flex-col gap-2">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <input
+            type="text"
+            placeholder="Search models on Hugging Face..."
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="min-w-[220px] flex-1 rounded-lg border border-sv-border bg-sv-bg px-3 py-1.5 text-sm placeholder:text-sv-muted focus:border-sv-accent focus:outline-none"
           />
-          Show incompatible
-        </label>
+          <button
+            type="button"
+            onClick={() => setFiltersOpen((o) => !o)}
+            className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition-colors ${filtersOpen ? "border-sv-accent text-sv-accent" : "border-sv-border text-sv-text hover:border-sv-accent"}`}
+          >
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M4 5h16M7 12h10M10 19h4"/></svg>
+            Filters
+            {activeFilters > 0 && <span className="rounded-full bg-sv-accent px-1.5 text-[10px] font-semibold text-sv-on-accent">{activeFilters}</span>}
+          </button>
+        </div>
+        {filtersOpen && (
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-sv-border bg-sv-surface p-3">
+            {track === "stt" && (
+              <Select value={category} onChange={(v) => setCategory(v as SttPreset | "all")}>
+                {CATEGORIES.map((c) => (<option key={c.id} value={c.id}>{c.label}</option>))}
+              </Select>
+            )}
+            {track === "stt" && (
+              <Select value={language} onChange={setLanguage}>
+                {languages.map((l) => (<option key={l} value={l}>{l === "all" ? "All languages" : l}</option>))}
+              </Select>
+            )}
+            <Select value={sort} onChange={setSort}>
+              <option value="downloads">Best Match / Downloads</option>
+              <option value="likes">Most Likes</option>
+              <option value="trending">Trending</option>
+              <option value="lastModified">Recently Updated</option>
+            </Select>
+            <label className="flex items-center gap-2 text-sm text-sv-text cursor-pointer whitespace-nowrap">
+              <input 
+                type="checkbox" 
+                checked={hfShowIncompatible}
+                onChange={(e) => setSettings({ hf_show_incompatible: e.target.checked })}
+                className="rounded border-sv-border bg-sv-surface-2 text-sv-accent focus:ring-sv-accent"
+              />
+              Show incompatible
+            </label>
+          </div>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto pr-2 flex flex-col gap-2 max-w-[1180px]">
@@ -327,6 +382,7 @@ export default function HfBrowser({ track, categoryFilter, languageFilter }: { t
                     hardware={hardware}
                     pinned={pinnedSet.has(m.id)}
                     onTogglePin={() => togglePinned(m.id)}
+                    recommended={m.id === recommendedSttId}
                   />
                 );
               } else {
@@ -406,14 +462,15 @@ function SttRow({
   model, 
   hardware, 
   pinned,
-  onTogglePin
+  onTogglePin,
+  recommended
 }: { 
   model: SttModel; 
   hardware: HardwareInfo | null;
   pinned: boolean;
   onTogglePin: () => void;
+  recommended?: boolean;
 }) {
-  const [expanded, setExpanded] = useState(false);
   const [starting, setStarting] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const downloaded = useModelStore((s) => s.downloaded.has(model.id));
@@ -457,8 +514,6 @@ function SttRow({
 
   return (
     <div
-      onMouseEnter={() => setExpanded(true)}
-      onMouseLeave={() => setExpanded(false)}
       className={`rounded-xl border ${isActive ? "border-sv-accent/40" : "border-sv-border"} bg-sv-surface transition-colors duration-75 hover:bg-sv-surface-2/40 px-4 py-3`}
     >
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -475,6 +530,8 @@ function SttRow({
             <span className="truncate text-[13px] font-semibold text-sv-text">{model.label}</span>
             {isActive ? (
               <span className="shrink-0 rounded bg-sv-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-sv-accent">In use</span>
+            ) : recommended ? (
+              <span className="shrink-0 rounded bg-sv-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-sv-accent">Recommended</span>
             ) : (
               <span className="shrink-0 rounded bg-sv-surface-2 px-1.5 py-0.5 text-[10px] text-sv-muted">Staff Pick</span>
             )}
@@ -484,9 +541,9 @@ function SttRow({
         </div>
 
         {/* Accuracy + speed — clean neutral bars by default */}
-        <div className="hidden md:flex w-[172px] shrink-0 flex-col gap-1">
-          <MetricBar label="accuracy" value={accuracyScore(model.wer)} />
-          <MetricBar label="speed" value={speedScore(model.speed_label, hardware)} />
+        <div className="hidden md:flex w-[192px] shrink-0 flex-col gap-1">
+          <MetricBar label="accuracy" value={accuracyScore(model.wer)} caption={accuracyCaption(model.wer)} />
+          <MetricBar label="speed" value={speedScore(model.speed_label, hardware)} caption={speedCaption(model.speed_label, hardware)} />
         </div>
 
         {/* Size / RAM — its own right-aligned column so it lines up down the list. */}
@@ -561,21 +618,9 @@ function SttRow({
             )}
           </div>
 
-          <button onClick={onTogglePin} title={pinned ? "Unpin" : "Pin to top"} className={`transition-colors duration-75 ${pinned ? "text-sv-accent" : "text-sv-muted/40 hover:text-sv-accent"}`}>
+          <button onClick={onTogglePin} title={pinned ? "Unpin" : "Pin to top"} className={`transition-colors duration-75 ${pinned ? "text-sv-accent" : "text-sv-muted/70 hover:text-sv-accent"}`}>
             <svg viewBox="0 0 24 24" width="16" height="16" fill={pinned ? "currentColor" : "none"} stroke={pinned ? "none" : "currentColor"} strokeWidth={pinned ? undefined : "1.75"} strokeLinecap="round" strokeLinejoin="round"><path d="M12 2.5l2.9 6.2 6.6.6-5 4.6 1.4 6.6L12 17l-5.9 3.5L7.5 14l-5-4.6 6.6-.6L12 2.5z" /></svg>
           </button>
-        </div>
-      </div>
-
-      <div
-        className="grid transition-[grid-template-rows] duration-200 ease-out"
-        style={{ gridTemplateRows: expanded ? "1fr" : "0fr" }}
-      >
-        <div className="overflow-hidden">
-          <div className="flex items-center gap-6 border-t border-sv-border pt-2 mt-2 text-[11px] text-sv-muted tabular-nums">
-            <div><span className="mr-1.5 text-sv-muted">accuracy</span>{model.wer.replace("~", "≈")} word error</div>
-            <div><span className="mr-1.5 text-sv-muted">speed</span>{(deviceRealtimeLabel(model.speed_label, hardware) ?? model.speed_label).replace(" on your device", "")}</div>
-          </div>
         </div>
       </div>
 
@@ -744,7 +789,7 @@ function LlmRow({
             )}
           </div>
 
-          <button onClick={onTogglePin} title={pinned ? "Unpin" : "Pin to top"} className={`transition-colors duration-75 ${pinned ? "text-sv-accent" : "text-sv-muted/40 hover:text-sv-accent"}`}>
+          <button onClick={onTogglePin} title={pinned ? "Unpin" : "Pin to top"} className={`transition-colors duration-75 ${pinned ? "text-sv-accent" : "text-sv-muted/70 hover:text-sv-accent"}`}>
             <svg viewBox="0 0 24 24" width="16" height="16" fill={pinned ? "currentColor" : "none"} stroke={pinned ? "none" : "currentColor"} strokeWidth={pinned ? undefined : "1.75"} strokeLinecap="round" strokeLinejoin="round"><path d="M12 2.5l2.9 6.2 6.6.6-5 4.6 1.4 6.6L12 17l-5.9 3.5L7.5 14l-5-4.6 6.6-.6L12 2.5z" /></svg>
           </button>
         </div>
@@ -853,7 +898,7 @@ function HfRow({
           </div>
         </div>
 
-        <div className="flex w-[300px] shrink-0 flex-col gap-1"></div>
+
 
         <div className="ml-auto flex shrink-0 items-center gap-2">
           <div className="flex shrink-0 items-center">
@@ -865,7 +910,7 @@ function HfRow({
             </button>
           </div>
 
-          <button onClick={onTogglePin} title={pinned ? "Unpin" : "Pin to top"} className={`transition-colors duration-75 ${pinned ? "text-sv-accent" : "text-sv-muted/40 hover:text-sv-accent"}`}>
+          <button onClick={onTogglePin} title={pinned ? "Unpin" : "Pin to top"} className={`transition-colors duration-75 ${pinned ? "text-sv-accent" : "text-sv-muted/70 hover:text-sv-accent"}`}>
             <svg viewBox="0 0 24 24" width="16" height="16" fill={pinned ? "currentColor" : "none"} stroke={pinned ? "none" : "currentColor"} strokeWidth={pinned ? undefined : "1.75"} strokeLinecap="round" strokeLinejoin="round"><path d="M12 2.5l2.9 6.2 6.6.6-5 4.6 1.4 6.6L12 17l-5.9 3.5L7.5 14l-5-4.6 6.6-.6L12 2.5z" /></svg>
           </button>
         </div>

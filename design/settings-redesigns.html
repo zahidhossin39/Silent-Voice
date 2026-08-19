@@ -1,0 +1,236 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Settings — three redesigns</title>
+<style>
+  :root{
+    --bg:#0b0e14; --surface:#131722; --surface2:#1b2030; --border:#262c3d;
+    --text:#e6e9f0; --muted:#8b93a7; --accent:#2dd4bf; --on-accent:#04201c; --good:#22c55e;
+    --c-rec:oklch(0.67 0.125 250); --c-stt:oklch(0.67 0.125 180); --c-gram:oklch(0.67 0.125 280);
+    --c-tts:oklch(0.67 0.125 310); --c-perf:oklch(0.67 0.125 145); --c-sys:oklch(0.67 0.125 210);
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;padding:40px 28px 100px;background:#05070c;color:var(--text);
+    font-family:ui-sans-serif,system-ui,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased;}
+  h1{font-size:21px;font-weight:650;margin:0 0 4px;}
+  .lead{color:var(--muted);font-size:13px;max-width:780px;line-height:1.5;margin:0 0 4px;}
+  .optlabel{display:flex;align-items:baseline;gap:12px;margin:42px 0 14px;flex-wrap:wrap;}
+  .optlabel .big{font-size:16px;font-weight:700;}
+  .optlabel .tag{font-size:12px;color:var(--accent);border:1px solid var(--accent);border-radius:999px;padding:2px 10px;}
+  .optlabel .desc{font-size:12.5px;color:var(--muted);line-height:1.5;}
+
+  .app{position:relative;overflow:hidden;border:1px solid var(--border);border-radius:16px;background:var(--bg);
+    height:640px;display:flex;box-shadow:0 20px 55px rgba(0,0,0,.55);}
+  .side{width:200px;flex-shrink:0;border-right:1px solid var(--border);background:var(--surface);padding:16px 12px;}
+  .brand{display:flex;align-items:center;gap:10px;margin:4px 4px 20px;}
+  .logo{width:32px;height:32px;border-radius:9px;background:linear-gradient(135deg,var(--accent),#0d9488);display:grid;place-items:center;}
+  .logo svg{width:17px;height:17px;}
+  .brand .b1{font-size:13px;font-weight:650;}.brand .b2{font-size:10px;color:var(--muted);}
+  .nav{display:flex;flex-direction:column;gap:2px;}
+  .nav a{display:flex;align-items:center;gap:11px;padding:8px 10px;border-radius:9px;font-size:12.5px;color:var(--muted);}
+  .nav a svg{width:15px;height:15px;}
+  .nav a.active{background:var(--accent);color:var(--on-accent);font-weight:600;}
+  .main{flex:1;min-width:0;overflow-y:auto;}
+
+  .ptitle{font-size:23px;font-weight:650;letter-spacing:-.01em;}
+  .psub{color:var(--muted);font-size:12.5px;margin-top:2px;}
+
+  /* control primitives */
+  .row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:13px 0;border-bottom:1px solid rgba(255,255,255,.06);}
+  .row:last-child{border-bottom:0;}
+  .rl{font-size:13px;}.rh{font-size:11px;color:var(--muted);margin-top:2px;max-width:46ch;line-height:1.4;}
+  .tog{width:42px;height:24px;border-radius:999px;background:var(--accent);position:relative;flex-shrink:0;cursor:pointer;}
+  .tog.off{background:#3a4152;}
+  .tog i{position:absolute;top:3px;left:21px;width:18px;height:18px;border-radius:50%;background:#fff;transition:left .15s;}
+  .tog.off i{left:3px;}
+  .sel{height:34px;border:1px solid var(--border);background:var(--bg);border-radius:8px;padding:0 12px;color:var(--text);font-size:13px;display:inline-flex;align-items:center;gap:16px;}
+  .seg{display:inline-flex;border:1px solid var(--border);background:var(--bg);border-radius:9px;padding:3px;gap:2px;}
+  .seg span{padding:5px 12px;border-radius:6px;font-size:12px;color:var(--muted);}
+  .seg span.on{background:var(--accent);color:var(--on-accent);font-weight:600;}
+  .slider{width:180px;height:6px;border-radius:999px;background:linear-gradient(to right,var(--accent) 55%,#2a3040 55%);position:relative;}
+  .slider i{position:absolute;top:-5px;left:calc(55% - 8px);width:16px;height:16px;border-radius:50%;background:#fff;}
+  .btng{border:1px solid var(--border);background:transparent;color:var(--text);border-radius:8px;padding:6px 13px;font-size:12.5px;}
+
+  /* section card */
+  .card{border:1px solid var(--border);border-radius:14px;background:var(--surface);overflow:hidden;margin-bottom:16px;}
+  .chead{display:flex;align-items:center;gap:11px;padding:13px 18px;border-bottom:1px solid var(--border);}
+  .ic{display:grid;place-items:center;width:30px;height:30px;border-radius:9px;}
+  .ic svg{width:16px;height:16px;}
+  .chead .ct{font-size:13.5px;font-weight:600;}
+  .chead .cd{font-size:11px;color:var(--muted);margin-top:1px;}
+  .rows{padding:0 18px;}
+
+  /* A: category rail */
+  .catrail{width:186px;flex-shrink:0;border-right:1px solid var(--border);padding:20px 12px;overflow-y:auto;}
+  .catrail .h{font-size:11px;font-weight:700;letter-spacing:.1em;color:var(--muted);text-transform:uppercase;margin:0 10px 12px;}
+  .cat{display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:9px;font-size:13px;color:var(--muted);cursor:pointer;margin-bottom:2px;}
+  .cat svg{width:16px;height:16px;}
+  .cat.on{background:var(--surface2);color:var(--text);font-weight:600;}
+  .cat.on .catdot{opacity:1;}
+  .catdot{width:6px;height:6px;border-radius:50%;margin-left:auto;opacity:0;}
+  .apane{flex:1;min-width:0;overflow-y:auto;padding:26px 30px;}
+
+  /* B: search + jump chips */
+  .searchbar{position:sticky;top:0;z-index:2;background:linear-gradient(var(--bg),var(--bg) 70%,transparent);padding:22px 30px 12px;}
+  .sfield{width:100%;border:1px solid var(--border);background:var(--surface);border-radius:11px;padding:11px 15px 11px 40px;color:var(--muted);font-size:13px;position:relative;}
+  .swrap{position:relative;}
+  .sicon{position:absolute;left:14px;top:12px;color:var(--muted);}.sicon svg{width:16px;height:16px;}
+  .chips{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;}
+  .chip{border:1px solid var(--border);background:var(--surface);border-radius:999px;padding:5px 13px;font-size:12px;color:var(--muted);cursor:pointer;}
+  .chip.on{border-color:var(--accent);color:var(--text);background:var(--surface2);}
+  .bbody{padding:6px 30px 30px;}
+
+  /* C: category grid */
+  .cgrid-wrap{padding:26px 30px;}
+  .cgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  .ctile{border:1px solid var(--border);background:var(--surface);border-radius:14px;padding:16px;cursor:pointer;transition:border-color .15s,background .15s;}
+  .ctile:hover{border-color:var(--accent);background:var(--surface2);}
+  .ctile .top{display:flex;align-items:center;gap:12px;}
+  .ctile .cnt{margin-left:auto;font-size:11px;color:var(--muted);border:1px solid var(--border);border-radius:999px;padding:1px 9px;}
+  .ctile .tt{font-size:14px;font-weight:600;}
+  .ctile .td{font-size:11.5px;color:var(--muted);margin-top:6px;line-height:1.45;}
+  .cdetail{padding:22px 30px;}
+  .back{display:inline-flex;align-items:center;gap:7px;color:var(--muted);font-size:12.5px;cursor:pointer;margin-bottom:16px;}
+  .back svg{width:15px;height:15px;}
+</style>
+</head>
+<body>
+  <h1>Settings — three redesigns</h1>
+  <p class="lead">Same settings, re-grouped from today's one giant "Dictation" card into six clear categories: <b style="color:#cfd4e0">Recording · Speech-to-text · Grammar · Read aloud · Performance · System</b>. Each layout is a full, clickable page. Teal accent to match your theme.</p>
+
+  <div class="optlabel"><span class="big">Option A</span><span class="tag">Category rail</span>
+    <span class="desc">A left list of categories; the panel shows one at a time. Nothing overwhelms — you see only what you picked. (macOS / VS Code style.)</span></div>
+  <div id="A"></div>
+
+  <div class="optlabel"><span class="big">Option B</span><span class="tag">Search + jump</span>
+    <span class="desc">One clean scroll, but a search box and sticky category chips up top let you jump or filter instantly. Great for power users.</span></div>
+  <div id="B"></div>
+
+  <div class="optlabel"><span class="big">Option C</span><span class="tag">Category home → drill in</span>
+    <span class="desc">A friendly grid of category cards. Click one to go in, back to return. Fewest choices on screen at once — best for newcomers.</span></div>
+  <div id="C"></div>
+
+<script>
+  const I = {
+    wave:`<svg viewBox="0 0 24 24" fill="none"><g stroke="#04201c" stroke-width="2.1" stroke-linecap="round"><path d="M5 10v4M9 6v12M13 8v8M17 11v2"/></g></svg>`,
+    home:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>`,
+    store:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l1.5-5h15L21 9"/><path d="M4 9v11h16V9"/></svg>`,
+    styles:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/></svg>`,
+    theme:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="8" cy="10" r="1.3" fill="currentColor"/><circle cx="15" cy="9" r="1.3" fill="currentColor"/></svg>`,
+    gear:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1l2-1.6-2-3.4-2.3 1a7 7 0 0 0-1.7-1L14.5 2h-4l-.4 2.4a7 7 0 0 0-1.7 1l-2.3-1-2 3.4L4.1 11a7 7 0 0 0 0 2l-2 1.6 2 3.4 2.3-1a7 7 0 0 0 1.7 1L10.5 22h4l.4-2.4a7 7 0 0 0 1.7-1l2.3 1 2-3.4-2-1.6c.1-.3.1-.7.1-1z"/></svg>`,
+    history:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>`,
+    cloud:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="3"/><path d="M10 13l6-6M14 5l4 4"/></svg>`,
+    guide:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H18v16H6a2 2 0 0 0-2 2z"/><path d="M4 17.5A1.5 1.5 0 0 1 5.5 16H18"/></svg>`,
+    mic:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4"/></svg>`,
+    stt:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 10v4M8 6v12M12 8v8M16 5v14M20 10v4"/></svg>`,
+    gram:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h11M4 12h16M4 17h8"/><path d="M17 15l2 2 3-4"/></svg>`,
+    spk:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M17 8a5 5 0 0 1 0 8"/></svg>`,
+    perf:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 14l4-4"/><path d="M4 18a9 9 0 1 1 16 0z"/></svg>`,
+    cog:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1l2-1.6-2-3.4-2.3 1a7 7 0 0 0-1.7-1L14.5 2h-4l-.4 2.4a7 7 0 0 0-1.7 1l-2.3-1-2 3.4L4.1 11a7 7 0 0 0 0 2l-2 1.6 2 3.4 2.3-1a7 7 0 0 0 1.7 1L10.5 22h4l.4-2.4a7 7 0 0 0 1.7-1l2.3 1 2-3.4-2-1.6c.1-.3.1-.7.1-1z"/></svg>`,
+    search:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>`,
+    chevL:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>`,
+  };
+
+  // control builders
+  const tog=(on)=>`<div class="tog ${on?'':'off'}"><i></i></div>`;
+  const sel=(v)=>`<span class="sel">${v} <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></span>`;
+  const seg=(opts,on)=>`<span class="seg">${opts.map(o=>`<span class="${o===on?'on':''}">${o}</span>`).join('')}</span>`;
+  const row=(l,h,ctrl)=>`<div class="row"><div><div class="rl">${l}</div>${h?`<div class="rh">${h}</div>`:''}</div><div>${ctrl}</div></div>`;
+
+  // the six categories with their real controls
+  const CATS = [
+    {id:'rec',  name:'Recording', icon:'mic',  color:'var(--c-rec)',  desc:'Hotkey behavior, mic and voice detection',
+      rows:[row('Double-tap to lock recording','Tap the hotkey twice to keep recording hands-free',tog(true)),
+            row('Transcribe while you speak','Show words as you talk, not only on release',tog(false)),
+            row('Auto-hide the pill','Fade the floating pill when idle',tog(false)),
+            row('Append trailing space','Add a space after each dictation',tog(true)),
+            row('Microphone',null,sel('System default')),
+            row('Sensitivity','How quiet counts as silence',`<span class="slider"><i></i></span>`),
+            row('Smart voice detection','Tiny model tells your voice from noise',`<button class="btng">Download · 2 MB</button>`)]},
+    {id:'stt',  name:'Speech-to-text', icon:'stt', color:'var(--c-stt)', desc:'Model, source and language',
+      rows:[row('Source',null,seg(['On device','Cloud'],'On device')),
+            row('Speech model',null,sel('Whisper Small')),
+            row('Language',null,sel('Auto-detect'))]},
+    {id:'gram', name:'Grammar', icon:'gram', color:'var(--c-gram)', desc:'Proofreading and correction as you type',
+      rows:[row('Grammar model',null,sel('Balanced · 122 MB')),
+            row('Inline proofreading','Underline spelling & grammar in any app',tog(true)),
+            row('Oxford comma suggestions',null,tog(true)),
+            row('Flag filler words','Underline “um”, “uh” that slip in',tog(true)),
+            row('Context grammar','AI pass that catches correctly-spelled wrong words',`<button class="btng">Download</button>`)]},
+    {id:'tts',  name:'Read aloud', icon:'spk', color:'var(--c-tts)', desc:'Text-to-speech voice and hotkey',
+      rows:[row('Enable read-aloud','Speak selected text on a hotkey',tog(true)),
+            row('Voice',null,sel('Amy (English)')),
+            row('Read-aloud hotkey',null,sel('Ctrl + Alt + S')),
+            row('Test voice','Speaks a short sample sentence',`<button class="btng">▶ Play sample</button>`)]},
+    {id:'perf', name:'Performance', icon:'perf', color:'var(--c-perf)', desc:'How much of your machine to use',
+      rows:[row('Use GPU acceleration','No compatible GPU detected — leave off',tog(false)),
+            row('Speed boost (uses more CPU)','Tune how many cores transcription uses',tog(false))]},
+    {id:'sys',  name:'System', icon:'cog', color:'var(--c-sys)', desc:'Startup, theme, updates',
+      rows:[row('Launch at startup',null,tog(false)),
+            row('Theme',null,seg(['Light','Dark'],'Dark')),
+            row('App updates','Checks automatically on launch',`<button class="btng">Check for updates</button>`),
+            row('Copy diagnostics','App + system info for bug reports',`<button class="btng">Copy diagnostics</button>`)]},
+  ];
+
+  const sidebar = ()=>`<div class="side">
+    <div class="brand"><div class="logo">${I.wave}</div><div><div class="b1">Silent Voice</div><div class="b2">local-first dictation</div></div></div>
+    <div class="nav">${[['Home','home'],['Model Store','store'],['Writing styles','styles'],['Theme','theme'],['Settings','gear','on'],['History','history'],['Cloud providers','cloud'],['How to use','guide']]
+      .map(([l,ic,on])=>`<a class="${on?'active':''}">${I[ic]}${l}</a>`).join('')}</div></div>`;
+
+  const catCard = (c)=>`<div class="card"><div class="chead">
+      <span class="ic" style="background:color-mix(in srgb,${c.color} 20%,transparent);color:${c.color}">${I[c.icon]}</span>
+      <div><div class="ct">${c.name}</div><div class="cd">${c.desc}</div></div></div>
+      <div class="rows">${c.rows.join('')}</div></div>`;
+
+  // ---------- Option A: category rail ----------
+  (()=>{
+    const el=document.getElementById('A');
+    el.innerHTML=`<div class="app">${sidebar()}
+      <div class="catrail"><div class="h">Settings</div>
+        ${CATS.map((c,i)=>`<div class="cat ${i===0?'on':''}" data-i="${i}">${I[c.icon]}${c.name}<span class="catdot" style="background:${c.color}"></span></div>`).join('')}
+      </div>
+      <div class="apane" id="Apane"></div></div>`;
+    const pane=el.querySelector('#Apane');
+    const show=(i)=>{pane.innerHTML=`<div class="ptitle">${CATS[i].name}</div><div class="psub">${CATS[i].desc}</div><div style="height:18px"></div><div class="rows" style="border:1px solid var(--border);border-radius:14px;background:var(--surface);padding:2px 18px">${CATS[i].rows.join('')}</div>`;};
+    el.querySelectorAll('.cat').forEach(c=>c.onclick=()=>{el.querySelectorAll('.cat').forEach(x=>x.classList.remove('on'));c.classList.add('on');show(+c.dataset.i);});
+    show(0);
+  })();
+
+  // ---------- Option B: search + jump chips ----------
+  (()=>{
+    const el=document.getElementById('B');
+    el.innerHTML=`<div class="app">${sidebar()}
+      <div class="main">
+        <div class="searchbar">
+          <div class="ptitle" style="margin-bottom:12px">Settings</div>
+          <div class="swrap"><span class="sicon">${I.search}</span><div class="sfield">Search settings…</div></div>
+          <div class="chips">${CATS.map((c,i)=>`<span class="chip ${i===0?'on':''}" data-i="${i}">${c.name}</span>`).join('')}</div>
+        </div>
+        <div class="bbody">${CATS.map(catCard).join('')}</div>
+      </div></div>`;
+    const body=el.querySelector('.bbody'),cards=body.querySelectorAll('.card');
+    el.querySelectorAll('.chip').forEach(ch=>ch.onclick=()=>{el.querySelectorAll('.chip').forEach(x=>x.classList.remove('on'));ch.classList.add('on');cards[+ch.dataset.i].scrollIntoView({behavior:'smooth',block:'start'});});
+  })();
+
+  // ---------- Option C: category home → drill in ----------
+  (()=>{
+    const el=document.getElementById('C');
+    const grid=()=>`<div class="cgrid-wrap"><div class="ptitle">Settings</div><div class="psub" style="margin-bottom:18px">Pick a category to configure</div>
+      <div class="cgrid">${CATS.map((c,i)=>`<div class="ctile" data-i="${i}"><div class="top">
+        <span class="ic" style="background:color-mix(in srgb,${c.color} 20%,transparent);color:${c.color}">${I[c.icon]}</span>
+        <span class="tt">${c.name}</span><span class="cnt">${c.rows.length}</span></div>
+        <div class="td">${c.desc}</div></div>`).join('')}</div></div>`;
+    const detail=(i)=>`<div class="cdetail"><div class="back" data-back>${I.chevL} All settings</div>
+      <div class="ptitle">${CATS[i].name}</div><div class="psub">${CATS[i].desc}</div><div style="height:18px"></div>
+      <div class="rows" style="border:1px solid var(--border);border-radius:14px;background:var(--surface);padding:2px 18px">${CATS[i].rows.join('')}</div></div>`;
+    const render=(html)=>{el.innerHTML=`<div class="app">${sidebar()}<div class="main" id="Cmain">${html}</div></div>`;wire();};
+    const wire=()=>{
+      el.querySelectorAll('.ctile').forEach(t=>t.onclick=()=>render(detail(+t.dataset.i)));
+      const b=el.querySelector('[data-back]'); if(b) b.onclick=()=>render(grid());
+    };
+    render(grid());
+  })();
+</script>
+</body>
+</html>

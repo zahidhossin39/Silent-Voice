@@ -9,6 +9,8 @@ import {
   setAppProfiles,
   setAutostart,
   setTts,
+  setPopupTheme,
+  setPopupStyle,
   listenEvent,
 } from "../services/tauriBridge";
 import type { ResolvedAppProfile } from "../services/tauriBridge";
@@ -72,6 +74,8 @@ export function useRuntimeSync() {
   const ttsHotkey = useSettingsStore((s) => s.settings.tts_hotkey);
   const ttsEnabled = useSettingsStore((s) => s.settings.tts_enabled);
   const autoStart = useSettingsStore((s) => s.settings.auto_start);
+  const popupTheme = useSettingsStore((s) => s.settings.popup_theme);
+  const popupStyle = useSettingsStore((s) => s.settings.popup_style);
   const setSettings = useSettingsStore((s) => s.setSettings);
 
   useEffect(() => {
@@ -160,6 +164,14 @@ export function useRuntimeSync() {
   useEffect(() => {
     setTts(ttsVoice ?? "", ttsHotkey, ttsEnabled);
   }, [ttsVoice, ttsHotkey, ttsEnabled]);
+
+  useEffect(() => {
+    setPopupTheme(popupTheme);
+  }, [popupTheme]);
+
+  useEffect(() => {
+    setPopupStyle(popupStyle);
+  }, [popupStyle]);
 
   // Resolve per-app profile rules to full mode configs and push to Rust.
   useEffect(() => {

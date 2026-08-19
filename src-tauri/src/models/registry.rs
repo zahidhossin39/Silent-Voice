@@ -187,6 +187,15 @@ pub fn sense_voice_installed(model_id: &str) -> bool {
     d.join("model.int8.onnx").exists() && d.join("tokens.txt").exists()
 }
 
+/// True if `model_id` is a fully-installed Transducer (Parakeet) model.
+pub fn transducer_installed(model_id: &str) -> bool {
+    let d = stt_model_dir(model_id);
+    d.join("encoder.int8.onnx").exists()
+        && d.join("decoder.int8.onnx").exists()
+        && d.join("joiner.int8.onnx").exists()
+        && d.join("tokens.txt").exists()
+}
+
 /// Which engine runs a given STT model, derived from its id. The frontend
 /// carries this as `SttModel.engine`; this is the single backend source of
 /// truth, so adding a new sherpa family is a one-place change.
@@ -195,6 +204,7 @@ pub enum SttEngine {
     Whisper,
     Moonshine,
     SenseVoice,
+    Transducer,
 }
 
 pub fn stt_engine(model_id: &str) -> SttEngine {
@@ -202,6 +212,8 @@ pub fn stt_engine(model_id: &str) -> SttEngine {
         SttEngine::SenseVoice
     } else if model_id.starts_with("moonshine") {
         SttEngine::Moonshine
+    } else if model_id.starts_with("parakeet") {
+        SttEngine::Transducer
     } else {
         SttEngine::Whisper
     }
@@ -213,6 +225,7 @@ pub fn sherpa_stt_installed(model_id: &str) -> bool {
     match stt_engine(model_id) {
         SttEngine::Moonshine => moonshine_installed(model_id),
         SttEngine::SenseVoice => sense_voice_installed(model_id),
+        SttEngine::Transducer => transducer_installed(model_id),
         SttEngine::Whisper => false,
     }
 }

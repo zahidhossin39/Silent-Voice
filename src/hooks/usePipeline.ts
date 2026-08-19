@@ -38,6 +38,7 @@ export function usePipeline() {
         setRecordingState(p.state)
       ),
       listenEvent<PipelineResult>("pipeline://result", (r) => {
+        setError(null);
         addFull({
           id: r.id,
           timestamp: r.id,

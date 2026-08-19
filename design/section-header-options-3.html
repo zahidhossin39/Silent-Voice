@@ -1,0 +1,131 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Section header — round 3</title>
+<style>
+  :root{
+    --bg:#0b0e14; --surface:#131722; --surface2:#1b2030; --border:#262c3d;
+    --text:#e6e9f0; --muted:#8b93a7; --accent:#f43f5e;
+    --serif:Georgia,"Iowan Old Style","Times New Roman",serif;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;padding:40px 34px 90px;background:#05070c;color:var(--text);
+    font-family:ui-sans-serif,system-ui,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased;}
+  h1{font-size:21px;font-weight:650;margin:0 0 4px;}
+  .lead{color:var(--muted);font-size:13px;max-width:800px;line-height:1.5;margin:0 0 6px;}
+  .lead b{color:#cfd4e0;}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(370px,1fr));gap:30px;margin-top:26px;align-items:start;}
+  .col{display:flex;flex-direction:column;gap:13px;}
+  .tagline .big{font-size:15px;font-weight:700;}
+  .tagline .kind{font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);margin-left:8px;}
+  .tagline .desc{display:block;font-size:12px;color:var(--muted);line-height:1.45;margin-top:3px;}
+
+  .card{border:1px solid var(--border);border-radius:14px;background:var(--surface);overflow:hidden;position:relative;}
+  .cd{font-size:11.5px;color:var(--muted);line-height:1.4;}
+  .rows{padding:6px 18px 10px;}
+  .row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 0;border-bottom:1px solid rgba(255,255,255,.06);}
+  .row:last-child{border-bottom:0;}
+  .rl{font-size:13px;}.rh{font-size:11px;color:var(--muted);margin-top:2px;max-width:36ch;line-height:1.4;}
+  .tog{width:40px;height:23px;border-radius:999px;background:var(--accent);position:relative;flex-shrink:0;}
+  .tog.off{background:#3a4152;}
+  .tog i{position:absolute;top:3px;left:20px;width:17px;height:17px;border-radius:50%;background:#fff;}
+  .tog.off i{left:3px;}
+  .ic svg{width:17px;height:17px;}
+
+  /* ===== 1 · Whisper-minimal ===== */
+  .m1 .chead{padding:20px 18px 10px;}
+  .m1 .ct{display:flex;align-items:center;gap:10px;font-size:15px;font-weight:600;letter-spacing:-.01em;}
+  .m1 .dot{width:7px;height:7px;border-radius:50%;background:var(--accent);flex-shrink:0;}
+  .m1 .cd{margin-top:5px;padding-left:17px;}
+
+  /* ===== 2 · Editorial masthead (serif + double rule) ===== */
+  .m2 .chead{padding:16px 18px 0;}
+  .m2 .ct{font-family:var(--serif);font-size:20px;font-weight:600;letter-spacing:0;}
+  .m2 .cd{font-family:var(--serif);font-size:12.5px;font-style:italic;margin-top:3px;padding-bottom:13px;}
+  .m2 .drule{height:3px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);}
+
+  /* ===== 3 · Marginalia (two-column, book) ===== */
+  .m3 .inner{display:flex;}
+  .m3 .aside{width:148px;flex-shrink:0;padding:16px 16px 16px 18px;border-right:1px solid var(--border);}
+  .m3 .aside .ct{font-size:13.5px;font-weight:600;}
+  .m3 .aside .n{font-family:var(--mono);font-size:10px;color:var(--accent);letter-spacing:.1em;display:block;margin-bottom:7px;}
+  .m3 .aside .cd{margin-top:8px;}
+  .m3 .main{flex:1;padding:4px 18px 8px;}
+
+  /* ===== 4 · Voiceprint underline (thematic) ===== */
+  .m4 .chead{display:flex;align-items:center;gap:11px;padding:15px 18px 11px;}
+  .m4 .ic{color:var(--accent);}
+  .m4 .ct{font-size:14px;font-weight:600;}
+  .m4 .wave{display:flex;align-items:center;gap:3px;height:14px;padding:0 18px 12px;}
+  .m4 .wave span{width:3px;border-radius:2px;background:var(--accent);}
+
+  /* ===== 5 · Viewfinder brackets (out-of-box) ===== */
+  .m5 .chead{display:flex;align-items:center;gap:14px;padding:17px 18px 15px;border-bottom:1px solid var(--border);}
+  .m5 .frame{position:relative;padding:6px 12px;flex-shrink:0;}
+  .m5 .frame .ct{font-family:var(--mono);font-size:13px;font-weight:600;letter-spacing:.02em;}
+  .m5 .frame::before,.m5 .frame::after{content:"";position:absolute;width:9px;height:9px;border:1.5px solid var(--accent);}
+  .m5 .frame::before{top:0;left:0;border-right:0;border-bottom:0;}
+  .m5 .frame::after{bottom:0;right:0;border-left:0;border-top:0;}
+  .m5 .cd{border-left:1px solid var(--border);padding-left:14px;}
+</style>
+</head>
+<body>
+  <h1>Section header — round 3, off the leash</h1>
+  <p class="lead">Five fresh directions, none repeating the earlier ones — from <b>barely-there minimal</b> to <b>old-world classical</b> to a couple of genuinely odd swings. Rose accent to match your theme.</p>
+
+  <div class="grid">
+
+    <!-- 1 -->
+    <div class="col">
+      <div class="tagline"><span class="big">1 · Whisper-minimal</span><span class="kind">minimal</span><span class="desc">No icon box, no divider, no chrome. One accent dot, the title, air. The content is the design.</span></div>
+      <div class="card m1">
+        <div class="chead"><div class="ct"><span class="dot"></span>Recording</div><div class="cd">How the push-to-talk hotkey behaves and how your voice is captured.</div></div>
+        <div class="rows"><div class="row"><div><div class="rl">Double-tap to lock recording</div><div class="rh">Tap the hotkey twice to keep recording hands-free</div></div><span class="tog"><i></i></span></div><div class="row"><div><div class="rl">Auto-hide the pill</div><div class="rh">Fades ~5s after it's done</div></div><span class="tog off"><i></i></span></div></div>
+      </div>
+    </div>
+
+    <!-- 2 -->
+    <div class="col">
+      <div class="tagline"><span class="big">2 · Editorial masthead</span><span class="kind">classical</span><span class="desc">A serif title over a fine double rule — a printed-magazine section head. Unexpected in an app, and quietly upscale.</span></div>
+      <div class="card m2">
+        <div class="chead"><div class="ct">Recording</div><div class="cd">How the push-to-talk hotkey behaves and how your voice is captured.</div></div>
+        <div class="drule"></div>
+        <div class="rows"><div class="row"><div><div class="rl">Double-tap to lock recording</div><div class="rh">Tap the hotkey twice to keep recording hands-free</div></div><span class="tog"><i></i></span></div><div class="row"><div><div class="rl">Auto-hide the pill</div><div class="rh">Fades ~5s after it's done</div></div><span class="tog off"><i></i></span></div></div>
+      </div>
+    </div>
+
+    <!-- 3 -->
+    <div class="col">
+      <div class="tagline"><span class="big">3 · Marginalia</span><span class="kind">classical</span><span class="desc">The title and description live in a narrow left margin, like notes beside a book's text; the controls sit in the main column.</span></div>
+      <div class="card m3">
+        <div class="inner">
+          <div class="aside"><span class="n">01</span><div class="ct">Recording</div><div class="cd">How the push-to-talk hotkey behaves and how your voice is captured.</div></div>
+          <div class="main"><div class="rows" style="padding:6px 0 4px"><div class="row"><div><div class="rl">Double-tap to lock</div><div class="rh">Twice to go hands-free</div></div><span class="tog"><i></i></span></div><div class="row"><div><div class="rl">Auto-hide the pill</div><div class="rh">Fades ~5s after it's done</div></div><span class="tog off"><i></i></span></div></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4 -->
+    <div class="col">
+      <div class="tagline"><span class="big">4 · Voiceprint</span><span class="kind">crazy · on-theme</span><span class="desc">The divider is a little audio waveform — the app is a <i>voice</i> tool, so the section literally shows a voiceprint. Fades out to the right.</span></div>
+      <div class="card m4">
+        <div class="chead"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4"/></svg></span><div><div class="ct">Recording</div><div class="cd" style="margin-top:2px">How the push-to-talk hotkey behaves and how your voice is captured.</div></div></div>
+        <div class="wave"><span style="height:5px;opacity:1"></span><span style="height:9px;opacity:.96"></span><span style="height:13px;opacity:.93"></span><span style="height:16px;opacity:.89"></span><span style="height:11px;opacity:.86"></span><span style="height:7px;opacity:.82"></span><span style="height:10px;opacity:.79"></span><span style="height:14px;opacity:.75"></span><span style="height:9px;opacity:.72"></span><span style="height:6px;opacity:.68"></span><span style="height:8px;opacity:.65"></span><span style="height:12px;opacity:.61"></span><span style="height:15px;opacity:.58"></span><span style="height:10px;opacity:.54"></span><span style="height:7px;opacity:.5"></span><span style="height:5px;opacity:.47"></span><span style="height:8px;opacity:.43"></span><span style="height:11px;opacity:.4"></span><span style="height:6px;opacity:.36"></span><span style="height:4px;opacity:.33"></span><span style="height:7px;opacity:.29"></span><span style="height:9px;opacity:.26"></span><span style="height:5px;opacity:.22"></span><span style="height:3px;opacity:.19"></span></div>
+        <div class="rows"><div class="row"><div><div class="rl">Double-tap to lock recording</div><div class="rh">Tap the hotkey twice to keep recording hands-free</div></div><span class="tog"><i></i></span></div><div class="row"><div><div class="rl">Auto-hide the pill</div><div class="rh">Fades ~5s after it's done</div></div><span class="tog off"><i></i></span></div></div>
+      </div>
+    </div>
+
+    <!-- 5 -->
+    <div class="col">
+      <div class="tagline"><span class="big">5 · Viewfinder</span><span class="kind">crazy · techy</span><span class="desc">The section name sits inside monospace corner brackets, like a camera crop or a terminal selection. Precise and a little hacker.</span></div>
+      <div class="card m5">
+        <div class="chead"><span class="frame"><span class="ct">Recording</span></span><div class="cd">How the push-to-talk hotkey behaves and how your voice is captured.</div></div>
+        <div class="rows"><div class="row"><div><div class="rl">Double-tap to lock recording</div><div class="rh">Tap the hotkey twice to keep recording hands-free</div></div><span class="tog"><i></i></span></div><div class="row"><div><div class="rl">Auto-hide the pill</div><div class="rh">Fades ~5s after it's done</div></div><span class="tog off"><i></i></span></div></div>
+      </div>
+    </div>
+
+  </div>
+</body>
+</html>

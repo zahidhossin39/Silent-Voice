@@ -1,0 +1,77 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Card corner-radius options</title>
+<style>
+  :root{
+    --bg:#151a26; --fg:#e8ebf2; --muted:#8b93a7; --alt:#aab2c4;
+    --line:rgba(255,255,255,.10); --footer:rgba(255,255,255,.045); --chip:rgba(255,255,255,.05);
+    --accent:#2dd4bf; --deep:#0d3b35; --badge:rgba(255,255,255,.08);
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; padding:44px 40px 60px; background:#0b0e14;
+    font-family:"Segoe UI",system-ui,sans-serif; color:var(--fg);
+  }
+  h1{font-size:19px;font-weight:600;margin:0 0 4px;}
+  .lead{color:var(--muted);font-size:13px;margin:0 0 28px;max-width:680px;line-height:1.4;}
+  .grid{display:flex;flex-wrap:wrap;gap:40px;align-items:flex-start;}
+  .col{display:flex;flex-direction:column;gap:14px;align-items:center;}
+  .tag{font-size:13px;font-weight:600;text-align:center;}
+  .tag .r{color:var(--muted);font-weight:400;}
+  .rec{display:inline-block;margin-top:4px;font-size:11px;color:var(--accent);border:1px solid var(--accent);border-radius:999px;padding:1px 8px;}
+
+  /* card — radii driven by --cr (card) and --ir (inner) */
+  .card{
+    width:290px; background:var(--bg); border:1.5px solid var(--accent);
+    border-radius:var(--cr); padding:14px 16px 0; overflow:hidden;
+    box-shadow:0 10px 34px rgba(0,0,0,.5);
+  }
+  .label{display:flex;align-items:center;gap:8px;}
+  .dot{width:8px;height:8px;border-radius:calc(var(--ir) * .35);background:var(--accent);}
+  .label .t{font-size:11px;font-weight:700;letter-spacing:.12em;color:var(--accent);}
+  .row{display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap;}
+  .orig{text-decoration:line-through;color:var(--muted);font-size:15px;}
+  .arrow{color:var(--muted);font-size:15px;}
+
+  .pill{display:inline-flex;align-items:center;gap:8px;background:var(--deep);
+    border-radius:var(--ir); padding:5px 5px 5px 14px;}
+  .pill .txt{font-size:15px;font-weight:600;color:var(--accent);}
+  .pill .badge{display:grid;place-items:center;width:22px;height:22px;
+    border-radius:calc(var(--ir) * .6); background:var(--badge);color:var(--accent);font-size:13px;line-height:1;}
+
+  .chips{display:flex;gap:8px;margin-top:12px;}
+  .chip{background:var(--chip);color:var(--alt);border-radius:var(--ir);padding:6px 13px;font-size:14px;}
+  .chip sup{color:var(--muted);font-size:10px;}
+  .expl{color:var(--muted);font-size:13px;margin:12px 0;line-height:1.35;}
+  .expl b{color:var(--fg);}
+  .footer{display:flex;gap:22px;align-items:center;margin:0 -16px;padding:12px 16px;
+    background:var(--footer);font-size:13px;}
+  .footer .d{color:var(--muted);}
+
+  /* the five options */
+  .A{--cr:4px;  --ir:4px;}
+  .B{--cr:8px;  --ir:6px;}
+  .C{--cr:12px; --ir:9px;}
+  .D{--cr:16px; --ir:11px;}
+  .E{--cr:20px; --ir:13px;}
+</style>
+</head>
+<body>
+  <h1>Card corner-radius — pick one</h1>
+  <p class="lead">Same design (teal, variant-C pill), five corner treatments. The card radius and the inner radii (pill, chips, badge, label dot) scale together so each option stays cohesive. Current build is ≈ E.</p>
+
+  <div class="grid">
+    <div class="col A"><div class="tag">A<br><span class="r">4px · crisp</span></div>   <div class="card"><div class="label"><span class="dot"></span><span class="t">SPELLING</span></div><div class="row"><span class="orig">telle</span><span class="arrow">→</span><span class="pill"><span class="txt">tell</span><span class="badge">↵</span></span></div><div class="chips"><span class="chip">telly<sup>2</sup></span><span class="chip">teller<sup>3</sup></span></div><p class="expl">Did you mean to spell <b>telle</b> this way?</p><div class="footer"><span>📖 Add to dictionary</span><span class="d">✕ Dismiss</span></div></div></div>
+
+    <div class="col B"><div class="tag">B<br><span class="r">8px · tight</span></div>    <div class="card"><div class="label"><span class="dot"></span><span class="t">SPELLING</span></div><div class="row"><span class="orig">telle</span><span class="arrow">→</span><span class="pill"><span class="txt">tell</span><span class="badge">↵</span></span></div><div class="chips"><span class="chip">telly<sup>2</sup></span><span class="chip">teller<sup>3</sup></span></div><p class="expl">Did you mean to spell <b>telle</b> this way?</p><div class="footer"><span>📖 Add to dictionary</span><span class="d">✕ Dismiss</span></div></div></div>
+
+    <div class="col C"><div class="tag">C<br><span class="r">12px · balanced</span><br><span class="rec">recommended</span></div><div class="card"><div class="label"><span class="dot"></span><span class="t">SPELLING</span></div><div class="row"><span class="orig">telle</span><span class="arrow">→</span><span class="pill"><span class="txt">tell</span><span class="badge">↵</span></span></div><div class="chips"><span class="chip">telly<sup>2</sup></span><span class="chip">teller<sup>3</sup></span></div><p class="expl">Did you mean to spell <b>telle</b> this way?</p><div class="footer"><span>📖 Add to dictionary</span><span class="d">✕ Dismiss</span></div></div></div>
+
+    <div class="col D"><div class="tag">D<br><span class="r">16px · soft</span></div>    <div class="card"><div class="label"><span class="dot"></span><span class="t">SPELLING</span></div><div class="row"><span class="orig">telle</span><span class="arrow">→</span><span class="pill"><span class="txt">tell</span><span class="badge">↵</span></span></div><div class="chips"><span class="chip">telly<sup>2</sup></span><span class="chip">teller<sup>3</sup></span></div><p class="expl">Did you mean to spell <b>telle</b> this way?</p><div class="footer"><span>📖 Add to dictionary</span><span class="d">✕ Dismiss</span></div></div></div>
+
+    <div class="col E"><div class="tag">E<br><span class="r">20px · round (current)</span></div><div class="card"><div class="label"><span class="dot"></span><span class="t">SPELLING</span></div><div class="row"><span class="orig">telle</span><span class="arrow">→</span><span class="pill"><span class="txt">tell</span><span class="badge">↵</span></span></div><div class="chips"><span class="chip">telly<sup>2</sup></span><span class="chip">teller<sup>3</sup></span></div><p class="expl">Did you mean to spell <b>telle</b> this way?</p><div class="footer"><span>📖 Add to dictionary</span><span class="d">✕ Dismiss</span></div></div></div>
+  </div>
+</body>
+</html>

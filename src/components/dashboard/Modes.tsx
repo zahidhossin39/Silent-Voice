@@ -1,12 +1,16 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
+import { useHardwareInfo } from "../../hooks/useHardwareInfo";
+import { llmCompatibility } from "../../services/recommend";
 import Page from "../shared/Page";
+import Select from "../shared/Select";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useModelStore } from "../../stores/modelStore";
 import { localLlmGenerate, apiGenerate } from "../../services/tauriBridge";
 import { LLM_MODELS } from "../../services/catalog";
+import { formatGB } from "../../services/format";
 import { SAMPLE_INPUT } from "../../services/modes";
-import type { LlmModel, Mode, ModelSource } from "../../types";
+import type { HardwareInfo, LlmModel, Mode, ModelSource } from "../../types";
 
 const EMPTY: Mode = {
   id: "",
@@ -166,7 +170,7 @@ export default function Modes() {
                       onClick={() => togglePinMode(m.id)}
                       title={m.pinned ? "Unpin" : "Pin to top"}
                       className={`transition-colors duration-75 ${
-                        m.pinned ? "text-sv-accent" : "text-sv-muted/40 hover:text-sv-accent"
+                        m.pinned ? "text-sv-accent" : "text-sv-muted/70 hover:text-sv-accent"
                       }`}
                     >
                       <svg
@@ -371,30 +375,28 @@ function Editor({
             className="w-full resize-none rounded-lg border border-sv-border bg-sv-bg px-3 py-2 text-sm"
           />
         </label>
-        <div className="mb-4 grid grid-cols-2 gap-3 text-sm">
-          <label>
+        <div className="mb-4 space-y-3 text-sm">
+          <label className="block">
             <span className="mb-1 block text-sv-muted">Processing</span>
-            <select
+            <Select
               value={mode.model_source}
-              onChange={(e) =>
-                onChange({ ...mode, model_source: e.target.value as ModelSource })
+              onChange={(v) =>
+                onChange({ ...mode, model_source: v as ModelSource })
               }
-              className="w-full rounded-lg border border-sv-border bg-sv-bg px-3 py-2"
+              className="w-full"
             >
               <option value="none">None (raw transcription)</option>
               <option value="local">Built-in (on-device model)</option>
               <option value="api">Cloud / API provider</option>
-            </select>
+            </Select>
           </label>
           {mode.model_source === "api" ? (
-            <label>
+            <label className="block">
               <span className="mb-1 block text-sv-muted">Provider</span>
-              <select
+              <Select
                 value={mode.provider_id ?? ""}
-                onChange={(e) =>
-                  onChange({ ...mode, provider_id: e.target.value })
-                }
-                className="w-full rounded-lg border border-sv-border bg-sv-bg px-3 py-2"
+                onChange={(v) => onChange({ ...mode, provider_id: v })}
+                className="w-full"
               >
                 <option value="">Select provider…</option>
                 {providers.map((p) => (
@@ -402,36 +404,19 @@ function Editor({
                     {p.name} ({p.model})
                   </option>
                 ))}
-              </select>
+              </Select>
             </label>
           ) : mode.model_source === "local" ? (
-            <label>
+            <div>
               <span className="mb-1 block text-sv-muted">Local model</span>
-              <select
+              <ModelPicker
                 value={mode.model_id}
-                onChange={(e) => onChange({ ...mode, model_id: e.target.value })}
-                className="w-full rounded-lg border border-sv-border bg-sv-bg px-3 py-2"
-              >
-                {localModels.length === 0 && (
-                  <option value={mode.model_id}>
-                    (none downloaded yet)
-                  </option>
-                )}
-                {localModels.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    ✓ {m.name} ({m.params})
-                  </option>
-                ))}
-                {LLM_MODELS.filter((m) => !downloadedLlm.has(m.id)).map((m) => (
-                  <option key={m.id} value={m.id} disabled>
-                    {m.name} ({m.params}) — not downloaded
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : (
-            <div />
-          )}
+                onChange={(id) => onChange({ ...mode, model_id: id })}
+                models={localModels}
+                hasUndownloaded={LLM_MODELS.some((m) => !downloadedLlm.has(m.id))}
+              />
+            </div>
+          ) : null}
         </div>
 
         {mode.model_source === "local" && !localReady && (
@@ -495,5 +480,170 @@ function Editor({
         </div>
       </div>
     </div>
+  );
+}
+
+const FIT_DOT: Record<string, string> = {
+  good: "bg-sv-good",
+  warn: "bg-sv-warn",
+  bad: "bg-sv-bad",
+};
+
+// Picks which downloaded model powers a mode. Only downloaded models are
+// listed: the old control padded the list with every un-downloaded catalog
+// entry as a disabled row, so most of what it showed could not be chosen.
+// Each row carries the same device-fit dot and RAM figure the Model Store
+// uses, because "will this run well on my machine" is the actual decision.
+function ModelPicker({
+  value,
+  onChange,
+  models,
+  hasUndownloaded,
+}: {
+  value: string;
+  onChange: (id: string) => void;
+  models: LlmModel[];
+  hasUndownloaded: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const { hardware } = useHardwareInfo();
+
+  useEffect(() => {
+    if (!open) return;
+    function onDocDown(e: MouseEvent) {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    window.addEventListener("mousedown", onDocDown);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("mousedown", onDocDown);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  // A dropdown whose only entry is "(none downloaded yet)" is a dead control.
+  // Send the user where the problem is actually solved instead.
+  if (models.length === 0) {
+    return (
+      <div className="rounded-lg border border-sv-warn/30 bg-sv-warn/10 px-3 py-2.5 text-xs text-sv-warn">
+        No on-device models yet.{" "}
+        <Link to="/models" className="font-medium underline">
+          Download one in Model Store
+        </Link>
+        , or switch Processing to a cloud provider.
+      </div>
+    );
+  }
+
+  const selected = models.find((m) => m.id === value);
+
+  return (
+    <div ref={rootRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className={`flex w-full items-center gap-2.5 rounded-lg border bg-sv-bg px-3 py-2 text-left transition-colors ${
+          open ? "border-sv-accent" : "border-sv-border"
+        }`}
+      >
+        {selected ? (
+          <>
+            <FitDot model={selected} hardware={hardware} />
+            <span className="min-w-0 flex-1 truncate text-sv-text">
+              {selected.name}
+            </span>
+            <span className="shrink-0 tabular-nums text-[11px] text-sv-muted">
+              {selected.params} · {formatGB(selected.ram_gb)} RAM
+            </span>
+          </>
+        ) : (
+          <span className="flex-1 text-sv-muted">Select a model…</span>
+        )}
+        <svg
+          viewBox="0 0 24 24"
+          width="12"
+          height="12"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className={`shrink-0 text-sv-muted transition-transform ${open ? "rotate-180" : ""}`}
+        >
+          <path d="m6 9 6 6 6-6" />
+        </svg>
+      </button>
+
+      {open && (
+        <div
+          role="listbox"
+          className="absolute left-0 right-0 top-[calc(100%+4px)] z-50 max-h-64 overflow-y-auto rounded-lg border border-sv-border bg-sv-surface p-1 shadow-xl"
+        >
+          {models.map((m) => {
+            const isSelected = m.id === value;
+            return (
+              <button
+                key={m.id}
+                type="button"
+                role="option"
+                aria-selected={isSelected}
+                onClick={() => {
+                  onChange(m.id);
+                  setOpen(false);
+                }}
+                className={`flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors ${
+                  isSelected ? "bg-sv-accent/15" : "hover:bg-sv-surface-2"
+                }`}
+              >
+                <FitDot model={m} hardware={hardware} />
+                <span
+                  className={`min-w-0 flex-1 truncate ${isSelected ? "text-sv-accent" : "text-sv-text"}`}
+                >
+                  {m.name}
+                </span>
+                <span className="shrink-0 tabular-nums text-[11px] text-sv-muted">
+                  {m.params} · {formatGB(m.ram_gb)} RAM
+                </span>
+              </button>
+            );
+          })}
+          {hasUndownloaded && (
+            <>
+              <div className="my-1 border-t border-sv-border" />
+              <Link
+                to="/models"
+                className="block rounded-md px-2.5 py-2 text-xs text-sv-muted transition-colors hover:bg-sv-surface-2 hover:text-sv-text"
+              >
+                Get more models in Model Store →
+              </Link>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FitDot({
+  model,
+  hardware,
+}: {
+  model: LlmModel;
+  hardware: HardwareInfo | null;
+}) {
+  const fit = llmCompatibility(model, hardware);
+  return (
+    <span
+      title={fit.reason}
+      className={`h-2 w-2 shrink-0 rounded-full ${FIT_DOT[fit.level]}`}
+    />
   );
 }

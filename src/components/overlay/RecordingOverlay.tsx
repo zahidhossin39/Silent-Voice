@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import type { RecordingState } from "../../types";
 import type { TtsState } from "./OverlayApp";
 
@@ -13,6 +14,15 @@ const BASE_HEIGHTS = [6, 10, 13, 9, 5];
 
 // Sky blue — deliberately far from the orange accent so STT vs TTS is obvious.
 const TTS_BLUE = "#38bdf8";
+
+// Backend level is rms*300 capped at 100, so ordinary speech only reaches
+// ~6–25. Remap [FLOOR..FLOOR+SPAN] onto the bar range so speaking is dramatic.
+const FLOOR = 3;
+const SPAN = 26;
+function normLevel(level: number): number {
+  const n = Math.min(1, Math.max(0, (level - FLOOR) / SPAN));
+  return Math.pow(n, 0.7);
+}
 
 export default function RecordingOverlay({
   state,
@@ -32,6 +42,21 @@ export default function RecordingOverlay({
   // Dictation states own the pill; TTS shows only when dictation is idle.
   const ttsActive = !recording && !processing && !done && tts !== "idle";
   const idle = !recording && !processing && !done && !ttsActive;
+
+  // Rolling history of recent normalized loudness (0–1). Starts at 0 so a
+  // fresh (silent) recording shows the loop animation until you actually speak.
+  const [hist, setHist] = useState<number[]>([0, 0, 0, 0, 0]);
+
+  useEffect(() => {
+    if (state !== "recording") {
+      setHist([0, 0, 0, 0, 0]);
+      return;
+    }
+    setHist((h) => [...h.slice(1), normLevel(level ?? 0)]);
+  }, [level, state]);
+
+  // While recording: quiet → the lively "waiting" loop; talking → live bars.
+  const speaking = recording && Math.max(...hist) > 0.14;
 
   return (
     <div
@@ -73,12 +98,12 @@ export default function RecordingOverlay({
           h = "2px";
           opacity = isCenter ? 1 : 0;
         } else if (recording) {
-          // Reactive, but the guide heights ARE the resting look (the previous
-          // full waveform), so silence still reads full — the voice only adds
-          // height on top. Never thinner than before, livelier when you speak.
-          const boost = 0.9 + Math.min(1, level / 100) * 0.55; // 0.9 → 1.45
           w = "2px";
-          h = `${Math.min(15, Math.round(BASE_HEIGHTS[i] * boost))}px`;
+          // Talking → live envelope (2–15px). Silent → the resting guide
+          // heights, which the sv-bar loop animates (the "waiting" look).
+          h = speaking
+            ? Math.max(2, Math.round(2 + hist[i] * 13)) + "px"
+            : `${BASE_HEIGHTS[i]}px`;
           opacity = 1;
         } else {
           w = "2px";
@@ -90,7 +115,9 @@ export default function RecordingOverlay({
           <span
             key={i}
             className={`rounded-full transition-all duration-300 ease-out ${recording
-              ? "sv-bar bg-sv-accent"
+              ? speaking
+                ? "bg-sv-accent"
+                : "sv-bar bg-sv-accent"
               : processing
                 ? "sv-bar-slow bg-sv-muted"
                 : ttsActive
@@ -102,6 +129,9 @@ export default function RecordingOverlay({
             style={{
               width: w,
               height: h,
+              // Snappy while talking so the bars track speech; the 300ms morph
+              // stays for state changes (idle↔recording↔processing).
+              transitionDuration: speaking ? "80ms" : undefined,
               opacity: ttsActive && tts === "synthesizing" ? 0.7 : opacity,
               background: ttsActive ? TTS_BLUE : undefined,
               animationDelay: `${i * 0.1}s`,

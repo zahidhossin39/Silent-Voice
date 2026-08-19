@@ -184,6 +184,7 @@ pub fn synthesize(
     text: &str,
     out_wav: &Path,
     num_threads: i32,
+    sid: i32,
 ) -> Result<(), String> {
     let lib = lib()?;
 
@@ -208,19 +209,35 @@ pub fn synthesize(
     let text_c = c(text)?;
     let wav_c = c(&out_wav.to_string_lossy())?;
 
+    let voices_path = dir.join("voices.bin");
+    let voices_c = if voices_path.exists() { c(&voices_path.to_string_lossy())? } else { empty.clone() };
+
     // Zeroed config with only the VITS section populated — matches what the
     // CLI does for --vits-* flags.
     let mut cfg: TtsConfig = unsafe { std::mem::zeroed() };
-    cfg.model.vits = VitsModelConfig {
-        model: model_c.as_ptr(),
-        lexicon: lexicon_c.as_ptr(),
-        tokens: tokens_c.as_ptr(),
-        data_dir: data_c.as_ptr(),
-        noise_scale: 0.667,
-        noise_scale_w: 0.8,
-        length_scale: 1.0,
-        dict_dir: empty.as_ptr(),
-    };
+    if voices_path.exists() {
+        cfg.model.kokoro = KokoroModelConfig {
+            model: model_c.as_ptr(),
+            voices: voices_c.as_ptr(),
+            tokens: tokens_c.as_ptr(),
+            data_dir: data_c.as_ptr(),
+            length_scale: 1.0,
+            dict_dir: empty.as_ptr(),
+            lexicon: empty.as_ptr(),
+            lang: empty.as_ptr(),
+        };
+    } else {
+        cfg.model.vits = VitsModelConfig {
+            model: model_c.as_ptr(),
+            lexicon: lexicon_c.as_ptr(),
+            tokens: tokens_c.as_ptr(),
+            data_dir: data_c.as_ptr(),
+            noise_scale: 0.667,
+            noise_scale_w: 0.8,
+            length_scale: 1.0,
+            dict_dir: empty.as_ptr(),
+        };
+    }
     cfg.model.num_threads = num_threads;
     cfg.model.provider = provider_c.as_ptr();
     cfg.max_num_sentences = 1;
@@ -249,7 +266,7 @@ pub fn synthesize(
         if tts.is_null() {
             return Err("sherpa-onnx could not load the voice (files may be corrupted — re-download it).".into());
         }
-        let audio = generate(tts, text_c.as_ptr(), 0, 1.0);
+        let audio = generate(tts, text_c.as_ptr(), sid, 1.0);
         if audio.is_null() {
             destroy(tts);
             return Err("sherpa-onnx synthesis failed.".into());
@@ -280,7 +297,7 @@ mod tests {
         };
         let out = std::env::temp_dir().join(format!("sv_sherpa_{voice_id}.wav"));
         let _ = std::fs::remove_file(&out);
-        synthesize(&dir, &model, "আমার সোনার বাংলা, আমি তোমায় ভালোবাসি।", &out, 2).unwrap();
+        synthesize(&dir, &model, "আমার সোনার বাংলা, আমি তোমায় ভালোবাসি।", &out, 2, 0).unwrap();
         let len = std::fs::metadata(&out).unwrap().len();
         // Real speech for this sentence is several seconds of audio; the
         // mangled-text failure mode produced a sub-second (~11 KB) blip.
@@ -293,5 +310,43 @@ mod tests {
     fn bengali_text_synthesizes() {
         synth_voice("vits-coqui-bn-custom_female");
         synth_voice("mms-tts-bengali");
+    }
+
+    // MeloTTS: English VITS on the sherpa path (44.1 kHz). Requires
+    // vits-melo-tts-en in %APPDATA%\SilentVoice\tts.
+    #[test]
+    #[ignore]
+    fn melo_english_synthesizes() {
+        let id = "vits-melo-tts-en";
+        let dir = crate::models::registry::sherpa_voice_dir(id);
+        let model = crate::models::registry::sherpa_voice_model(id).expect("melo not downloaded");
+        let out = std::env::temp_dir().join("sv_melo.wav");
+        let _ = std::fs::remove_file(&out);
+        synthesize(&dir, &model, "The quick brown fox jumps over the lazy dog.", &out, 2, 0).unwrap();
+        let len = std::fs::metadata(&out).unwrap().len();
+        eprintln!("melo: {len} bytes → {}", out.display());
+        assert!(len > 60_000, "melo WAV too small ({len} bytes)");
+    }
+
+    // Kokoro: one archive, many voices selected by sid. Verifies the Kokoro
+    // config path works and that different sids produce different audio.
+    // Requires kokoro-int8-en-v0_19 in %APPDATA%\SilentVoice\tts.
+    #[test]
+    #[ignore]
+    fn kokoro_synthesizes_by_sid() {
+        let id = "kokoro-int8-en-v0_19";
+        let dir = crate::models::registry::sherpa_voice_dir(id);
+        let model = crate::models::registry::sherpa_voice_model(id).expect("kokoro not downloaded");
+        let mut sizes = Vec::new();
+        for sid in [0i32, 5, 9] {
+            let out = std::env::temp_dir().join(format!("sv_kokoro_{sid}.wav"));
+            let _ = std::fs::remove_file(&out);
+            synthesize(&dir, &model, "Hello, this is a test of the Kokoro voice.", &out, 2, sid).unwrap();
+            let len = std::fs::metadata(&out).unwrap().len();
+            eprintln!("sid {sid}: {len} bytes → {}", out.display());
+            assert!(len > 60_000, "sid {sid}: WAV too small ({len} bytes)");
+            sizes.push(len);
+        }
+        assert!(sizes.iter().any(|&l| l != sizes[0]), "all sids produced identical audio — sid not applied");
     }
 }

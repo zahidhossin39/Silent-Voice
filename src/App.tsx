@@ -8,6 +8,7 @@ import ApiKeys from "./components/dashboard/ApiKeys";
 import Settings from "./components/dashboard/Settings";
 import History from "./components/dashboard/History";
 import Guide from "./components/dashboard/Guide";
+import Theme from "./components/dashboard/Theme";
 import OverlayApp from "./components/overlay/OverlayApp";
 import Onboarding from "./components/onboarding/Onboarding";
 import { useModelStore } from "./stores/modelStore";
@@ -17,7 +18,8 @@ import { useAnnounceStore } from "./stores/announceStore";
 import { usePipeline } from "./hooks/usePipeline";
 import { useRuntimeSync } from "./hooks/useRuntimeSync";
 import { useUpdateStore } from "./stores/updateStore";
-import { isTauri } from "./services/tauriBridge";
+import { isTauri, emitEvent } from "./services/tauriBridge";
+import { applyAppTheme } from "./services/appThemes";
 import {
   HomeIcon,
   StoreIcon,
@@ -26,6 +28,7 @@ import {
   GearIcon,
   HistoryIcon,
   GuideIcon,
+  ThemeIcon,
 } from "./components/shared/NavIcons";
 import { Titlebar } from "./components/shared/Titlebar";
 
@@ -33,6 +36,7 @@ const NAV = [
   { to: "/home", label: "Home", Icon: HomeIcon },
   { to: "/models", label: "Model Store", Icon: StoreIcon },
   { to: "/modes", label: "Writing styles", Icon: ModesIcon },
+  { to: "/theme", label: "Theme", Icon: ThemeIcon },
   { to: "/settings", label: "Settings", Icon: GearIcon },
   { to: "/history", label: "History", Icon: HistoryIcon },
   { to: "/api", label: "Cloud providers", Icon: KeyIcon },
@@ -45,6 +49,7 @@ export default function App() {
     new URLSearchParams(window.location.search).get("view") === "overlay";
 
   const theme = useSettingsStore((s) => s.settings.theme);
+  const appTheme = useSettingsStore((s) => s.settings.app_theme);
   const onboarded = useSettingsStore((s) => s.settings.onboarded);
   // Settings now persist to a file (async), so gate the UI until the store
   // has hydrated — otherwise defaults flash (onboarding wizard, wrong config
@@ -55,6 +60,13 @@ export default function App() {
   useEffect(() => {
     document.documentElement.classList.toggle("theme-light", theme === "light");
   }, [theme]);
+  useEffect(() => {
+    applyAppTheme(appTheme);
+    // The pill is a separate window with its own store instance, so a live
+    // change here never reaches it — broadcast so it recolors too. Only the
+    // main window emits (the overlay just listens) to avoid an echo loop.
+    if (!isOverlay) emitEvent("app-theme://changed", appTheme);
+  }, [appTheme, isOverlay]);
   useEffect(() => useSettingsStore.persist.onFinishHydration(() => setHydrated(true)), []);
 
   if (isOverlay) {
@@ -122,11 +134,11 @@ function Dashboard() {
         <div className="flex items-center gap-2 px-5 py-5">
           <svg viewBox="0 0 1024 1024" className="h-8 w-8 rounded-lg shrink-0">
             <rect x="0" y="0" width="1024" height="1024" rx="224" fill="#0d0f14"/>
-            <rect x="232" y="432" width="80" height="160" rx="40" fill="#f97316"/>
-            <rect x="360" y="352" width="80" height="320" rx="40" fill="#f97316"/>
+            <rect x="232" y="432" width="80" height="160" rx="40" fill="var(--color-sv-accent)"/>
+            <rect x="360" y="352" width="80" height="320" rx="40" fill="var(--color-sv-accent)"/>
             <rect x="488" y="252" width="80" height="520" rx="40" fill="#ffffff"/>
-            <rect x="616" y="352" width="80" height="320" rx="40" fill="#f97316"/>
-            <rect x="744" y="432" width="80" height="160" rx="40" fill="#f97316"/>
+            <rect x="616" y="352" width="80" height="320" rx="40" fill="var(--color-sv-accent)"/>
+            <rect x="744" y="432" width="80" height="160" rx="40" fill="var(--color-sv-accent)"/>
           </svg>
           <div>
             <div className="text-sm font-semibold leading-tight">
@@ -142,7 +154,7 @@ function Dashboard() {
               key={n.to}
               to={n.to}
               className={({ isActive }) =>
-                `flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition ${
+                `flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sv-accent focus-visible:ring-offset-2 focus-visible:ring-offset-sv-surface ${
                   isActive
                     ? "bg-sv-accent text-sv-on-accent"
                     : "text-sv-muted hover:bg-sv-surface-2 hover:text-sv-text"
@@ -176,6 +188,7 @@ function Dashboard() {
           <Route path="/home" element={<Home />} />
           <Route path="/models" element={<ModelStore />} />
           <Route path="/modes" element={<Modes />} />
+          <Route path="/theme" element={<Theme />} />
           <Route path="/api" element={<ApiKeys />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/history" element={<History />} />

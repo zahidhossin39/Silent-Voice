@@ -1,0 +1,202 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>History · three full-page designs</title>
+<style>
+  :root{
+    --bg:#0b0e14; --surface:#131722; --surface2:#1b2030; --border:#262c3d;
+    --text:#e6e9f0; --muted:#8b93a7; --accent:#2dd4bf; --on-accent:#04201c; --good:#22c55e;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;padding:40px 28px 90px;background:#05070c;color:var(--text);
+    font-family:ui-sans-serif,system-ui,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased;}
+  h1{font-size:21px;font-weight:650;margin:0 0 4px;}
+  .lead{color:var(--muted);font-size:13px;max-width:760px;line-height:1.5;margin:0 0 6px;}
+
+  .optlabel{display:flex;align-items:baseline;gap:12px;margin:40px 0 14px;}
+  .optlabel .big{font-size:16px;font-weight:700;}
+  .optlabel .tag{font-size:12px;color:var(--accent);border:1px solid var(--accent);border-radius:999px;padding:2px 10px;}
+  .optlabel .desc{font-size:12.5px;color:var(--muted);line-height:1.5;}
+
+  /* full app window */
+  .app{position:relative;overflow:hidden;border:1px solid var(--border);border-radius:16px;
+    background:var(--bg);height:600px;display:flex;box-shadow:0 20px 55px rgba(0,0,0,.55);}
+  .side{width:210px;flex-shrink:0;border-right:1px solid var(--border);background:var(--surface);padding:16px 14px;}
+  .brand{display:flex;align-items:center;gap:10px;margin:4px 4px 20px;}
+  .logo{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,var(--accent),#0d9488);display:grid;place-items:center;}
+  .logo svg{width:18px;height:18px;}
+  .brand .b1{font-size:13px;font-weight:650;}
+  .brand .b2{font-size:10px;color:var(--muted);}
+  .nav{display:flex;flex-direction:column;gap:3px;}
+  .nav a{display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:9px;font-size:13px;color:var(--muted);}
+  .nav a svg{width:16px;height:16px;}
+  .nav a.active{background:var(--accent);color:var(--on-accent);font-weight:600;}
+
+  .main{flex:1;min-width:0;overflow-y:auto;padding:24px 28px;}
+  .phead{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:18px;}
+  .ptitle{font-size:23px;font-weight:650;letter-spacing:-.01em;}
+  .psub{color:var(--muted);font-size:12.5px;margin-top:2px;max-width:52ch;}
+  .hactions{display:flex;gap:8px;flex-shrink:0;align-items:center;}
+  .btn{border:1px solid var(--border);background:transparent;color:var(--muted);border-radius:9px;padding:7px 13px;font-size:13px;cursor:pointer;}
+  .btn:hover{color:var(--text);}
+  .iconbtn{display:grid;place-items:center;width:36px;height:36px;border:1px solid var(--border);background:var(--surface);border-radius:9px;color:var(--muted);cursor:pointer;}
+  .iconbtn:hover{color:var(--accent);border-color:var(--accent);}
+  .iconbtn svg{width:17px;height:17px;}
+
+  .card{border:1px solid var(--border);border-radius:14px;background:var(--surface);overflow:hidden;margin-bottom:16px;}
+  .chead{display:flex;align-items:center;gap:10px;padding:13px 18px;border-bottom:1px solid var(--border);
+    background:linear-gradient(to right,rgba(139,147,167,.06),transparent 70%);}
+  .ic{display:grid;place-items:center;width:28px;height:28px;border-radius:8px;background:color-mix(in srgb,#8b93a7 18%,transparent);color:#a9b0c2;}
+  .ic svg{width:15px;height:15px;}
+  .chead .ct{font-size:13px;font-weight:600;}
+  .chead .cd{font-size:11px;color:var(--muted);margin-top:1px;}
+  .rows{padding:0 18px;}
+  .row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:13px 0;border-bottom:1px solid rgba(255,255,255,.06);}
+  .row:last-child{border-bottom:0;}
+  .rl{font-size:13px;}
+  .rh{font-size:11px;color:var(--muted);margin-top:2px;max-width:44ch;line-height:1.4;}
+  .ctrl{display:flex;align-items:center;gap:8px;flex-shrink:0;}
+  .num{width:56px;height:34px;border:1px solid var(--border);background:var(--bg);border-radius:8px;display:grid;place-items:center;font-weight:600;font-size:14px;}
+  .unit{color:var(--muted);font-size:13px;}
+  .sel{height:34px;border:1px solid var(--border);background:var(--bg);border-radius:8px;padding:0 12px;color:var(--text);font-size:13px;display:flex;align-items:center;gap:18px;}
+  .tog{width:42px;height:24px;border-radius:999px;background:var(--accent);position:relative;flex-shrink:0;cursor:pointer;}
+  .tog.off{background:#3a4152;}
+  .tog i{position:absolute;top:3px;left:21px;width:18px;height:18px;border-radius:50%;background:#fff;transition:left .15s;}
+  .tog.off i{left:3px;}
+
+  .sectlabel{font-size:11px;font-weight:700;letter-spacing:.1em;color:var(--muted);text-transform:uppercase;margin:22px 2px 12px;}
+  .search{width:100%;border:1px solid var(--border);background:var(--surface);border-radius:11px;padding:12px 16px;color:var(--muted);font-size:13px;margin-bottom:14px;}
+  .tr{border:1px solid var(--border);background:var(--surface);border-radius:12px;padding:14px 16px;margin-bottom:10px;}
+  .trh{display:flex;align-items:flex-start;justify-content:space-between;}
+  .trd{font-size:13px;font-weight:600;}
+  .trm{font-size:11px;color:var(--muted);margin-top:3px;}
+  .trm .dot{color:var(--good);}
+  .trtext{color:var(--muted);font-size:13px;margin-top:8px;line-height:1.4;}
+  .tracts{display:flex;gap:12px;color:var(--muted);flex-shrink:0;}
+  .tracts svg{width:15px;height:15px;cursor:pointer;}
+  .tracts svg:hover{color:var(--text);}
+
+  /* B collapsible */
+  .collap .chead{cursor:pointer;}
+  .chev{margin-left:auto;color:var(--muted);transition:transform .25s;display:grid;place-items:center;}
+  .chev svg{width:18px;height:18px;}
+  .collap.open .chev{transform:rotate(180deg);}
+  .collap .cbody{max-height:0;overflow:hidden;transition:max-height .3s ease;}
+  .collap.open .cbody{max-height:460px;}
+  .hinttag{font-size:10px;color:var(--accent);border:1px solid var(--accent);border-radius:999px;padding:1px 8px;margin-left:auto;}
+  .pulse{animation:pulse 1.5s ease-in-out 3;}
+  @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(45,212,191,0);}50%{box-shadow:0 0 0 3px rgba(45,212,191,.28);}}
+
+  /* A slide-over */
+  .scrim{position:absolute;inset:0;background:rgba(0,0,0,.5);opacity:0;pointer-events:none;transition:opacity .2s;}
+  .scrim.on{opacity:1;pointer-events:auto;}
+  .sheet{position:absolute;top:0;right:0;height:100%;width:410px;background:var(--surface);border-left:1px solid var(--border);
+    box-shadow:-22px 0 55px rgba(0,0,0,.55);transform:translateX(100%);transition:transform .28s ease;padding:22px 22px;overflow-y:auto;}
+  .sheet.on{transform:translateX(0);}
+  .sheeth{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;}
+  .sheeth .st{font-size:15px;font-weight:650;}
+  .sheeth .x{cursor:pointer;color:var(--muted);font-size:18px;}
+  .sheetd{color:var(--muted);font-size:12px;margin-bottom:14px;line-height:1.5;}
+</style>
+</head>
+<body>
+  <h1>History page — three complete designs</h1>
+  <p class="lead">Each is a full History page (with sidebar) so you can judge the real look and flow. All interactive: in A click the gear, in B click the Storage bar. Accent in teal to match your current theme.</p>
+
+  <div class="optlabel"><span class="big">Option A</span><span class="tag">Gear → slide-over</span>
+    <span class="desc">Page is pure history. A gear in the header opens Storage as a right-side panel.</span></div>
+  <div id="A"></div>
+
+  <div class="optlabel"><span class="big">Option B</span><span class="tag">Collapsible</span>
+    <span class="desc">Storage is a slim collapsed bar above the list — click to expand. One-time hint pulse, no repeat nag.</span></div>
+  <div id="B"></div>
+
+  <div class="optlabel"><span class="big">Option C</span><span class="tag">Moved to bottom</span>
+    <span class="desc">History first, Storage at the very bottom. Nothing hidden, nothing in the way.</span></div>
+  <div id="C"></div>
+
+<script>
+  const I = {
+    wave:`<svg viewBox="0 0 24 24" fill="none"><g stroke="#04201c" stroke-width="2.1" stroke-linecap="round"><path d="M5 10v4M9 6v12M13 8v8M17 11v2"/></g></svg>`,
+    home:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>`,
+    store:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l1.5-5h15L21 9"/><path d="M4 9v11h16V9"/></svg>`,
+    styles:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/></svg>`,
+    theme:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="8" cy="10" r="1.3" fill="currentColor"/><circle cx="15" cy="9" r="1.3" fill="currentColor"/><circle cx="16" cy="14" r="1.3" fill="currentColor"/></svg>`,
+    gearnav:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 6 19.4l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0-1.2-2.9H2a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 3.4 6l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H8a1.7 1.7 0 0 0 1-1.5V2a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 2.9 1.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V8a1.7 1.7 0 0 0 1.5 1H22a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>`,
+    history:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>`,
+    cloud:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="3"/><path d="M10 13l6-6M14 5l4 4"/></svg>`,
+    guide:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H18v16H6a2 2 0 0 0-2 2z"/><path d="M4 17.5A1.5 1.5 0 0 1 5.5 16H18"/></svg>`,
+    archive:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/><path d="M10 12h4"/></svg>`,
+    gear:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1l2-1.6-2-3.4-2.3 1a7 7 0 0 0-1.7-1L14.5 2h-4l-.4 2.4a7 7 0 0 0-1.7 1l-2.3-1-2 3.4L4.1 11a7 7 0 0 0 0 2l-2 1.6 2 3.4 2.3-1a7 7 0 0 0 1.7 1L10.5 22h4l.4-2.4a7 7 0 0 0 1.7-1l2.3 1 2-3.4-2-1.6c.1-.3.1-.7.1-1z"/></svg>`,
+    chev:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>`,
+    edit:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>`,
+    redo:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>`,
+    copy:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>`,
+    trash:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>`,
+  };
+
+  const sidebar = (active)=>`<div class="side">
+    <div class="brand"><div class="logo">${I.wave}</div><div><div class="b1">Silent Voice</div><div class="b2">local-first dictation</div></div></div>
+    <div class="nav">
+      ${[['Home','home'],['Model Store','store'],['Writing styles','styles'],['Theme','theme'],['Settings','gearnav'],['History','history'],['Cloud providers','cloud'],['How to use','guide']]
+        .map(([l,ic])=>`<a class="${l===active?'active':''}">${I[ic]}${l}</a>`).join('')}
+    </div></div>`;
+
+  const rows = `
+    <div class="row"><div><div class="rl">History limit</div><div class="rh">Keep at most this many transcriptions</div></div>
+      <div class="ctrl"><span class="num">5</span><span class="unit">entries</span></div></div>
+    <div class="row"><div><div class="rl">Auto-delete</div><div class="rh">Remove entries older than</div></div>
+      <div class="ctrl"><span class="sel">Custom… ${I.chev}</span><span class="num">1</span><span class="sel">hours ${I.chev}</span></div></div>
+    <div class="row"><div><div class="rl">Save audio of each dictation</div><div class="rh">Lets you replay and copy the original recording.</div></div>
+      <div class="tog"><i></i></div></div>
+    <div class="row"><div><div class="rl">Recordings to keep</div><div class="rh">About 1 MB each. Older recordings are deleted first.</div></div>
+      <div class="ctrl"><span class="num">3</span><span class="unit">recordings</span></div></div>
+    <div class="row"><div><div class="rl">Blur transcripts until hover</div><div class="rh">Keeps what you dictated hidden when your screen is visible to others</div></div>
+      <div class="tog off"><i></i></div></div>`;
+
+  const list = `<div class="search">Search transcriptions…</div>` +
+    [['Aug 13, 2026 · 6:30 AM','Let me know when the build finishes and I will push the release.'],
+     ['Aug 12, 2026 · 9:14 PM','Remember to buy oat milk and pick up the package after work.'],
+     ['Aug 12, 2026 · 2:41 PM','The quarterly numbers look strong across every region this time.'],
+     ['Aug 11, 2026 · 8:05 AM','Draft a reply to the landlord about the lease renewal date.']]
+    .map(([d,t])=>`<div class="tr"><div class="trh"><div><div class="trd">${d}</div><div class="trm"><span class="dot">●</span> small.en · raw</div></div>
+      <div class="tracts">${I.edit}${I.redo}${I.copy}${I.trash}</div></div><div class="trtext">${t}</div></div>`).join('');
+
+  const head = (gear)=>`<div class="phead">
+    <div><div class="ptitle">History</div><div class="psub">Past transcriptions. Edit one to fix mistakes — corrections teach the app new words.</div></div>
+    <div class="hactions">${gear?`<button class="iconbtn gear" title="Storage settings">${I.gear}</button>`:''}<button class="btn">Clear all</button></div></div>`;
+
+  const storageCard = (cls='')=>`<div class="card ${cls}">
+    <div class="chead"><span class="ic">${I.archive}</span><div><div class="ct">Storage</div><div class="cd">How much history to keep and whether to save the original audio.</div></div></div>
+    <div class="rows">${rows}</div></div>`;
+
+  // A — slide-over
+  document.getElementById('A').innerHTML = `<div class="app">${sidebar('History')}
+    <div class="main">${head(true)}${list}</div>
+    <div class="scrim"></div>
+    <div class="sheet"><div class="sheeth"><span class="st">Storage</span><span class="x">✕</span></div>
+      <div class="sheetd">How much history to keep and whether to save the original audio.</div><div class="rows">${rows}</div></div></div>`;
+  (()=>{const a=document.getElementById('A');const sh=a.querySelector('.sheet'),sc=a.querySelector('.scrim');
+    a.querySelector('.gear').onclick=()=>{sh.classList.add('on');sc.classList.add('on');};
+    const close=()=>{sh.classList.remove('on');sc.classList.remove('on');};
+    a.querySelector('.x').onclick=close;sc.onclick=close;})();
+
+  // B — collapsible (collapsed by default)
+  document.getElementById('B').innerHTML = `<div class="app">${sidebar('History')}
+    <div class="main">${head(false)}
+      <div class="card collap pulse">
+        <div class="chead"><span class="ic">${I.archive}</span><div><div class="ct">Storage</div><div class="cd">How much history to keep and whether to save the original audio.</div></div>
+          <span class="hinttag">click to open</span><span class="chev">${I.chev}</span></div>
+        <div class="cbody"><div class="rows">${rows}</div></div></div>
+      ${list}</div></div>`;
+  (()=>{const c=document.getElementById('B').querySelector('.collap');
+    c.querySelector('.chead').onclick=()=>{c.classList.toggle('open');const t=c.querySelector('.hinttag');if(t)t.remove();};})();
+
+  // C — bottom
+  document.getElementById('C').innerHTML = `<div class="app">${sidebar('History')}
+    <div class="main">${head(false)}${list}
+      <div class="sectlabel">Storage settings</div>${storageCard()}</div></div>`;
+</script>
+</body>
+</html>

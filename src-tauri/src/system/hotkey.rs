@@ -312,10 +312,6 @@ pub fn start_capture(app: &AppHandle) {
             *a = exe;
         }
     }
-    state.target_hwnd.store(
-        foreground::foreground_hwnd(),
-        std::sync::atomic::Ordering::Relaxed,
-    );
 
     let (device, chunk_cfg) = match state.config.lock() {
         Ok(cfg) => {
@@ -513,6 +509,7 @@ pub fn on_released(app: &AppHandle, shortcut: &Shortcut) {
 /// Stop the active recording (if any), then run the full pipeline.
 fn finalize_recording(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
+        app.state::<AppState>().target_hwnd.store(foreground::foreground_hwnd(), std::sync::atomic::Ordering::Relaxed);
         let started = std::time::Instant::now();
 
         let recorder: Option<Recorder> = {
@@ -582,6 +579,7 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
         mut mode_api_key,
         save_audio,
         audio_clip_limit,
+        coedit_enabled,
     ) = {
         let state = app.state::<AppState>();
         let cfg = match state.config.lock() {
@@ -614,6 +612,7 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
             cfg.mode_api_key.clone(),
             cfg.save_audio,
             cfg.audio_clip_limit,
+            cfg.coedit_enabled,
         )
     };
 
@@ -760,6 +759,11 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
                 raw_text.clone()
             }
         }
+    } else if coedit_enabled {
+        let t = raw_text.clone();
+        tokio::task::spawn_blocking(move || crate::coedit::correct(&t))
+            .await
+            .unwrap_or_else(|_| raw_text.clone())
     } else {
         raw_text.clone()
     };

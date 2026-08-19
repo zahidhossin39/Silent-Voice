@@ -56,6 +56,36 @@ const ROWS_TOP: i32 = PAD + TITLE_H + 4 + SUB_H + 14;
 const ROW_H: i32 = 48;
 const BG: u32 = 0x00ffffff; // white
 
+// Accent palettes for the popup border/highlight. Order + RGB values match
+// src/components/dashboard/Theme.tsx PALETTES `dot` colors exactly, so the
+// Theme picker preview matches what actually renders here.
+pub(crate) const PALETTES: [(u8, u8, u8); 5] = [
+    (0xa7, 0x8b, 0xfa), // violet
+    (0x2d, 0xd4, 0xbf), // teal
+    (0x38, 0x8b, 0xfd), // amber-blue
+    (0xf9, 0x73, 0x16), // orange
+    (0x8b, 0x93, 0xa7), // brightness
+];
+static THEME_IDX: AtomicI32 = AtomicI32::new(3); // orange, matches settingsStore default
+static STYLE_IDX: AtomicI32 = AtomicI32::new(0);
+
+/// Selects the popup border/highlight accent. Index into PALETTES.
+pub fn set_theme(idx: usize) {
+    THEME_IDX.store(idx as i32, Ordering::Relaxed);
+    NEEDS_REDRAW.store(true, Ordering::Relaxed);
+}
+
+/// Selects the popup layout. Currently the popup has one layout, so this is
+/// stored for the frontend round-trip but doesn't change rendering yet.
+pub fn set_style(idx: usize) {
+    STYLE_IDX.store(idx as i32, Ordering::Relaxed);
+}
+
+fn current_accent() -> (u8, u8, u8) {
+    let idx = THEME_IDX.load(Ordering::Relaxed) as usize;
+    PALETTES.get(idx).copied().unwrap_or(PALETTES[3])
+}
+
 /// One flagged word occurrence on screen (word rect in physical pixels).
 #[derive(Clone, PartialEq)]
 pub struct SquiggleInfo {
@@ -375,6 +405,7 @@ unsafe fn render_popup(hwnd: HWND, x: i32, y: i32) {
     let half_width = POPUP_W as f32 / 2.0;
     let half_height = height as f32 / 2.0;
     let radius = 24.0f32;
+    let accent = current_accent();
 
     for py in 0..height {
         let y_f = py as f32 + 0.5;
@@ -400,10 +431,10 @@ unsafe fn render_popup(hwnd: HWND, x: i32, y: i32) {
                 let b = (pixel & 0xFF) as f32;
                 let g = ((pixel >> 8) & 0xFF) as f32;
                 let r = ((pixel >> 16) & 0xFF) as f32;
-                // blend the GDI-drawn content toward the orange border color by t
-                let r2 = r * (1.0 - t) + 249.0 * t;
-                let g2 = g * (1.0 - t) + 115.0 * t;
-                let b2 = b * (1.0 - t) + 22.0 * t;
+                // blend the GDI-drawn content toward the selected accent's border color by t
+                let r2 = r * (1.0 - t) + accent.0 as f32 * t;
+                let g2 = g * (1.0 - t) + accent.1 as f32 * t;
+                let b2 = b * (1.0 - t) + accent.2 as f32 * t;
                 let a = (c_outer * 255.0).round() as u32;
                 let new_r = (r2 * c_outer).round().min(255.0) as u32;
                 let new_g = (g2 * c_outer).round().min(255.0) as u32;
@@ -453,6 +484,7 @@ struct Overlay {
     bmp: Option<HBITMAP>,
     bmp_w: i32,
     bmp_h: i32,
+    bits: *mut std::ffi::c_void,
 }
 
 impl Drop for Overlay {
@@ -460,6 +492,7 @@ impl Drop for Overlay {
         unsafe {
             if let Some(h) = self.bmp.take() {
                 let _ = DeleteObject(h);
+                self.bits = std::ptr::null_mut();
             }
             let _ = DestroyWindow(self.hwnd);
         }
@@ -558,6 +591,7 @@ fn run(rx: &Receiver<Vec<SquiggleInfo>>, action_tx: &Sender<OverlayAction>) {
             bmp: None,
             bmp_w: 0,
             bmp_h: 0,
+            bits: std::ptr::null_mut(),
         };
         let mut infos: Vec<SquiggleInfo> = Vec::new();
         let mut drawn: Vec<SquiggleInfo> = Vec::new();
@@ -861,62 +895,69 @@ unsafe fn apply(
     let w = max_x - min_x;
     let h = max_y - min_y;
 
-    if let Some(bmp) = overlay.bmp.take() {
-        let _ = DeleteObject(bmp);
+    // Reuse the existing DIB whenever the bounding box is unchanged - the
+    // common case while typing. Recreating a near-fullscreen 32bpp bitmap on
+    // every frame was pure allocation churn.
+    if overlay.bits.is_null() || overlay.bmp_w != w || overlay.bmp_h != h {
+        if let Some(bmp) = overlay.bmp.take() {
+            let _ = DeleteObject(bmp);
+        }
+        overlay.bits = std::ptr::null_mut();
+
+        let screen = GetDC(None);
+        let memdc = CreateCompatibleDC(screen);
+        let bi = BITMAPINFO {
+            bmiHeader: BITMAPINFOHEADER {
+                biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+                biWidth: w,
+                biHeight: -h, // top-down
+                biPlanes: 1,
+                biBitCount: 32,
+                biCompression: BI_RGB.0,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let mut bits: *mut std::ffi::c_void = std::ptr::null_mut();
+        match CreateDIBSection(memdc, &bi, DIB_RGB_COLORS, &mut bits, None, 0) {
+            Ok(bmp) => {
+                overlay.bmp = Some(bmp);
+                overlay.bmp_w = w;
+                overlay.bmp_h = h;
+                overlay.bits = bits;
+            }
+            Err(e) => {
+                crate::logging::log_error("squiggle", &format!("CreateDIBSection (overlay) failed: {e}"));
+                let _ = DeleteDC(memdc);
+                ReleaseDC(None, screen);
+                return;
+            }
+        }
+
+        let _ = DeleteDC(memdc);
+        ReleaseDC(None, screen);
     }
 
-    let screen = GetDC(None);
-    let memdc = CreateCompatibleDC(screen);
-    let bi = BITMAPINFO {
-        bmiHeader: BITMAPINFOHEADER {
-            biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
-            biWidth: w,
-            biHeight: -h, // top-down
-            biPlanes: 1,
-            biBitCount: 32,
-            biCompression: BI_RGB.0,
-            ..Default::default()
-        },
-        ..Default::default()
-    };
-    
-    let mut bits: *mut std::ffi::c_void = std::ptr::null_mut();
-    match CreateDIBSection(memdc, &bi, DIB_RGB_COLORS, &mut bits, None, 0) {
-        Ok(bmp) => {
-            overlay.bmp = Some(bmp);
-            overlay.bmp_w = w;
-            overlay.bmp_h = h;
-            
-            let px = std::slice::from_raw_parts_mut(bits as *mut u32, (w * h) as usize);
-            px.fill(0);
-            
-            for s in squiggles.iter().take(show) {
-                let sw = s.w.clamp(4, 600);
-                let strip_y = s.y + s.h - 2;
-                let color = if s.spelling { RED } else { BLUE };
-                
-                for r in 0..3 {
-                    for cx in 0..sw {
-                        let py = strip_y - min_y + r;
-                        let px_x = s.x - min_x + cx;
-                        let idx = (py * w + px_x) as usize;
-                        if idx < px.len() {
-                            px[idx] = color;
-                        }
-                    }
+    let px = std::slice::from_raw_parts_mut(overlay.bits as *mut u32, (w * h) as usize);
+    px.fill(0);
+
+    for s in squiggles.iter().take(show) {
+        let sw = s.w.clamp(4, 600);
+        let strip_y = s.y + s.h - 2;
+        let color = if s.spelling { RED } else { BLUE };
+
+        for r in 0..3 {
+            for cx in 0..sw {
+                let py = strip_y - min_y + r;
+                let px_x = s.x - min_x + cx;
+                let idx = (py * w + px_x) as usize;
+                if idx < px.len() {
+                    px[idx] = color;
                 }
             }
         }
-        Err(e) => {
-            crate::logging::log_error("squiggle", &format!("CreateDIBSection (overlay) failed: {e}"));
-            let _ = DeleteDC(memdc);
-            ReleaseDC(None, screen);
-            return;
-        }
     }
-    
-    let _ = DeleteDC(memdc);
-    ReleaseDC(None, screen);
 
     let new_alpha = if drawn.is_empty() { 55 } else { 255 };
     overlay.alpha = new_alpha;

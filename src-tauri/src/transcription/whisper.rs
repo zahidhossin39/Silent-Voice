@@ -1,6 +1,6 @@
 use crate::llm::openai;
 use crate::models::registry;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_shell::ShellExt;
 
 /// Runs transcription via either the local whisper.cpp sidecar or a cloud
@@ -21,6 +21,8 @@ pub async fn transcribe_dispatch(
     stt_api_key: &str,
     stt_cloud_model: &str,
 ) -> Result<String, String> {
+    let stt_state = app.state::<crate::AppState>();
+    let _stt_gate = stt_state.stt_gate.lock().await;
     if stt_source == "cloud" {
         if stt_base_url.is_empty() || stt_cloud_model.is_empty() {
             return Err(
@@ -149,7 +151,6 @@ pub async fn transcribe(
         "1".into(), // greedy decoding — same speedup as the server path
         "-bo".into(),
         "1".into(), // best-of 1 candidate (default 2)
-        "-nf".into(), // disable temperature fallback: cap at 1 pass for bounded latency
         "-fa".into(),
     ];
 
@@ -222,13 +223,121 @@ async fn transcribe_via_server(
     super::server::transcribe(std::path::Path::new(audio_path)).await
 }
 
-/// whisper.cpp prints transcription lines; strip stray blank lines / markers.
+/// whisper.cpp prints transcription lines; strip stray blank lines / markers,
+/// and the ellipses Whisper hallucinates when it is handed a mid-dictation
+/// pause (it was trained on subtitles, so near-silence becomes "..." / "…").
+/// The chunked path drops these via `looks_hallucinated`; the normal push-to-
+/// talk path lands here, so it needs the same guard or the dots reach the paste.
 fn clean_output(raw: &str) -> String {
-    raw.lines()
-        .map(|l| l.trim())
-        .filter(|l| !l.is_empty() && !l.starts_with('['))
+    let joined = raw
+        .lines()
+        .map(|l| l.trim().trim_start_matches("- ").trim())
+        // Drop blank lines, whisper.cpp's `[markers]`, and any segment that is
+        // nothing but punctuation/ellipsis — a pure pause rendered as dots.
+        .filter(|l| !l.is_empty() && !l.starts_with('[') && !is_punct_only(l))
         .collect::<Vec<_>>()
-        .join(" ")
-        .trim()
-        .to_string()
+        .join(" ");
+    strip_wrapping_quotes(&strip_pause_ellipsis(&joined))
+}
+
+fn strip_wrapping_quotes(text: &str) -> String {
+    let t = text.trim();
+    let is_quote = |c: char| c == '"' || c == '\u{201c}' || c == '\u{201d}';
+    if t.chars().filter(|&c| is_quote(c)).count() != 2 {
+        return text.to_string();
+    }
+    let chars: Vec<char> = t.chars().collect();
+    if chars.len() >= 2 && is_quote(chars[0]) && is_quote(chars[chars.len() - 1]) {
+        return chars[1..chars.len() - 1].iter().collect::<String>().trim().to_string();
+    }
+    text.to_string()
+}
+
+/// True when every character is punctuation or whitespace (e.g. "...", "…",
+/// "-", ". ,") — the shape of a pause Whisper hallucinated into a whole segment.
+fn is_punct_only(s: &str) -> bool {
+    let t = s.trim();
+    !t.is_empty() && t.chars().all(|c| c.is_ascii_punctuation() || c == '…' || c.is_whitespace())
+}
+
+/// Remove ellipses Whisper inserts mid-sentence on a pause (unicode "…" or a
+/// run of 2+ ASCII dots), then tidy the spacing the removal leaves behind. A
+/// single "." (a real sentence end) is untouched.
+fn strip_pause_ellipsis(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '…' {
+            out.push(' ');
+        } else if c == '.' && chars.peek() == Some(&'.') {
+            // Start of a "..".."..." run — consume every following dot.
+            while chars.peek() == Some(&'.') {
+                chars.next();
+            }
+            out.push(' ');
+        } else {
+            out.push(c);
+        }
+    }
+    // Collapse the gaps left by removed ellipses, and pull punctuation back
+    // against the previous word (" ," -> ",").
+    let mut result = String::with_capacity(out.len());
+    let mut prev_space = false;
+    for c in out.chars() {
+        if c.is_whitespace() {
+            prev_space = true;
+            continue;
+        }
+        if !result.is_empty() {
+            if matches!(c, ',' | '.' | '!' | '?' | ';' | ':') {
+                // no space before trailing punctuation
+            } else if prev_space {
+                result.push(' ');
+            }
+        }
+        result.push(c);
+        prev_space = false;
+    }
+    result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn strips_leading_dialogue_dashes() {
+        assert_eq!(clean_output("- Hey there.\n- How are you?"), "Hey there. How are you?");
+    }
+
+    #[test]
+    fn drops_standalone_ellipsis_segment() {
+        assert_eq!(clean_output("Hello there\n...\nfriend"), "Hello there friend");
+        assert_eq!(clean_output("…"), "");
+        assert_eq!(clean_output("Okay.\n[BLANK_AUDIO]\n…"), "Okay.");
+    }
+
+    #[test]
+    fn strips_inline_pause_ellipsis() {
+        assert_eq!(
+            clean_output("I've written… A sentence"),
+            "I've written A sentence"
+        );
+        assert_eq!(clean_output("wait... what"), "wait what");
+        assert_eq!(clean_output("trailing off…"), "trailing off");
+    }
+
+    #[test]
+    fn keeps_real_periods_and_words() {
+        assert_eq!(clean_output("Hello world."), "Hello world.");
+        assert_eq!(clean_output("One. Two. Three."), "One. Two. Three.");
+        assert_eq!(clean_output("It cost $3.50 today."), "It cost $3.50 today.");
+    }
+
+    #[test]
+    fn strips_quotes_wrapping_whole_utterance() {
+        assert_eq!(clean_output("\"Hello there.\""), "Hello there.");
+        assert_eq!(clean_output("\"a\" and \"b\""), "\"a\" and \"b\"");
+        assert_eq!(clean_output("\"Hey?\" Is it ok?"), "\"Hey?\" Is it ok?");
+    }
 }

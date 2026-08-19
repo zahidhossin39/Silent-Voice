@@ -1,0 +1,98 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Voiceprint header — every section</title>
+<style>
+  :root{
+    --bg:#0b0e14; --surface:#131722; --surface2:#1b2030; --border:#262c3d;
+    --text:#e6e9f0; --muted:#8b93a7;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;padding:40px 34px 90px;background:#05070c;color:var(--text);
+    font-family:ui-sans-serif,system-ui,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased;}
+  h1{font-size:21px;font-weight:650;margin:0 0 4px;}
+  .lead{color:var(--muted);font-size:13px;max-width:800px;line-height:1.5;margin:0 0 20px;}
+  .lead b{color:#cfd4e0;}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));gap:22px;}
+
+  .card{border:1px solid var(--border);border-radius:14px;background:var(--surface);overflow:hidden;}
+  .chead{display:flex;align-items:center;gap:11px;padding:15px 18px 11px;}
+  .ic{color:var(--a);flex-shrink:0;display:grid;place-items:center;}
+  .ic svg{width:18px;height:18px;}
+  .ct{font-size:14px;font-weight:600;}
+  .cd{font-size:11.5px;color:var(--muted);line-height:1.4;margin-top:2px;max-width:44ch;}
+  .wave{display:flex;align-items:center;gap:3px;height:14px;padding:0 18px 12px;}
+  .wave span{width:3px;border-radius:2px;background:var(--a);}
+
+  .rows{padding:4px 18px 10px;}
+  .row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:11px 0;border-bottom:1px solid rgba(255,255,255,.06);}
+  .row:last-child{border-bottom:0;}
+  .rl{font-size:13px;}.rh{font-size:11px;color:var(--muted);margin-top:2px;max-width:34ch;line-height:1.4;}
+  .tog{width:40px;height:23px;border-radius:999px;background:var(--a);position:relative;flex-shrink:0;}
+  .tog.off{background:#3a4152;}
+  .tog i{position:absolute;top:3px;left:20px;width:17px;height:17px;border-radius:50%;background:#fff;}
+  .tog.off i{left:3px;}
+  .sel{height:32px;border:1px solid var(--border);background:var(--bg);border-radius:8px;padding:0 11px;font-size:12.5px;display:inline-flex;align-items:center;gap:14px;color:var(--text);}
+  .seg{display:inline-flex;border:1px solid var(--border);background:var(--bg);border-radius:8px;padding:3px;gap:2px;}
+  .seg span{padding:4px 11px;border-radius:6px;font-size:12px;color:var(--muted);}
+  .seg span.on{background:var(--a);color:#fff;font-weight:600;}
+  .btn{border:1px solid var(--border);background:transparent;color:var(--text);border-radius:8px;padding:6px 12px;font-size:12px;}
+  .chev{width:11px;height:11px;}
+</style>
+</head>
+<body>
+  <h1>Voiceprint header — applied to every section</h1>
+  <p class="lead">The waveform-divider treatment on all eight Settings categories, each in its own <b>section color</b> with its real icon. Scan the set: does the voiceprint carry across all of them, or feel off on some? That's the call to make before it goes into the app.</p>
+
+  <div class="grid" id="grid"></div>
+
+<script>
+  const H = [5,9,13,16,11,7,10,14,9,6,8,12,15,10,7,5,8,11,6,4,7,9,5,3];
+  const wave = () => `<div class="wave">${H.map((h,i)=>`<span style="height:${h}px;opacity:${(1-i/H.length*0.85).toFixed(2)}"></span>`).join("")}</div>`;
+  const tog = (on)=>`<span class="tog ${on?'':'off'}"><i></i></span>`;
+  const chev = `<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>`;
+  const sel = (v)=>`<span class="sel">${v} ${chev}</span>`;
+  const seg = (a,b,on)=>`<span class="seg"><span class="${on===0?'on':''}">${a}</span><span class="${on===1?'on':''}">${b}</span></span>`;
+  const btn = (t)=>`<button class="btn">${t}</button>`;
+  const row = (l,h,ctrl)=>`<div class="row"><div><div class="rl">${l}</div>${h?`<div class="rh">${h}</div>`:''}</div><div>${ctrl}</div></div>`;
+
+  const I = {
+    mic:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4"/></svg>`,
+    wave:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 10v4M8 6v12M12 8v8M16 5v14M20 10v4"/></svg>`,
+    spell:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h11M4 12h16M4 17h8"/><path d="M17 15l2 2 3-4"/></svg>`,
+    spk:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M17 8a5 5 0 0 1 0 8"/></svg>`,
+    book:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H18v16H6a2 2 0 0 0-2 2z"/><path d="M4 17.5A1.5 1.5 0 0 1 5.5 16H18"/></svg>`,
+    layers:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/></svg>`,
+    gauge:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 14l4-4"/><path d="M4 18a9 9 0 1 1 16 0z"/></svg>`,
+    cog:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1l2-1.6-2-3.4-2.3 1a7 7 0 0 0-1.7-1L14.5 2h-4l-.4 2.4a7 7 0 0 0-1.7 1l-2.3-1-2 3.4L4.1 11a7 7 0 0 0 0 2l-2 1.6 2 3.4 2.3-1a7 7 0 0 0 1.7 1L10.5 22h4l.4-2.4a7 7 0 0 0 1.7-1l2.3 1 2-3.4-2-1.6c.1-.3.1-.7.1-1z"/></svg>`,
+  };
+
+  const SECTIONS = [
+    { color:"oklch(0.67 0.125 250)", icon:"mic", title:"Recording", desc:"How the push-to-talk hotkey behaves and how your voice is captured.",
+      rows:[row("Double-tap to lock recording","Twice to go hands-free",tog(1)), row("Auto-hide the pill","Fades ~5s after it's done",tog(0))] },
+    { color:"oklch(0.67 0.125 180)", icon:"wave", title:"Speech-to-text", desc:"The model that turns your speech into text, plus the microphone it listens to.",
+      rows:[row("Speech model",null,sel("Whisper Small")), row("Language",null,sel("Auto-detect"))] },
+    { color:"oklch(0.67 0.125 340)", icon:"spell", title:"Grammar", desc:"Spelling and grammar help that appears as you type in any app.",
+      rows:[row("Inline proofreading","Underlines mistakes anywhere you type",tog(1)), row("Oxford comma suggestions",null,tog(1))] },
+    { color:"oklch(0.67 0.125 310)", icon:"spk", title:"Read aloud", desc:"Select text anywhere, press the hotkey, and hear it spoken.",
+      rows:[row("Enable read-aloud","Turn the read-aloud hotkey on or off",tog(1)), row("Voice",null,sel("Amy (English)"))] },
+    { color:"oklch(0.67 0.125 210)", icon:"book", title:"Words & shortcuts", desc:"Names Whisper mishears, and short triggers typed out in full.",
+      rows:[row("Custom vocabulary","Tauri, whisper.cpp, Kubernetes…",btn("Edit")), row("Text replacements",null,btn("+ Add"))] },
+    { color:"oklch(0.67 0.125 145)", icon:"layers", title:"Per-app profiles", desc:"Switch AI mode automatically based on the app you're dictating into.",
+      rows:[row("VS Code → Code mode",null,btn("Edit")), row("Add a profile",null,btn("+ Add"))] },
+    { color:"oklch(0.67 0.125 180)", icon:"gauge", title:"Performance", desc:"How much of your machine transcription is allowed to use.",
+      rows:[row("Use GPU acceleration","No compatible GPU detected",tog(0)), row("Speed boost (more CPU)",null,tog(0))] },
+    { color:"oklch(0.67 0.125 280)", icon:"cog", title:"System", desc:"Startup, appearance, and updates.",
+      rows:[row("Launch at startup",null,tog(0)), row("Theme",null,seg("Light","Dark",1))] },
+  ];
+
+  document.getElementById("grid").innerHTML = SECTIONS.map(s=>`
+    <div class="card" style="--a:${s.color}">
+      <div class="chead"><span class="ic">${I[s.icon]}</span><div><div class="ct">${s.title}</div><div class="cd">${s.desc}</div></div></div>
+      ${wave()}
+      <div class="rows">${s.rows.join("")}</div>
+    </div>`).join("");
+</script>
+</body>
+</html>

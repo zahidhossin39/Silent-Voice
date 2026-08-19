@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Silent Voice — grammar popup, click-to-apply</title>
+<style>
+  :root{
+    --card-bg:#151a26; --card-fg:#e8ebf2; --card-muted:#8b93a7;
+    --line:rgba(255,255,255,.10); --inset:rgba(255,255,255,.07); --raise:rgba(255,255,255,.05);
+    --shadow:0 4px 12px -2px rgba(0,0,0,.5), 0 16px 40px -8px rgba(0,0,0,.65);
+    --dot:#a78bfa; --old:#7d8598; --new:#c9b6fd; --newbg:rgba(167,139,250,.14);
+    --newbg-hi:rgba(167,139,250,.26); --alt:#aab2c4; --altbg:rgba(255,255,255,.055);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#0b0e14;color:#e6e9f0;
+       font-family:"Segoe UI",system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased}
+  header{padding:28px 32px 0}
+  h1{font-size:20px;font-weight:600;margin:0 0 4px}
+  .sub{font-size:13px;color:#8b93a7;margin:0 0 20px;max-width:780px;line-height:1.6}
+  .bar{display:flex;flex-wrap:wrap;gap:22px;padding:0 32px 20px;align-items:flex-end}
+  .grp{display:flex;flex-direction:column;gap:7px}
+  .grp>span{font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:#8b93a7}
+  .opts{display:flex;gap:6px;flex-wrap:wrap}
+  .opt{background:#1b2030;border:1px solid #262c3d;color:#e6e9f0;font:inherit;font-size:12px;
+       padding:6px 12px;border-radius:8px;cursor:pointer;transition:border-color .12s,color .12s}
+  .opt:hover{border-color:#3d465e}
+  .opt[aria-pressed="true"]{border-color:#f97316;color:#f97316}
+
+  #stage{padding:26px 32px 80px;min-height:100vh}
+  #stage.doc{background:#fff}#stage.ide{background:#1e1e1e}#stage.slack{background:#3f0e40}
+  #stage.grey{background:#f1f1f1}
+  #stage.photo{background:radial-gradient(circle at 20% 25%,#f472b6 0,transparent 44%),
+    radial-gradient(circle at 78% 30%,#38bdf8 0,transparent 46%),
+    radial-gradient(circle at 45% 85%,#fbbf24 0,transparent 50%),
+    linear-gradient(135deg,#7c3aed,#0ea5e9 55%,#22c55e)}
+  .cbsim{filter:url(#deuter)}
+
+  .grid{display:flex;flex-wrap:wrap;gap:36px;align-items:flex-start}
+  .slot{width:340px}
+  .slot h2{font-size:12.5px;font-weight:600;margin:0 0 3px}
+  .slot p.note{font-size:11.5px;line-height:1.55;margin:0 0 11px}
+  #stage.doc .slot h2,#stage.grey .slot h2{color:#1a1e28}
+  #stage.doc .note,#stage.grey .note{color:#5c6473}
+  #stage.ide .slot h2{color:#e4e4e4}#stage.ide .note{color:#9d9d9d}
+  #stage.slack .slot h2,#stage.photo .slot h2{color:#fff}
+  #stage.slack .note,#stage.photo .note{color:rgba(255,255,255,.78)}
+
+  /* ---------------- card ---------------- */
+  .card{width:340px;border-radius:14px;overflow:hidden;background:var(--card-bg);color:var(--card-fg);
+        border:1px solid var(--line);box-shadow:var(--shadow),inset 0 1px 0 0 var(--inset);font-size:14px}
+  .pad{padding:13px 17px}
+  .cat{display:flex;align-items:center;gap:7px;margin-bottom:10px}
+  .cat i{width:7px;height:7px;border-radius:50%;flex:none;background:var(--dot)}
+  .cat b{font-size:10.5px;letter-spacing:.075em;text-transform:uppercase;font-weight:600;color:var(--card-muted)}
+
+  .change{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+  .old{font-size:15px;text-decoration:line-through;text-decoration-thickness:1px;color:var(--old)}
+  .arw{width:13px;height:13px;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;
+       stroke:var(--card-muted);flex:none}
+
+  /* the suggestion IS the button now — Fitts: generous padded target */
+  .pick{
+    display:inline-flex;align-items:center;gap:8px;border:1px solid transparent;cursor:pointer;
+    font:inherit;font-size:15px;font-weight:600;color:var(--new);background:var(--newbg);
+    padding:7px 12px;border-radius:9px;min-height:34px;transition:background .12s,border-color .12s;
+  }
+  .pick:hover{background:var(--newbg-hi);border-color:var(--new)}
+  .pick .kbd{font-family:Consolas,monospace;font-size:10px;font-weight:600;opacity:.75;
+             background:rgba(0,0,0,.22);border-radius:4px;padding:2px 5px}
+  .alts{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}
+  .alt{
+    display:inline-flex;align-items:center;gap:7px;border:1px solid transparent;cursor:pointer;font:inherit;
+    font-size:13.5px;color:var(--alt);background:var(--altbg);padding:6px 11px;border-radius:8px;
+    min-height:30px;transition:background .12s,color .12s;
+  }
+  .alt:hover{background:var(--newbg);color:var(--new)}
+  .alt .kbd{font-family:Consolas,monospace;font-size:10px;opacity:.6}
+
+  .why{font-size:12.5px;line-height:1.5;color:var(--card-muted);margin:11px 0 0}
+  .why code{font-family:Consolas,monospace;font-size:12px;color:var(--card-fg);opacity:.9}
+
+  .foot{display:flex;align-items:center;gap:14px;padding:9px 17px;border-top:1px solid var(--line);background:var(--raise)}
+  .fbtn{background:none;border:none;cursor:pointer;font:inherit;font-size:12px;color:var(--card-muted);
+        display:inline-flex;align-items:center;gap:7px;padding:4px 0}
+  .fbtn:hover{color:var(--card-fg)}
+  .ico{width:15px;height:15px;flex:none;stroke:currentColor;fill:none;stroke-width:1.7;
+       stroke-linecap:round;stroke-linejoin:round}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute">
+  <filter id="deuter"><feColorMatrix type="matrix" values="
+    0.367 0.861 -0.228 0 0
+    0.280 0.673  0.047 0 0
+   -0.012 0.043  0.969 0 0
+    0     0      0     1 0"/></filter>
+</svg>
+
+<header>
+  <h1>Click the word to apply</h1>
+  <p class="sub">No Apply button — the suggestion itself is the target, sized past the 32&nbsp;px minimum so it stays easy to hit. Compare one suggestion against two and three, and switch the palette freely; a theme picker can expose all of these later.</p>
+</header>
+
+<div class="bar">
+  <div class="grp"><span>Background</span>
+    <div class="opts" id="bgOpts">
+      <button class="opt" data-bg="doc" aria-pressed="true">White doc</button>
+      <button class="opt" data-bg="ide" aria-pressed="false">Dark IDE</button>
+      <button class="opt" data-bg="slack" aria-pressed="false">Slack</button>
+      <button class="opt" data-bg="grey" aria-pressed="false">Grey app</button>
+      <button class="opt" data-bg="photo" aria-pressed="false">Photo</button>
+    </div>
+  </div>
+  <div class="grp"><span>Palette</span>
+    <div class="opts" id="pOpts">
+      <button class="opt" data-p="violet" aria-pressed="true">Violet</button>
+      <button class="opt" data-p="teal" aria-pressed="false">Teal</button>
+      <button class="opt" data-p="ab" aria-pressed="false">Amber→blue</button>
+      <button class="opt" data-p="orange" aria-pressed="false">Orange</button>
+      <button class="opt" data-p="mono" aria-pressed="false">Brightness</button>
+    </div>
+  </div>
+  <div class="grp"><span>Surface</span>
+    <div class="opts" id="thOpts">
+      <button class="opt" data-th="sv" aria-pressed="true">Dark</button>
+      <button class="opt" data-th="light" aria-pressed="false">Light</button>
+    </div>
+  </div>
+  <div class="grp"><span>Check</span>
+    <div class="opts" id="cbOpts">
+      <button class="opt" data-cb="off" aria-pressed="true">Normal vision</button>
+      <button class="opt" data-cb="on" aria-pressed="false">Red–green blindness</button>
+    </div>
+  </div>
+</div>
+
+<div id="stage" class="doc">
+  <div class="grid">
+
+    <div class="slot">
+      <h2>1 · One suggestion</h2>
+      <p class="note">Nothing to weigh up. Glance, click, carry on.</p>
+      <div class="card">
+        <div class="pad">
+          <div class="cat"><i></i><b>Grammar</b></div>
+          <div class="change">
+            <span class="old">more better</span>
+            <svg class="arw" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            <button class="pick">better <span class="kbd">↵</span></button>
+          </div>
+          <p class="why">Using <code>more</code> with a comparative adjective is redundant.</p>
+        </div>
+        <div class="foot">
+          <button class="fbtn">
+            <svg class="ico" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+            Add to dictionary
+          </button>
+          <button class="fbtn" style="margin-left:auto">
+            <svg class="ico" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            Dismiss
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="slot">
+      <h2>2 · Two suggestions</h2>
+      <p class="note">Best pick stays dominant; the alternative is quieter and smaller.</p>
+      <div class="card">
+        <div class="pad">
+          <div class="cat"><i></i><b>Grammar</b></div>
+          <div class="change">
+            <span class="old">more better</span>
+            <svg class="arw" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            <button class="pick">better <span class="kbd">↵</span></button>
+          </div>
+          <div class="alts">
+            <button class="alt">much better <span class="kbd">2</span></button>
+          </div>
+          <p class="why">Using <code>more</code> with a comparative adjective is redundant.</p>
+        </div>
+        <div class="foot">
+          <button class="fbtn">
+            <svg class="ico" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+            Add to dictionary
+          </button>
+          <button class="fbtn" style="margin-left:auto">
+            <svg class="ico" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            Dismiss
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="slot">
+      <h2>3 · Three suggestions</h2>
+      <p class="note">Past two, the eye starts comparing instead of acting.</p>
+      <div class="card">
+        <div class="pad">
+          <div class="cat"><i></i><b>Grammar</b></div>
+          <div class="change">
+            <span class="old">more better</span>
+            <svg class="arw" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            <button class="pick">better <span class="kbd">↵</span></button>
+          </div>
+          <div class="alts">
+            <button class="alt">much better <span class="kbd">2</span></button>
+            <button class="alt">far better <span class="kbd">3</span></button>
+          </div>
+          <p class="why">Using <code>more</code> with a comparative adjective is redundant.</p>
+        </div>
+        <div class="foot">
+          <button class="fbtn">
+            <svg class="ico" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+            Add to dictionary
+          </button>
+          <button class="fbtn" style="margin-left:auto">
+            <svg class="ico" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            Dismiss
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="slot">
+      <h2>4 · Spelling, one fix</h2>
+      <p class="note">The everyday case — a typo has one right answer.</p>
+      <div class="card">
+        <div class="pad">
+          <div class="cat"><i style="background:#ef8b8b"></i><b>Spelling</b></div>
+          <div class="change">
+            <span class="old">mistke</span>
+            <svg class="arw" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            <button class="pick">mistake <span class="kbd">↵</span></button>
+          </div>
+          <p class="why">Not found in the dictionary.</p>
+        </div>
+        <div class="foot">
+          <button class="fbtn">
+            <svg class="ico" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+            Add to dictionary
+          </button>
+          <button class="fbtn" style="margin-left:auto">
+            <svg class="ico" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            Dismiss
+          </button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  const P={
+    violet:{dot:'#a78bfa',old:'#7d8598',neu:'#c9b6fd',bg:'rgba(167,139,250,.14)',hi:'rgba(167,139,250,.26)'},
+    teal  :{dot:'#2dd4bf',old:'#7d8598',neu:'#7fe3d4',bg:'rgba(45,212,191,.13)', hi:'rgba(45,212,191,.25)'},
+    ab    :{dot:'#388bfd',old:'#e0a370',neu:'#79b8ff',bg:'rgba(56,139,253,.15)', hi:'rgba(56,139,253,.28)'},
+    orange:{dot:'#f97316',old:'#767d8f',neu:'#fbbf87',bg:'rgba(249,115,22,.13)', hi:'rgba(249,115,22,.25)'},
+    mono  :{dot:'#8b93a7',old:'#6b7386',neu:'#ffffff',bg:'rgba(255,255,255,.10)',hi:'rgba(255,255,255,.18)'}
+  };
+  const TH={
+    sv   :{bg:'#151a26',fg:'#e8ebf2',muted:'#8b93a7',line:'rgba(255,255,255,.10)',inset:'rgba(255,255,255,.07)',
+           raise:'rgba(255,255,255,.05)',alt:'#aab2c4',altbg:'rgba(255,255,255,.055)',
+           shadow:'0 4px 12px -2px rgba(0,0,0,.5), 0 16px 40px -8px rgba(0,0,0,.65)'},
+    light:{bg:'#ffffff',fg:'#1a1e28',muted:'#5c6473',line:'rgba(0,0,0,.09)',inset:'rgba(255,255,255,.9)',
+           raise:'rgba(0,0,0,.028)',alt:'#4a5162',altbg:'rgba(0,0,0,.045)',
+           shadow:'0 2px 8px -1px rgba(0,0,0,.10), 0 14px 34px -6px rgba(0,0,0,.16)'}
+  };
+  const r=document.documentElement;
+  const press=(g,el)=>g.querySelectorAll('.opt').forEach(b=>b.setAttribute('aria-pressed',String(b===el)));
+  const setP=k=>{const p=P[k];r.style.setProperty('--dot',p.dot);r.style.setProperty('--old',p.old);
+    r.style.setProperty('--new',p.neu);r.style.setProperty('--newbg',p.bg);r.style.setProperty('--newbg-hi',p.hi);};
+
+  bgOpts.addEventListener('click',e=>{const b=e.target.closest('.opt');if(!b)return;
+    stage.className=b.dataset.bg+(stage.classList.contains('cbsim')?' cbsim':'');press(bgOpts,b);});
+  pOpts.addEventListener('click',e=>{const b=e.target.closest('.opt');if(!b)return;setP(b.dataset.p);press(pOpts,b);});
+  thOpts.addEventListener('click',e=>{const b=e.target.closest('.opt');if(!b)return;const t=TH[b.dataset.th];
+    r.style.setProperty('--card-bg',t.bg);r.style.setProperty('--card-fg',t.fg);r.style.setProperty('--card-muted',t.muted);
+    r.style.setProperty('--line',t.line);r.style.setProperty('--inset',t.inset);r.style.setProperty('--raise',t.raise);
+    r.style.setProperty('--alt',t.alt);r.style.setProperty('--altbg',t.altbg);r.style.setProperty('--shadow',t.shadow);
+    press(thOpts,b);});
+  cbOpts.addEventListener('click',e=>{const b=e.target.closest('.opt');if(!b)return;
+    stage.classList.toggle('cbsim',b.dataset.cb==='on');press(cbOpts,b);});
+</script>
+</body>
+</html>

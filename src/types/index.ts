@@ -51,7 +51,7 @@ export interface SttModel {
   // "moonshine"/"sense-voice" = sherpa-onnx, downloaded as a .tar.bz2 archive
   // (`url`) and extracted into a folder. Faster + natively punctuated;
   // Moonshine is English-only, SenseVoice is multilingual.
-  engine?: "whisper" | "moonshine" | "sense-voice";
+  engine?: "whisper" | "moonshine" | "sense-voice" | "transducer";
 }
 
 // ---------- LLM models (for AI processing) ----------
@@ -86,6 +86,9 @@ export interface TtsModel {
   engine: "piper" | "sherpa"; // which bundled TTS engine synthesizes this voice
   url_onnx: string; // piper: .onnx URL · sherpa: .tar.bz2 archive URL
   url_json: string; // piper: .onnx.json URL · sherpa: "" (everything is in the archive)
+  // Kokoro archives bundle many voices, each picked by speaker index (sid).
+  // Present only for Kokoro; absent = single-voice model.
+  voices?: { sid: number; label: string; gender: 'female' | 'male' }[];
 }
 
 export interface PiperVoice {
@@ -230,7 +233,16 @@ export interface Settings {
   history_retention_custom_unit: "hours" | "days" | "weeks" | "months";
   save_audio: boolean;      // keep a copy of the audio for each dictation
   audio_clip_limit: number; // how many recordings to keep
+  popup_theme: PopupTheme;  // accent palette for the inline-proofread suggestion popup
+  popup_style: PopupStyle;  // layout for the inline-proofread popup
+  app_theme: AppTheme;
 }
+
+// Accent palettes for the grammar-suggestion popup (surface stays dark; only
+// the accent swaps). Order matches squiggle.rs PALETTES.
+export type PopupTheme = "violet" | "teal" | "amber-blue" | "orange" | "brightness";
+export type PopupStyle = "insights" | "compact";
+export type AppTheme = "orange" | "ocean" | "iris" | "reef" | "rose" | "meadow";
 
 // ---------- Hugging Face ----------
 export interface HfSearchItem {

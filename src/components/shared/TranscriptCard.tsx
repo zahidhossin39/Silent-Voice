@@ -341,7 +341,7 @@ export default function TranscriptCard({
             <span className="h-1.5 w-1.5 rounded-full bg-sv-accent/70" />
             <span className="truncate">{entry.model_id || "unknown model"}</span>
             {entry.mode_id && entry.mode_id !== "none" && (
-              <span className="text-sv-muted/60">· {entry.mode_id}</span>
+              <span className="text-sv-muted/60">· {entry.mode_id.replace(/[_-]/g, " ").replace(/^\w/, (c) => c.toUpperCase())}</span>
             )}
           </div>
         </div>
@@ -400,7 +400,7 @@ export default function TranscriptCard({
         </div>
       ) : (
         <>
-          <p className={`text-[15px] leading-relaxed text-sv-text ${blurred ? "blur-sm transition group-hover:blur-none" : ""}`}>
+          <p className={`text-[15px] leading-relaxed text-sv-text ${blurred ? "blur-sm transition group-hover:blur-none group-focus-within:blur-none" : ""}`}>
             {displayed}
           </p>
           {retranscribeErr && (

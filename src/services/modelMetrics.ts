@@ -9,7 +9,7 @@ import type { HardwareInfo } from "../types";
 // device compares, then map to a 0..1 bar.
 
 // "~3.4%" → 3.4
-function parseWer(wer: string): number | null {
+export function parseWer(wer: string): number | null {
   const m = wer.match(/([\d.]+)\s*%/);
   return m ? parseFloat(m[1]) : null;
 }
@@ -83,6 +83,24 @@ export function deviceRealtimeLabel(
   if (rt === null) return null;
   const rounded = rt >= 10 ? Math.round(rt) : Math.round(rt * 10) / 10;
   return `≈${rounded}x realtime on your device`;
+}
+
+export function accuracyCaption(wer: string): string {
+  const w = parseWer(wer);
+  if (w === null) return wer;
+  let s = w.toFixed(1);
+  if (s.endsWith(".0")) s = s.slice(0, -2);
+  return `${s}%`;
+}
+
+export function speedCaption(
+  speedLabel: string,
+  hw: HardwareInfo | null
+): string {
+  const rt = deviceRealtime(speedLabel, hw);
+  if (rt === null) return "n/a";
+  const rounded = rt >= 10 ? Math.round(rt) : Math.round(rt * 10) / 10;
+  return `${rounded}×`;
 }
 
 // Quality tracks param count, but sub-linearly — a 4B is not four times as good

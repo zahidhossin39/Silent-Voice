@@ -96,6 +96,18 @@ export function GuideIcon({ className }: IconProps) {
   );
 }
 
+export function ThemeIcon({ className }: IconProps) {
+  // Artist's palette — reads clearly as "colors / appearance".
+  return (
+    <svg {...base} className={className}>
+      <path d="M12 3.5c-4.7 0-8.5 3.6-8.5 8s3.8 7 8.5 7c1.4 0 2-.9 2-1.8 0-.5-.2-.9-.5-1.2-.3-.3-.5-.7-.5-1.1 0-.9.7-1.6 1.6-1.6h1.1c2.4 0 4.3-1.9 4.3-4.3 0-3.9-3.6-7-8-7z" />
+      <circle cx="7.5" cy="11" r="1" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="8" r="1" fill="currentColor" stroke="none" />
+      <circle cx="16" cy="11" r="1" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
 export function HistoryIcon({ className }: IconProps) {
   // A clean clock face with a small "rewind" notch at the top-left — reads
   // clearly as recents/history, classy rather than busy.

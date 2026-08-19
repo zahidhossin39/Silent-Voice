@@ -200,6 +200,49 @@ body {
 .sv-ready { animation: sv-ready-in 500ms ease-out both; }
 .sv-ready-key { animation: sv-ready-glow 1.4s ease-out; }
 
+/* History "Storage" gear — a one-time attention nudge (ring pulse + a small
+   wiggle) so first-time users notice the settings hide behind it. Runs a few
+   cycles then stops; it does not loop forever. */
+@keyframes sv-attn-ring {
+  0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-sv-accent) 60%, transparent); }
+  70%  { box-shadow: 0 0 0 8px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+@keyframes sv-attn-wiggle {
+  0%, 100% { transform: rotate(0deg); }
+  25%      { transform: rotate(-16deg); }
+  60%      { transform: rotate(12deg); }
+}
+.sv-gear-attn { animation: sv-attn-ring 1.3s ease-out 3; }
+.sv-gear-attn svg { animation: sv-attn-wiggle 1.3s ease-in-out 3; transform-origin: center; }
+/* The gear turns a little on hover — a live cue that it opens settings. */
+.sv-gear svg { transition: transform 250ms ease; }
+.sv-gear:hover svg { transform: rotate(45deg); }
+
+/* First-run coachmark: while the intro popover is up the gear keeps a gentle
+   looping ring + slow spin so the eye is pulled straight to it. Stops the
+   moment the user interacts (the callout is shown only once, ever). */
+.sv-gear-coach { animation: sv-attn-ring 1.6s ease-out infinite; }
+.sv-gear-coach svg { animation: sv-attn-wiggle 2.4s ease-in-out infinite; transform-origin: center; }
+@keyframes sv-coach-in {
+  from { opacity: 0; transform: translateY(-6px) scale(.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.sv-coach { animation: sv-coach-in 240ms ease-out both; transform-origin: top right; }
+
+/* Storage slide-over: each row fades up in sequence when the panel opens. The
+   parent toggles .is-open, so removing/re-adding it replays the stagger. */
+@keyframes sv-sheet-row {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.sv-sheet.is-open .sv-sheet-row { animation: sv-sheet-row 360ms ease-out both; }
+.sv-sheet.is-open .sv-sheet-row:nth-child(1) { animation-delay: 60ms; }
+.sv-sheet.is-open .sv-sheet-row:nth-child(2) { animation-delay: 110ms; }
+.sv-sheet.is-open .sv-sheet-row:nth-child(3) { animation-delay: 160ms; }
+.sv-sheet.is-open .sv-sheet-row:nth-child(4) { animation-delay: 210ms; }
+.sv-sheet.is-open .sv-sheet-row:nth-child(5) { animation-delay: 260ms; }
+
 /* Long lists (900+ TTS voices, unbounded History): let the browser skip
    layout + paint for rows scrolled off-screen. Native, no windowing library,
    and it leaves sorting/expand/scroll untouched. The intrinsic size is the
@@ -238,6 +281,18 @@ body {
   .sv-ready,
   .sv-ready-key {
     animation: none;
+  }
+  .sv-gear-attn,
+  .sv-gear-attn svg,
+  .sv-gear-coach,
+  .sv-gear-coach svg,
+  .sv-coach,
+  .sv-sheet.is-open .sv-sheet-row {
+    animation: none;
+  }
+  .sv-gear svg,
+  .sv-gear:hover svg {
+    transform: none;
   }
   .sv-slider,
   .sv-slider::-webkit-slider-thumb {

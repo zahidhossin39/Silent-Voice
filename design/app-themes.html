@@ -1,0 +1,150 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Silent Voice — app-wide accent themes</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 40px 36px 64px;
+    background: #06080d;
+    font-family: ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+    color: #e6e9f0;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1 { font-size: 21px; font-weight: 650; margin: 0 0 6px; letter-spacing: -.01em; }
+  .lead { color: #8b93a7; font-size: 13.5px; max-width: 760px; line-height: 1.5; margin: 0 0 8px; }
+  .lead b { color: #cfd4e0; font-weight: 600; }
+  .section { font-size: 11px; font-weight: 700; letter-spacing: .14em; color:#69718a; text-transform: uppercase; margin: 34px 0 16px; }
+
+  .grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 26px; }
+  @media (max-width: 960px){ .grid { grid-template-columns: 1fr; } }
+
+  /* ---- one app instance ---- */
+  .app {
+    --bg:#0b0e14; --surface:#131722; --surface2:#1b2030; --border:#262c3d;
+    --text:#e6e9f0; --muted:#8b93a7;
+    --accent:#f97316; --accent-hover:#ea580c; --on-accent:#1a1200;
+    --good:#22c55e;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 18px 50px rgba(0,0,0,.5);
+    display: flex; flex-direction: column;
+  }
+  .name { display:flex; align-items:center; gap:10px; padding:11px 14px; border-bottom:1px solid var(--border); }
+  .name .swatch { width:12px; height:12px; border-radius:4px; background:var(--accent); }
+  .name .n { font-size:13px; font-weight:650; }
+  .name .n span { color:var(--muted); font-weight:400; }
+
+  .body { display:flex; min-height: 258px; }
+
+  /* sidebar */
+  .side { width: 176px; padding:14px 12px; border-right:1px solid var(--border); flex-shrink:0; }
+  .brand { display:flex; align-items:center; gap:9px; margin:2px 2px 16px; }
+  .logo { width:32px; height:32px; border-radius:9px; background:linear-gradient(135deg,var(--accent),var(--accent-hover)); display:grid; place-items:center; }
+  .logo svg { width:17px; height:17px; }
+  .brand .b1 { font-size:13px; font-weight:650; line-height:1.1; }
+  .brand .b2 { font-size:10px; color:var(--muted); }
+  .nav { display:flex; flex-direction:column; gap:2px; }
+  .nav a { display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:9px; font-size:12.5px; color:var(--muted); text-decoration:none; }
+  .nav a svg { width:15px; height:15px; opacity:.9; }
+  .nav a.active { background:var(--accent); color:var(--on-accent); font-weight:600; }
+  .nav a.active svg { opacity:1; }
+
+  /* content */
+  .content { flex:1; padding:16px 18px; min-width:0; }
+  .h { font-size:19px; font-weight:650; letter-spacing:-.01em; margin:0 0 3px; }
+  .sub { font-size:11.5px; color:var(--muted); margin:0 0 14px; }
+  .sub a { color:var(--accent); text-decoration:none; }
+  .banner { background:var(--surface2); border:1px solid var(--border); border-radius:11px; padding:11px 13px; font-size:11.5px; color:var(--muted); line-height:1.55; margin-bottom:14px; }
+  .kbd { display:inline-block; background:var(--bg); border:1px solid var(--border); border-radius:5px; padding:0 6px; font-size:10.5px; color:var(--text); font-family:ui-monospace,monospace; }
+  .banner b { color:var(--accent); font-weight:600; }
+  .cards { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .card { background:var(--surface); border:1px solid var(--border); border-radius:11px; padding:11px 12px; }
+  .card .t { font-size:10px; color:var(--muted); margin-bottom:5px; letter-spacing:.03em; }
+  .card .v { font-size:15px; font-weight:600; }
+  .card .m { font-size:10px; color:var(--good); margin-top:3px; }
+  .btnrow { display:flex; gap:8px; margin-top:14px; align-items:center; }
+  .btn { background:var(--accent); color:var(--on-accent); border:none; border-radius:9px; padding:7px 14px; font-size:11.5px; font-weight:600; }
+  .btn.ghost { background:transparent; color:var(--accent); border:1px solid var(--accent); }
+  .chip { margin-left:auto; display:inline-flex; align-items:center; gap:5px; font-size:10.5px; color:var(--good); }
+  .chip .d { width:6px; height:6px; border-radius:50%; background:var(--good); }
+</style>
+</head>
+<body>
+  <h1>Silent Voice — one theme, whole app</h1>
+  <p class="lead">Your app already draws every accent — the active sidebar item, buttons, links, the hotkey key, focus rings, per-section colors — from a <b>single token</b>. So an app-wide theme is the same mechanism as the grammar-popup accent: pick a color, everything recolors together. Below is your <b>real Home screen</b> in six accents. Same layout, same contrast rules (text on the accent auto-flips light/dark for readability).</p>
+
+  <div class="section">Accent on your dark base — the lightest-touch option</div>
+  <div class="grid" id="grid"></div>
+
+  <div class="section" style="margin-top:40px">Fuller themes — accent + a tinted base (more work, bigger visual shift)</div>
+  <div class="grid" id="grid2"></div>
+
+<script>
+  const LOGO = `<svg viewBox="0 0 24 24" fill="none"><g stroke="var(--on-accent)" stroke-width="2.1" stroke-linecap="round"><path d="M5 10v4M9 6v12M13 8v8M17 11v2"/></g></svg>`;
+  const I = {
+    home:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>`,
+    store:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l1.5-5h15L21 9"/><path d="M4 9v11h16V9"/><path d="M9 9v0"/></svg>`,
+    styles:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/></svg>`,
+    history:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>`,
+    settings:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1l2-1.6-2-3.4-2.3 1a7 7 0 0 0-1.7-1L14.5 2h-4l-.4 2.4a7 7 0 0 0-1.7 1l-2.3-1-2 3.4L4.1 11a7 7 0 0 0 0 2l-2 1.6 2 3.4 2.3-1a7 7 0 0 0 1.7 1L10.5 22h4l.4-2.4a7 7 0 0 0 1.7-1l2.3 1 2-3.4-2-1.6c.1-.3.1-.7.1-1z"/></svg>`,
+  };
+
+  function appHTML(t){
+    const vars = `--accent:${t.accent};--accent-hover:${t.hover};--on-accent:${t.on};`
+      + (t.bg?`--bg:${t.bg};`:'') + (t.surface?`--surface:${t.surface};`:'')
+      + (t.surface2?`--surface2:${t.surface2};`:'') + (t.border?`--border:${t.border};`:'');
+    return `<div class="app" style="${vars}">
+      <div class="name"><span class="swatch"></span><div class="n">${t.name} <span>· ${t.note}</span></div></div>
+      <div class="body">
+        <div class="side">
+          <div class="brand"><div class="logo">${LOGO}</div><div><div class="b1">Silent Voice</div><div class="b2">local-first dictation</div></div></div>
+          <div class="nav">
+            <a class="active">${I.home}Home</a>
+            <a>${I.store}Model Store</a>
+            <a>${I.styles}Writing styles</a>
+            <a>${I.history}History</a>
+            <a>${I.settings}Settings</a>
+          </div>
+        </div>
+        <div class="content">
+          <div class="h">Home</div>
+          <div class="sub">Hold your hotkey, speak, release. <a>Change hotkey</a></div>
+          <div class="banner">Hold <span class="kbd">Ctrl</span> <span class="kbd">Space</span> anywhere in Windows and start talking — release and your words <b>land at the cursor</b>.</div>
+          <div class="cards">
+            <div class="card"><div class="t">Speech model</div><div class="v">Whisper Base</div><div class="m">● Ready</div></div>
+            <div class="card"><div class="t">GPU</div><div class="v">RTX 4060</div><div class="m">● Vulkan</div></div>
+          </div>
+          <div class="btnrow">
+            <button class="btn">Start dictating</button>
+            <button class="btn ghost">Test mic</button>
+            <span class="chip"><span class="d"></span>Idle</span>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  const accents = [
+    {name:'Ember',  note:'orange (current)', accent:'#f97316', hover:'#ea580c', on:'#1a1200'},
+    {name:'Ocean',  note:'blue',             accent:'#3b82f6', hover:'#2563eb', on:'#ffffff'},
+    {name:'Iris',   note:'violet',           accent:'#8b5cf6', hover:'#7c3aed', on:'#ffffff'},
+    {name:'Reef',   note:'teal',             accent:'#14b8a6', hover:'#0d9488', on:'#052620'},
+    {name:'Rose',   note:'pink-red',         accent:'#f43f5e', hover:'#e11d48', on:'#ffffff'},
+    {name:'Meadow', note:'green',            accent:'#22c55e', hover:'#16a34a', on:'#04240f'},
+  ];
+  const fuller = [
+    {name:'Midnight', note:'blue accent + navy base', accent:'#60a5fa', hover:'#3b82f6', on:'#04122b',
+     bg:'#0a1020', surface:'#111a2e', surface2:'#182640', border:'#233350'},
+    {name:'Plum',     note:'violet accent + aubergine base', accent:'#c084fc', hover:'#a855f7', on:'#1e0a33',
+     bg:'#120b1a', surface:'#1b1226', surface2:'#251733', border:'#342247'},
+  ];
+
+  document.getElementById('grid').innerHTML  = accents.map(appHTML).join('');
+  document.getElementById('grid2').innerHTML = fuller.map(appHTML).join('');
+</script>
+</body>
+</html>

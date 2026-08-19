@@ -135,6 +135,33 @@ struct WordSpan {
     end: usize,
 }
 
+/// Plain-language message for an inserted token, naming the exact punctuation
+/// so the popup says "Missing comma" rather than the vague "Possibly missing
+/// word" — the user can't tell what to do otherwise.
+fn append_message(t: &str) -> String {
+    let tok = t.trim();
+    if tok.starts_with('\'') {
+        return "Missing apostrophe".to_string();
+    }
+    let name = match tok {
+        "," => "comma",
+        "." => "period",
+        ";" => "semicolon",
+        ":" => "colon",
+        "!" => "exclamation mark",
+        "?" => "question mark",
+        "-" => "hyphen",
+        "\"" | "\u{201C}" | "\u{201D}" => "quotation mark",
+        "(" | ")" => "parenthesis",
+        _ => "",
+    };
+    if !name.is_empty() {
+        format!("Missing {name}")
+    } else {
+        format!("Missing word “{tok}”")
+    }
+}
+
 static CACHE: OnceLock<std::sync::Mutex<HashMap<String, Vec<GectorEdit>>>> = OnceLock::new();
 
 fn get_cache() -> &'static std::sync::Mutex<HashMap<String, Vec<GectorEdit>>> {
@@ -450,7 +477,7 @@ pub fn check(text: &str, sensitivity: &str) -> Vec<GectorEdit> {
                                     end: first_word.start,
                                     replacement: repl,
                                     tag: tag.clone(),
-                                    message: "Possibly missing word".to_string(),
+                                    message: append_message(t),
                                 });
                             }
                         }
@@ -468,7 +495,7 @@ pub fn check(text: &str, sensitivity: &str) -> Vec<GectorEdit> {
 
                 if tag == "$DELETE" {
                     replacement = Some("".to_string());
-                    message = "Possibly redundant word".to_string();
+                    message = "Remove this word".to_string();
                 } else if let Some(t) = tag.strip_prefix("$APPEND_") {
                     edit_start = w.end;
                     edit_end = w.end;
@@ -480,10 +507,10 @@ pub fn check(text: &str, sensitivity: &str) -> Vec<GectorEdit> {
                     } else {
                         replacement = Some(format!(" {}", t));
                     }
-                    message = "Possibly missing word".to_string();
+                    message = append_message(t);
                 } else if let Some(t) = tag.strip_prefix("$REPLACE_") {
                     replacement = Some(t.to_string());
-                    message = "Possible word confusion".to_string();
+                    message = "Wrong word here".to_string();
                 } else if tag == "$MERGE_SPACE" {
                     if word_idx + 1 < words.len() {
                         let next = &words[word_idx + 1];
@@ -531,7 +558,7 @@ pub fn check(text: &str, sensitivity: &str) -> Vec<GectorEdit> {
                         } else {
                             replacement = Some(w.text.clone());
                         }
-                        message = "Grammar: agreement".to_string();
+                        message = "Subject–verb agreement".to_string();
                     }
                 } else if tag == "$TRANSFORM_AGREEMENT_PLURAL" {
                     if !is_agreement_blocked(&w.text) {
@@ -543,7 +570,7 @@ pub fn check(text: &str, sensitivity: &str) -> Vec<GectorEdit> {
                         } else {
                             replacement = Some(format!("{}s", w.text));
                         }
-                        message = "Grammar: agreement".to_string();
+                        message = "Subject–verb agreement".to_string();
                     }
                 } else if let Some(t) = tag.strip_prefix("$TRANSFORM_VERB_") {
                     let lower = w.text.to_lowercase();
@@ -560,7 +587,7 @@ pub fn check(text: &str, sensitivity: &str) -> Vec<GectorEdit> {
                             }
                         }
                     }
-                    message = "Grammar: verb form".to_string();
+                    message = "Wrong verb form".to_string();
                 }
 
                 if let Some(repl) = replacement {

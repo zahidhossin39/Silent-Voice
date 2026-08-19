@@ -358,6 +358,56 @@ impl SherpaSttEngine {
         })
     }
 
+    pub fn load_transducer(dir: &Path, num_threads: i32) -> Result<Self, String> {
+        let lib = super::sherpa::lib()?;
+        let c = |s: String| CString::new(s).map_err(|e| e.to_string());
+
+        let mut keep: Vec<CString> = Vec::new();
+        let mut path = |name: &str| -> Result<*const c_char, String> {
+            let s = c(dir.join(name).to_string_lossy().into_owned())?;
+            let ptr = s.as_ptr();
+            keep.push(s);
+            Ok(ptr)
+        };
+
+        let encoder = path("encoder.int8.onnx")?;
+        let decoder = path("decoder.int8.onnx")?;
+        let joiner = path("joiner.int8.onnx")?;
+        let tokens = path("tokens.txt")?;
+
+        let provider = c("cpu".into())?;
+        let provider_ptr = provider.as_ptr();
+        keep.push(provider);
+        let method = c("greedy_search".into())?;
+        let method_ptr = method.as_ptr();
+        keep.push(method);
+
+        let mut cfg: OfflineRecognizerConfig = unsafe { std::mem::zeroed() };
+        cfg.feat_config.sample_rate = 16000;
+        cfg.feat_config.feature_dim = 80;
+        cfg.model_config.transducer.encoder = encoder;
+        cfg.model_config.transducer.decoder = decoder;
+        cfg.model_config.transducer.joiner = joiner;
+        cfg.model_config.tokens = tokens;
+        cfg.model_config.num_threads = num_threads;
+        cfg.model_config.provider = provider_ptr;
+        cfg.decoding_method = method_ptr;
+
+        let recognizer = unsafe {
+            let create: Symbol<CreateRecognizerFn> = lib
+                .get(b"SherpaOnnxCreateOfflineRecognizer\0")
+                .map_err(|e| e.to_string())?;
+            create(&cfg)
+        };
+        if recognizer.is_null() {
+            return Err("sherpa could not load the Parakeet model (files may be corrupted — re-download it).".into());
+        }
+        Ok(SherpaSttEngine {
+            recognizer,
+            _keepalive: keep,
+        })
+    }
+
     /// Transcribe 16 kHz mono f32 samples. Returns the recognized text.
     pub fn transcribe(&self, samples: &[f32]) -> Result<String, String> {
         let lib = super::sherpa::lib()?;
@@ -488,7 +538,13 @@ pub fn transcribe_file(
                     crate::models::registry::SttEngine::SenseVoice => {
                         SherpaSttEngine::load_sense_voice(&dir, threads as i32, "auto")?
                     }
-                    _ => SherpaSttEngine::load_moonshine(&dir, threads as i32)?,
+                    crate::models::registry::SttEngine::Transducer => {
+                        SherpaSttEngine::load_transducer(&dir, threads as i32)?
+                    }
+                    crate::models::registry::SttEngine::Moonshine => {
+                        SherpaSttEngine::load_moonshine(&dir, threads as i32)?
+                    }
+                    crate::models::registry::SttEngine::Whisper => unreachable!(),
                 },
             );
             *slot = Some((key, eng));

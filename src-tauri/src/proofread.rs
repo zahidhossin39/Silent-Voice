@@ -257,17 +257,13 @@ pub fn check(text: &str, vocabulary: &str, disabled_rules: &[String], gector_sen
 
             let overlaps = issues.iter().any(|hi| hi.start < end && start < hi.end);
             if !overlaps {
-                let formatted_message = if edit.tag.starts_with("$REPLACE_") || edit.tag.starts_with("$TRANSFORM_") {
-                    let original: String = chars[edit.start..edit.end].iter().collect();
-                    format!("{}: '{}' -> '{}'", edit.message, original, edit.replacement)
-                } else {
-                    edit.message.clone()
-                };
-
+                // The popup already shows the before → after visually, so the
+                // message stays a plain description of the problem rather than
+                // repeating "'told' -> 'tell'", which read as technical noise.
                 issues.push(ProofIssue {
                     start,
                     end,
-                    message: formatted_message,
+                    message: edit.message.clone(),
                     kind: "Context".to_string(),
                     suggestions: vec![suggestion],
                 });

@@ -90,7 +90,7 @@ export default function Guide() {
                   <div className="pt-2 space-y-2.5">
                     <p className="text-xs text-sv-muted flex items-center gap-2">
                       <span className="shrink-0 text-sv-muted"><CogIcon /></span>
-                      <span>Can be turned off in <strong className="text-sv-text font-medium">Settings → Dictation → 'Inline proofreading'</strong>.</span>
+                      <span>Can be turned off in <strong className="text-sv-text font-medium">Settings → Grammar → 'Inline proofreading'</strong>.</span>
                     </p>
                     <p className="text-xs text-sv-muted flex items-center gap-2">
                       <span className="shrink-0 text-sv-muted"><BookIcon /></span>

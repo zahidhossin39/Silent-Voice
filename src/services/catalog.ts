@@ -11,7 +11,9 @@ export const WHISPER_BASE_URL =
 // archive) instead of whisper.cpp. Single source of truth so adding a new
 // sherpa family is one edit, not several scattered engine checks.
 export function isSherpaEngine(engine: SttModel["engine"]): boolean {
-  return engine === "moonshine" || engine === "sense-voice";
+  return (
+    engine === "moonshine" || engine === "sense-voice" || engine === "transducer"
+  );
 }
 
 export const STT_MODELS: SttModel[] = [
@@ -132,6 +134,40 @@ export const STT_MODELS: SttModel[] = [
     multilingual: true,
     preset: "balanced",
     best_for: "Fast multilingual (EN/ZH/JA/KO/Yue), auto-punctuation",
+  },
+
+  // ── Parakeet (sherpa-onnx transducer engine) ─────────────
+  {
+    id: "parakeet-tdt-0.6b-v2",
+    file: "parakeet-tdt-0.6b-v2",
+    url: "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8.tar.bz2",
+    engine: "transducer",
+    family: "Parakeet",
+    provider: "NVIDIA",
+    label: "Parakeet TDT 0.6B v2 (English)",
+    size_mb: 640,
+    ram_mb: 1400,
+    speed_label: "~8x realtime",
+    wer: "~2.5%",
+    multilingual: false,
+    preset: "accuracy",
+    best_for: "Highest accuracy English, punctuation + capitalization",
+  },
+  {
+    id: "parakeet-tdt-0.6b-v3",
+    file: "parakeet-tdt-0.6b-v3",
+    url: "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8.tar.bz2",
+    engine: "transducer",
+    family: "Parakeet",
+    provider: "NVIDIA",
+    label: "Parakeet TDT 0.6B v3 (Multilingual)",
+    size_mb: 640,
+    ram_mb: 1400,
+    speed_label: "~8x realtime",
+    wer: "~3%",
+    multilingual: true,
+    preset: "accuracy",
+    best_for: "Highest accuracy multilingual, punctuation + capitalization",
   },
 
   // ── Small ─────────────────────────────────────────────────
@@ -1273,37 +1309,15 @@ function piperVoiceLang(
 
 export const TTS_MODELS: TtsModel[] = [
   // ── US voices ─────────────────────────────────────────────
-  piperVoice("en_US", "amy", "low", "female", 61, "Amy — fast"),
   piperVoice("en_US", "amy", "medium", "female", 61, "Amy"),
-  piperVoice("en_US", "danny", "low", "male", 61, "Danny — fast"),
-  piperVoice("en_US", "kathleen", "low", "female", 61, "Kathleen — fast"),
-  piperVoice("en_US", "ryan", "low", "male", 61, "Ryan — fast"),
-  piperVoice("en_US", "ryan", "medium", "male", 61, "Ryan"),
   piperVoice("en_US", "ryan", "high", "male", 116, "Ryan HD"),
-  piperVoice("en_US", "lessac", "low", "female", 61, "Lessac — fast"),
-  piperVoice("en_US", "lessac", "medium", "female", 61, "Lessac"),
   piperVoice("en_US", "lessac", "high", "female", 109, "Lessac HD"),
-  piperVoice("en_US", "joe", "medium", "male", 61, "Joe"),
-  piperVoice("en_US", "john", "medium", "male", 61, "John"),
-  piperVoice("en_US", "kristin", "medium", "female", 61, "Kristin"),
   piperVoice("en_US", "hfc_female", "medium", "female", 61, "Clara"),
   piperVoice("en_US", "hfc_male", "medium", "male", 61, "Henry"),
-  piperVoice("en_US", "norman", "medium", "male", 61, "Norman"),
-  piperVoice("en_US", "bryce", "medium", "male", 61, "Bryce"),
-  piperVoice("en_US", "sam", "medium", "unknown", 60, "Sam"),
-  piperVoice("en_US", "kusal", "medium", "unknown", 61, "Kusal"),
-  piperVoice("en_US", "ljspeech", "medium", "female", 61, "Linda"),
-  piperVoice("en_US", "ljspeech", "high", "female", 109, "Linda HD"),
   // ── UK voices ─────────────────────────────────────────────
-  piperVoice("en_GB", "alan", "low", "male", 61, "Alan — fast"),
   piperVoice("en_GB", "alan", "medium", "male", 61, "Alan"),
-  piperVoice("en_GB", "alba", "medium", "female", 61, "Alba (Scottish)"),
-  piperVoice("en_GB", "cori", "medium", "female", 61, "Cori"),
   piperVoice("en_GB", "cori", "high", "female", 109, "Cori HD"),
-  piperVoice("en_GB", "jenny_dioco", "medium", "female", 61, "Jenny"),
-  piperVoice("en_GB", "northern_english_male", "medium", "male", 61, "Leeds"),
-  piperVoice("en_GB", "southern_english_female", "low", "female", 61, "Rosie — fast"),
-  piperVoice("en_US", "reza_ibrahim", "medium", "male", 61, "Reza"),
+  piperVoice("en_GB", "alba", "medium", "female", 61, "Alba (Scottish)"),
 
   // ── Other languages ──────────────────────────────────────────
   // Verified against rhasspy/piper-voices on Hugging Face (every .onnx and
@@ -1322,23 +1336,84 @@ export const TTS_MODELS: TtsModel[] = [
   // scope for a catalog entry.
   piperVoiceLang("de", "de_DE", "thorsten", "high", "male", 109, "German"),
   piperVoiceLang("es", "es_AR", "daniela", "high", "female", 109, "Spanish (Argentina)"),
-  piperVoiceLang("pl", "pl_PL", "bass", "high", "male", 109, "Polish"),
-  piperVoiceLang("uk", "uk_UA", "tetiana", "high", "female", 109, "Ukrainian"),
-  piperVoiceLang("kk", "kk_KZ", "issai", "high", "unknown", 122, "Kazakh"),
-  piperVoiceLang("is", "is_IS", "salka", "medium", "female", 73, "Icelandic"),
-  piperVoiceLang("nl", "nl_NL", "alex", "medium", "male", 61, "Dutch"),
   piperVoiceLang("fr", "fr_FR", "tom", "medium", "male", 61, "French"),
-  piperVoiceLang("it", "it_IT", "paola", "medium", "female", 61, "Italian"),
   piperVoiceLang("hi", "hi_IN", "priyamvada", "medium", "female", 61, "Hindi"),
-  piperVoiceLang("el", "el_GR", "joy", "medium", "female", 61, "Greek"),
   piperVoiceLang("zh", "zh_CN", "xiao_ya", "medium", "female", 60, "Chinese"),
-  piperVoiceLang("bg", "bg_BG", "dimitar", "medium", "male", 60, "Bulgarian"),
   piperVoiceLang("ar", "ar_JO", "kareem", "medium", "male", 60, "Arabic"),
   piperVoiceLang("pt", "pt_BR", "faber", "medium", "male", 60, "Portuguese (Brazil)"),
   piperVoiceLang("ru", "ru_RU", "irina", "medium", "female", 60, "Russian"),
-  piperVoiceLang("vi", "vi_VN", "vais1000", "medium", "female", 60, "Vietnamese"),
-  piperVoiceLang("tr", "tr_TR", "dfki", "medium", "female", 60, "Turkish"),
-  piperVoiceLang("cs", "cs_CZ", "jirka", "medium", "male", 60, "Czech"),
+
+  // ── Kokoro (sherpa-onnx engine) ─────────────────────────────
+  // #1 open-weights TTS (tops TTS Arena). One archive = 11 voices, picked by
+  // speaker index. url_json '' => downloaded + extracted as a sherpa archive;
+  // the backend detects Kokoro by voices.bin and selects a voice via id#sid.
+  {
+    id: 'kokoro-int8-en-v0_19',
+    label: 'Kokoro (English)',
+    gender: 'female',
+    accent: 'US',
+    language: 'English (US)',
+    quality: 'natural',
+    size_mb: 98,
+    engine: 'sherpa',
+    url_onnx: 'https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-int8-en-v0_19.tar.bz2',
+    url_json: '',
+    voices: [
+      { sid: 0, label: 'American female (default)', gender: 'female' },
+      { sid: 1, label: 'Bella (US)', gender: 'female' },
+      { sid: 2, label: 'Nicole (US)', gender: 'female' },
+      { sid: 3, label: 'Sarah (US)', gender: 'female' },
+      { sid: 4, label: 'Sky (US)', gender: 'female' },
+      { sid: 5, label: 'Adam (US)', gender: 'male' },
+      { sid: 6, label: 'Michael (US)', gender: 'male' },
+      { sid: 7, label: 'Emma (UK)', gender: 'female' },
+      { sid: 8, label: 'Isabella (UK)', gender: 'female' },
+      { sid: 9, label: 'George (UK)', gender: 'male' },
+      { sid: 10, label: 'Lewis (UK)', gender: 'male' },
+    ],
+  },
+  // Full-precision (fp32) build of the same 11-voice Kokoro model — bigger on
+  // disk, no int8 quantization, slightly cleaner audio. Same voices/sids.
+  {
+    id: 'kokoro-en-v0_19',
+    label: 'Kokoro (English, HD)',
+    gender: 'female',
+    accent: 'US',
+    language: 'English (US)',
+    quality: 'natural',
+    size_mb: 305,
+    engine: 'sherpa',
+    url_onnx: 'https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-en-v0_19.tar.bz2',
+    url_json: '',
+    voices: [
+      { sid: 0, label: 'American female (default)', gender: 'female' },
+      { sid: 1, label: 'Bella (US)', gender: 'female' },
+      { sid: 2, label: 'Nicole (US)', gender: 'female' },
+      { sid: 3, label: 'Sarah (US)', gender: 'female' },
+      { sid: 4, label: 'Sky (US)', gender: 'female' },
+      { sid: 5, label: 'Adam (US)', gender: 'male' },
+      { sid: 6, label: 'Michael (US)', gender: 'male' },
+      { sid: 7, label: 'Emma (UK)', gender: 'female' },
+      { sid: 8, label: 'Isabella (UK)', gender: 'female' },
+      { sid: 9, label: 'George (UK)', gender: 'male' },
+      { sid: 10, label: 'Lewis (UK)', gender: 'male' },
+    ],
+  },
+  // MeloTTS — VITS, but 44.1 kHz output (vs Kokoro's 24 kHz), so crisper/
+  // higher-fidelity. Runs on the existing sherpa VITS path (model.onnx +
+  // tokens.txt + lexicon.txt, no voices.bin), single default English voice.
+  {
+    id: 'vits-melo-tts-en',
+    label: 'MeloTTS (English, 44kHz)',
+    gender: 'female',
+    accent: 'US',
+    language: 'English (US)',
+    quality: 'natural',
+    size_mb: 155,
+    engine: 'sherpa',
+    url_onnx: 'https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-melo-tts-en.tar.bz2',
+    url_json: '',
+  },
 
   // ── Bangla (sherpa-onnx engine) ─────────────────────────────
   // Piper has no Bangla voices, so these run on the second bundled engine

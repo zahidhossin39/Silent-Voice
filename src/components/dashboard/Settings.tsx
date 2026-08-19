@@ -2,7 +2,6 @@ import { createContext, useContext, useEffect, useState } from "react";
 import Page from "../shared/Page";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useModelStore } from "../../stores/modelStore";
-import { useHistoryStore } from "../../stores/historyStore";
 import { useHardwareInfo } from "../../hooks/useHardwareInfo";
 import { STT_MODELS, LANGUAGES, TTS_MODELS, TTS_SAMPLE_TEXT } from "../../services/catalog";
 import {
@@ -13,6 +12,8 @@ import {
   downloadCoeditModel,
   coeditInstalled,
   deleteCoeditModel,
+  pauseDownload,
+  cancelDownload,
   downloadGectorModel,
   gectorInstalled,
   deleteGectorModel,
@@ -20,42 +21,17 @@ import {
   vadInstalled,
   deleteVadModel,
   recommendDeviceDefaults,
-  pruneAudioClips,
   copyDiagnostics,
   copyToClipboard,
 } from "../../services/tauriBridge";
 import type { DeviceRecommendation } from "../../types";
 import HotkeyRecorder from "../shared/HotkeyRecorder";
-import ScrollNumberPicker from "../shared/ScrollNumberPicker";
 import { checkForUpdatesManual } from "../../services/updater";
 import type { Settings } from "../../types";
-
-const RETENTION_OPTIONS: { value: Settings["history_retention"]; label: string }[] = [
-  { value: "never", label: "Never" },
-  { value: "3d", label: "After 3 days" },
-  { value: "2w", label: "After 2 weeks" },
-  { value: "3m", label: "After 3 months" },
-  { value: "custom", label: "Custom…" },
-];
-
-const RETENTION_UNITS: Settings["history_retention_custom_unit"][] = [
-  "hours",
-  "days",
-  "weeks",
-  "months",
-];
-
-const SELECT_CLS =
-  "h-9 rounded-lg border border-sv-border bg-sv-bg px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sv-accent";
 
 export default function Settings() {
   const settings = useSettingsStore((s) => s.settings);
   const setSettings = useSettingsStore((s) => s.setSettings);
-  const reprune = useHistoryStore((s) => s.reprune);
-
-  useEffect(() => {
-    reprune();
-  }, [settings.history_limit, settings.history_retention, settings.history_retention_custom_value, settings.history_retention_custom_unit, reprune]);
 
   // Toggle ON = rule active = NOT in the disabled list.
   const toggleProofreadRule = (rule: string, enabled: boolean) => {
@@ -141,14 +117,45 @@ export default function Settings() {
   }
 
   const hasGpu = !!hardware?.gpu_vram_gb && hardware.gpu_vram_gb >= 1;
+  const [cat, setCat] = useState("recording");
 
   return (
-    <Page title="Settings" subtitle="Dictation, audio, and appearance">
-      <div className="gap-5 md:columns-2 md:gap-5">
-        <Section title="Dictation" accent="var(--color-sv-sec-dictation)" icon={<MicrophoneIcon />}>
+    <Page title="Settings" subtitle="Fine-tune dictation, grammar, voice, and more">
+      <div className="flex gap-6">
+        {/* Category rail */}
+        <nav className="sticky top-0 w-48 shrink-0 self-start">
+          {CATS.map((c) => {
+            const on = c.id === cat;
+            return (
+              <button
+                key={c.id}
+                onClick={() => setCat(c.id)}
+                aria-current={on}
+                className={`mb-0.5 flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-[13px] transition ${
+                  on
+                    ? "bg-sv-surface-2 font-medium text-sv-text"
+                    : "text-sv-muted hover:bg-sv-surface-2/60 hover:text-sv-text"
+                }`}
+              >
+                <span style={{ color: on ? c.accent : undefined }} className="shrink-0">
+                  {c.icon}
+                </span>
+                {c.label}
+              </button>
+            );
+          })}
+        </nav>
+
+        {/* Active category pane */}
+        <div className="min-w-0 flex-1">
+        <Cat id="recording" active={cat}>
+        <Section title="Recording" desc="How the push-to-talk hotkey behaves and how your voice is captured." accent="var(--color-sv-sec-dictation)" icon={<MicrophoneIcon />}>
 
           <div className="border-b border-sv-border/60 py-3.5">
-            <div className="text-sm">Global hotkey (push-to-talk)</div>
+            <div className="flex items-center gap-1.5 text-sm">
+              Global hotkey (push-to-talk)
+              <InfoTip text="The key you hold to dictate anywhere in Windows. Hold it, speak, release, and your words are typed at the cursor. Pick a combo no other app uses — if the system already claims it, you'll see an error and can try another." />
+            </div>
             <div className="mt-0.5 text-xs text-sv-muted">
               Hold to record, release to paste
             </div>
@@ -198,8 +205,14 @@ export default function Settings() {
               />
             </Row>
           </SubGroup>
+        </Section>
+        </Cat>
+
+        <Cat id="stt" active={cat}>
+        <Section title="Speech-to-text" desc="The model that turns your speech into text, plus the microphone it listens to." accent="var(--color-sv-sec-perf)" icon={<WaveIcon />}>
           <Row
             label="Speech-to-text source"
+            info="Choose whether transcription runs on your own machine (private, offline, and free) or through a cloud provider you've added (often faster and more accurate, but it sends your audio to their servers and may cost money). Local is the default and needs a downloaded speech model."
             hint={
               sttProviders.length === 0
                 ? "Add a provider in Cloud providers with \"STT\" checked to unlock cloud options"
@@ -225,7 +238,10 @@ export default function Settings() {
             </select>
           </Row>
           {settings.stt_cloud_provider_id === null && (
-            <Row label="Speech model">
+            <Row
+              label="Speech model"
+              info="The Whisper model that converts speech to text on your device. Larger models are more accurate but slower — on a CPU every clip pays a big fixed cost, so even short phrases can feel slow. For speed, pick a smaller model, or try Moonshine in the Model Store, which is built for short dictation."
+            >
               <select
                 value={settings.active_stt_model}
                 onChange={(e) =>
@@ -256,6 +272,7 @@ export default function Settings() {
           )}
           <Row
             label="Language"
+            info="Tell Whisper which language you're speaking. Auto-detect works, but it guesses from the first few seconds and can slip on short clips or strong accents — choosing your language explicitly is faster and noticeably more accurate."
             hint={
               settings.language === "auto"
                 ? "Tip: pick your language instead of Auto-detect for better accuracy"
@@ -290,10 +307,15 @@ export default function Settings() {
               ))}
             </select>
           </Row>
+        </Section>
+        </Cat>
 
+        <Cat id="grammar" active={cat}>
+        <Section title="Grammar" desc="Spelling and grammar help that appears as you type in any app (English only)." accent="var(--color-sv-sec-replace)" icon={<SpellIcon />}>
           <Row
             label="Grammar model"
-            hint="Not used for pasted text anymore — kept on disk for the upcoming inline grammar upgrade."
+            info="An optional on-device AI model that corrects grammar in your dictated text before it is pasted (used when no AI writing style is active). Runs fully offline. Safe to remove if you're short on space."
+            hint="Corrects grammar in dictated text before pasting, when no writing style is active."
           >
             {(() => {
               if (coeditReady) {
@@ -313,8 +335,56 @@ export default function Settings() {
               const pct = coeditProgress && coeditProgress.total_bytes > 0
                 ? Math.round((coeditProgress.downloaded_bytes / coeditProgress.total_bytes) * 100)
                 : 0;
-              if (downloading) {
-                return <span className="text-xs text-sv-muted">Downloading… {pct}%</span>;
+              const isPaused = coeditProgress?.status === "paused";
+              if (downloading || isPaused) {
+                return (
+                  <div className="flex items-center gap-1.5">
+                    <div className="flex w-28 items-center gap-2">
+                      <div className="h-1.5 flex-1 overflow-hidden rounded-full border border-sv-border bg-sv-surface-2">
+                        {!coeditProgress || coeditProgress.total_bytes === 0 ? (
+                          <div className="h-full w-1/3 rounded-full bg-sv-accent animate-[sv-indeterminate_1.1s_ease-in-out_infinite]" />
+                        ) : (
+                          <div className={`h-full rounded-full transition-all duration-75 ${isPaused ? "bg-sv-muted" : "bg-sv-accent"}`} style={{ width: `${pct}%` }} />
+                        )}
+                      </div>
+                      <span className="w-9 shrink-0 text-right tabular-nums text-[11px] text-sv-muted">
+                        {isPaused ? "Paused" : !coeditProgress || coeditProgress.total_bytes === 0 ? "…" : `${pct}%`}
+                      </span>
+                    </div>
+                    {isPaused ? (
+                      <button
+                        onClick={async () => {
+                          setCoeditFetching(true);
+                          try {
+                            const ok = await downloadCoeditModel();
+                            if (ok) setCoeditReady(await coeditInstalled());
+                          } finally {
+                            setCoeditFetching(false);
+                          }
+                        }}
+                        title="Resume download"
+                        className="p-1 text-sv-muted transition-colors duration-75 hover:text-sv-text"
+                      >
+                        <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => pauseDownload("coedit")}
+                        title="Pause download"
+                        className="p-1 text-sv-muted transition-colors duration-75 hover:text-sv-text"
+                      >
+                        <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1" /><rect x="14" y="4" width="4" height="16" rx="1" /></svg>
+                      </button>
+                    )}
+                    <button
+                      onClick={() => cancelDownload("coedit")}
+                      title="Cancel download"
+                      className="p-1 text-sv-muted transition-colors duration-75 hover:text-sv-bad"
+                    >
+                      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
+                    </button>
+                  </div>
+                );
               }
               return (
                 <button
@@ -334,8 +404,21 @@ export default function Settings() {
               );
             })()}
           </Row>
+          {coeditReady && (
+            <Row
+              label="Fix dictated grammar"
+              info="When on, the downloaded grammar model corrects your dictated text before it's pasted — skipped automatically when an AI writing style is already active. Runs fully offline."
+              hint="Corrects grammar in dictated text before pasting (when no writing style is active)."
+            >
+              <Toggle
+                checked={settings.coedit_enabled}
+                onChange={(v) => setSettings({ coedit_enabled: v })}
+              />
+            </Row>
+          )}
           <Row
             label="Inline proofreading"
+            info="Underlines spelling and grammar mistakes right where you type — in almost any Windows app, not just this one — the way a word processor does. Click an underline to see fixes. Runs entirely on your device and is English-only for now."
             hint="Red/blue underlines beneath spelling & grammar mistakes as you type in any app (English only)"
           >
             <Toggle
@@ -365,6 +448,7 @@ export default function Settings() {
               </Row>
               <Row
                 label="Context grammar"
+                info="A small AI model that catches mistakes a spell-checker can't — correctly-spelled but wrong words like their/there or affect/effect — by reading the whole sentence for context. Optional download; the basic spelling and grammar underlines work without it."
                 hint="AI pass that catches correctly-spelled wrong words"
               >
                 {(() => {
@@ -459,9 +543,17 @@ export default function Settings() {
               </div>
             </div>
           )}
+        </Section>
+        </Cat>
+
+        <Cat id="recording" active={cat}>
+        <Section title="Audio input" desc="How your microphone signal is filtered before transcription." accent="var(--color-sv-sec-dictation)" icon={<MicrophoneIcon />}>
           <div className="py-3.5">
             <div className="flex items-center justify-between">
-              <div className="text-sm">Input sensitivity</div>
+              <div className="flex items-center gap-1.5 text-sm">
+                Input sensitivity
+                <InfoTip text="This is the loudness gate. Anything quieter than the line is treated as silence and trimmed before transcription, which removes wind, hum, and room noise. Lower = stricter, so only clear speech gets through; higher picks up quieter speech but also more background noise." />
+              </div>
               <span className="text-xs tabular-nums text-sv-muted">
                 {settings.input_sensitivity}
               </span>
@@ -490,6 +582,7 @@ export default function Settings() {
           </div>
           <Row
             label="Smart voice detection"
+            info="Normally the app decides 'is this speech?' purely by loudness, so fans, keyboards, or music can be mistaken for talking. This tiny neural model recognizes the actual shape of a human voice, so it trims non-speech far more reliably. Applies automatically once downloaded."
             hint="Uses a tiny neural model to tell your voice apart from fans, keyboards and music, instead of just going by loudness. Applies automatically once downloaded; the slider still controls how strict it is."
           >
             {(() => {
@@ -527,7 +620,9 @@ export default function Settings() {
             })()}
           </Row>
         </Section>
+        </Cat>
 
+        <Cat id="tts" active={cat}>
         <Section
           title="Read aloud (text-to-speech)"
           desc="Select text in any app, press the hotkey, and hear it spoken. Press again to stop. Voices are downloaded in Model Store → Text-to-Speech."
@@ -536,6 +631,7 @@ export default function Settings() {
         >
           <Row
             label="Enable read-aloud"
+            info="Turns on the text-to-speech hotkey: select text in any app, press the key, and hear it read aloud in a downloaded voice. Press again to stop. This is separate from dictation — it speaks text, it doesn't transcribe your voice."
             hint="Turn the read-aloud hotkey on or off"
           >
             <Toggle
@@ -571,11 +667,19 @@ export default function Settings() {
                 className="w-56 rounded-lg border border-sv-border bg-sv-bg px-3 py-2 text-sm"
               >
                 <option value="">None selected</option>
-                {TTS_MODELS.filter((v) => downloadedTts.has(v.id)).map((v) => (
-                  <option key={v.id} value={v.id}>
-                    {v.label}
-                  </option>
-                ))}
+                {TTS_MODELS.filter((v) => downloadedTts.has(v.id)).flatMap((v) =>
+                  v.voices
+                    ? v.voices.map((vo) => (
+                        <option key={`${v.id}#${vo.sid}`} value={`${v.id}#${vo.sid}`}>
+                          {v.label} · {vo.label}
+                        </option>
+                      ))
+                    : [
+                        <option key={v.id} value={v.id}>
+                          {v.label}
+                        </option>,
+                      ]
+                )}
               </select>
             </Row>
             <Row label="Test voice" hint="Speaks a short sample sentence">
@@ -584,9 +688,8 @@ export default function Settings() {
                   // A voice can only pronounce its own language — use a sample
                   // sentence in the voice's language (English text through e.g.
                   // a Bangla model comes out as gibberish).
-                  const voice = TTS_MODELS.find(
-                    (v) => v.id === settings.active_tts_voice
-                  );
+                  const baseId = (settings.active_tts_voice ?? '').split('#')[0];
+                  const voice = TTS_MODELS.find((v) => v.id === baseId);
                   ttsSpeakText(
                     TTS_SAMPLE_TEXT[voice?.language ?? ""] ??
                       TTS_SAMPLE_TEXT.default
@@ -600,7 +703,9 @@ export default function Settings() {
             </Row>
           </div>
         </Section>
+        </Cat>
 
+        <Cat id="words" active={cat}>
         <Section
           title="Custom vocabulary"
           desc="Names or jargon Whisper mishears — fed to the model as a hint so it spells them right. Not AI; it does not rewrite your text. Comma-separated, most important first."
@@ -665,7 +770,9 @@ export default function Settings() {
             </button>
           </div>
         </Section>
+        </Cat>
 
+        <Cat id="profiles" active={cat}>
         <Section
           title="Per-app profiles"
           desc="Automatically switch AI mode based on the app you're dictating into. Match is on the program's file name — e.g. “code” for VS Code, “chrome” for Chrome, “outlook” for Outlook."
@@ -718,7 +825,9 @@ export default function Settings() {
             </button>
           </div>
         </Section>
+        </Cat>
 
+        <Cat id="performance" active={cat}>
         <Section title="Performance" accent="var(--color-sv-sec-perf)" icon={<GaugeIcon />}>
           {reco && (
             <Row
@@ -742,6 +851,7 @@ export default function Settings() {
           )}
           <Row
             label="Use GPU acceleration"
+            info="Runs transcription on your graphics card instead of the CPU, which is much faster — but only if you have a compatible GPU. If none is detected, leave this off; turning it on without one does nothing or can error."
             hint={
               hasGpu
                 ? `Detected ${hardware?.gpu_name} — takes effect on the next dictation`
@@ -755,6 +865,7 @@ export default function Settings() {
           </Row>
           <Row
             label="Speed boost (uses more CPU)"
+            info="Unlocks a slider that lets transcription use more CPU cores at once. On most laptops the app already uses every core by default, so this changes nothing — real speed comes from a lighter speech model, not more threads."
             hint="Lets you tune how many CPU cores transcription uses. On CPUs that already use all their cores by default, there's nothing extra to unlock."
           >
             <Toggle
@@ -820,96 +931,10 @@ export default function Settings() {
               );
             })()}
         </Section>
+        </Cat>
 
+        <Cat id="system" active={cat}>
         <Section title="System" accent="var(--color-sv-sec-system)" icon={<CogIcon />}>
-          <Row label="History limit" hint="Keep at most this many transcriptions">
-            <div className="flex items-center gap-2.5">
-              <ScrollNumberPicker
-                value={settings.history_limit}
-                onChange={(v) => setSettings({ history_limit: v })}
-                min={1}
-                max={10000}
-              />
-              <span className="text-sm text-sv-muted">entries</span>
-            </div>
-          </Row>
-          <Row label="Auto-delete" hint="Remove entries older than">
-            <div className="flex items-center gap-2.5">
-              <select
-                value={settings.history_retention}
-                onChange={(e) =>
-                  setSettings({
-                    history_retention: e.target.value as Settings["history_retention"],
-                  })
-                }
-                className={SELECT_CLS}
-              >
-                {RETENTION_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-              {settings.history_retention === "custom" && (
-                <>
-                  <ScrollNumberPicker
-                    value={settings.history_retention_custom_value}
-                    onChange={(v) => setSettings({ history_retention_custom_value: v })}
-                    min={1}
-                    max={999}
-                    width={60}
-                  />
-                  <select
-                    value={settings.history_retention_custom_unit}
-                    onChange={(e) =>
-                      setSettings({
-                        history_retention_custom_unit: e.target
-                          .value as Settings["history_retention_custom_unit"],
-                      })
-                    }
-                    className={SELECT_CLS}
-                  >
-                    {RETENTION_UNITS.map((u) => (
-                      <option key={u} value={u}>
-                        {u}
-                      </option>
-                    ))}
-                  </select>
-                </>
-              )}
-            </div>
-          </Row>
-          <Row label="Save audio of each dictation" hint="Lets you replay and copy the original recording.">
-            <Toggle
-              checked={settings.save_audio}
-              onChange={async (v) => {
-                setSettings({ save_audio: v });
-                if (v) await pruneAudioClips(settings.audio_clip_limit);
-              }}
-            />
-          </Row>
-          {settings.save_audio && (
-            <Row label="Recordings to keep" hint="About 1 MB each. Older recordings are deleted first.">
-              <div className="flex items-center gap-2.5">
-                <ScrollNumberPicker
-                  value={settings.audio_clip_limit}
-                  onChange={async (v) => {
-                    setSettings({ audio_clip_limit: v });
-                    await pruneAudioClips(v);
-                  }}
-                  min={1}
-                  max={500}
-                />
-                <span className="text-sm text-sv-muted">recordings</span>
-              </div>
-            </Row>
-          )}
-          <Row label="Blur transcripts until hover" hint="Keeps what you dictated hidden when your screen is visible to others">
-            <Toggle
-              checked={settings.blur_history}
-              onChange={(v) => setSettings({ blur_history: v })}
-            />
-          </Row>
           <Row label="Launch at startup">
             <Toggle
               checked={settings.auto_start}
@@ -965,6 +990,8 @@ export default function Settings() {
             </button>
           </Row>
         </Section>
+        </Cat>
+        </div>
       </div>
     </Page>
   );
@@ -979,7 +1006,7 @@ function SubGroup({ label, children }: { label: string; children: React.ReactNod
   );
 }
 
-function Section({
+export function Section({
   title,
   desc,
   accent,
@@ -998,29 +1025,23 @@ function Section({
           lines, centring floats the icon halfway down the block instead of
           letting it sit beside the title. */}
       <div
-        className="flex items-start gap-2.5 border-b border-sv-border px-5 py-3"
-        style={accent ? {
-          // The radial glow centres on the icon and bleeds outward, the linear layer carries that colour to the right and dissolves.
-          backgroundImage: [
-            `radial-gradient(140px 70px at 34px 50%, color-mix(in srgb, ${accent} 22%, transparent), transparent 72%)`,
-            `linear-gradient(to right, color-mix(in srgb, ${accent} 9%, transparent) 0%, color-mix(in srgb, ${accent} 4%, transparent) 38%, transparent 68%)`,
-          ].join(", "),
-          boxShadow: "inset 0 1px 0 0 color-mix(in srgb, var(--color-sv-text) 6%, transparent)"
-        } : undefined}
+        className="flex items-start gap-2.5 px-5 pb-3.5 pt-3.5"
+        style={accent ? { borderLeft: `3px solid ${accent}` } : undefined}
       >
         {icon && (
           <span
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg"
-            style={accent ? { backgroundColor: `color-mix(in srgb, ${accent} 20%, transparent)`, color: accent } : undefined}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-sv-border bg-sv-bg"
+            style={accent ? { color: accent } : undefined}
           >
             {icon}
           </span>
         )}
         <div className="min-w-0">
-          <h2 className="text-[13px] font-semibold">{title}</h2>
-          {desc && <p className="mt-0.5 text-[11px] leading-relaxed text-sv-muted">{desc}</p>}
+          <h2 className="font-serif text-[16px] font-semibold leading-tight">{title}</h2>
+          {desc && <p className="mt-0.5 font-serif text-[11.5px] italic leading-relaxed text-sv-muted">{desc}</p>}
         </div>
       </div>
+      <div className="mx-5 border-y border-sv-border" />
       <div className="px-5">{children}</div>
     </div>
   );
@@ -1031,25 +1052,95 @@ function Section({
 // without this every Toggle announced as an unnamed button.
 const RowLabelContext = createContext<string | undefined>(undefined);
 
-function Row({
+// The Settings categories, shown in the left rail. Each maps to one pane.
+const CATS: { id: string; label: string; icon: React.ReactNode; accent: string }[] = [
+  { id: "recording", label: "Recording", icon: <MicrophoneIcon />, accent: "var(--color-sv-sec-dictation)" },
+  { id: "stt", label: "Speech-to-text", icon: <WaveIcon />, accent: "var(--color-sv-sec-perf)" },
+  { id: "grammar", label: "Grammar", icon: <SpellIcon />, accent: "var(--color-sv-sec-replace)" },
+  { id: "tts", label: "Read aloud", icon: <SpeakerIcon />, accent: "var(--color-sv-sec-tts)" },
+  { id: "words", label: "Words & shortcuts", icon: <BookIcon />, accent: "var(--color-sv-sec-vocab)" },
+  { id: "profiles", label: "Per-app profiles", icon: <LayersIcon />, accent: "var(--color-sv-sec-profiles)" },
+  { id: "performance", label: "Performance", icon: <GaugeIcon />, accent: "var(--color-sv-sec-perf)" },
+  { id: "system", label: "System", icon: <CogIcon />, accent: "var(--color-sv-sec-system)" },
+];
+
+// Renders its children only when its category is the active one.
+function Cat({ id, active, children }: { id: string; active: string; children: React.ReactNode }) {
+  return active === id ? <>{children}</> : null;
+}
+
+function WaveIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+      <path d="M4 10v4M8 6v12M12 8v8M16 5v14M20 10v4" />
+    </svg>
+  );
+}
+
+function SpellIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 7h11M4 12h16M4 17h8" />
+      <path d="M17 15l2 2 3-4" />
+    </svg>
+  );
+}
+
+export function Row({
   label,
   hint,
+  info,
   children,
 }: {
   label: string;
   hint?: string;
+  info?: string;
   children: React.ReactNode;
 }) {
   return (
     <div className="flex items-center justify-between gap-4 border-b border-sv-border/60 py-3 last:border-b-0">
       <div className="min-w-0">
-        <div className="text-[13px]">{label}</div>
+        <div className="flex items-center gap-1.5 text-[13px]">
+          {label}
+          {info && <InfoTip text={info} />}
+        </div>
         {hint && <div className="mt-0.5 text-[11px] leading-relaxed text-sv-muted max-w-[46ch]">{hint}</div>}
       </div>
       <div className="shrink-0">
         <RowLabelContext.Provider value={label}>{children}</RowLabelContext.Provider>
       </div>
     </div>
+  );
+}
+
+// Small "i" affordance next to a setting's label. Hovering (mouse) or clicking
+// (touch/keyboard) reveals the full, deeper explanation — the one-line hint
+// stays for quick scanning, this carries the whole story.
+export function InfoTip({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <span className="relative inline-flex align-middle">
+      <button
+        type="button"
+        aria-label="More information"
+        onClick={() => setOpen((o) => !o)}
+        onBlur={() => setOpen(false)}
+        className="peer grid h-[15px] w-[15px] place-items-center rounded-full border border-sv-border text-sv-muted transition hover:border-sv-accent hover:text-sv-accent"
+      >
+        <svg viewBox="0 0 24 24" className="h-2.5 w-2.5" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 11v5" />
+          <path d="M12 7.5v.01" />
+        </svg>
+      </button>
+      <span
+        role="tooltip"
+        className={`pointer-events-none absolute left-0 top-full z-30 mt-2 w-[264px] rounded-lg border border-sv-border bg-sv-surface-2 p-2.5 text-[11.5px] font-normal leading-relaxed text-sv-text shadow-xl transition-opacity duration-150 peer-hover:opacity-100 ${
+          open ? "opacity-100" : "opacity-0"
+        }`}
+      >
+        {text}
+      </span>
+    </span>
   );
 }
 
@@ -1101,7 +1192,7 @@ function MoonIcon() {
   );
 }
 
-function Toggle({
+export function Toggle({
   checked,
   onChange,
 }: {

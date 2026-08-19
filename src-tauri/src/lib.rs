@@ -196,14 +196,25 @@ pub struct AppState {
     /// Read-aloud playback state (see system/tts.rs).
     pub tts: system::tts::TtsState,
     pub download_cancels: Mutex<std::collections::HashMap<String, Arc<downloader::DownloadStopFlag>>>,
+    pub download_locks: Mutex<std::collections::HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
+    /// Serializes ALL speech-to-text inference to one at a time. The background
+    /// chunk worker and the final tail must never decode on the shared engine
+    /// concurrently — whisper-server and the sherpa recognizer both corrupt
+    /// output (garbled/truncated text) under concurrent decode.
+    pub stt_gate: tokio::sync::Mutex<()>,
 }
 
 impl AppState {
-    pub fn register_download(&self, model_id: &str) -> Result<Arc<downloader::DownloadStopFlag>, String> {
+    pub async fn register_download(&self, model_id: &str) -> Result<(Arc<downloader::DownloadStopFlag>, tokio::sync::OwnedMutexGuard<()>), String> {
+        let lock = {
+            let mut locks = self.download_locks.lock().map_err(|e| e.to_string())?;
+            locks.entry(model_id.to_string()).or_insert_with(|| Arc::new(tokio::sync::Mutex::new(()))).clone()
+        };
+        let guard = lock.lock_owned().await;
         let mut map = self.download_cancels.lock().map_err(|e| e.to_string())?;
         let flag = Arc::new(downloader::DownloadStopFlag::default());
         map.insert(model_id.to_string(), flag.clone());
-        Ok(flag)
+        Ok((flag, guard))
     }
 
     pub fn unregister_download(&self, model_id: &str) {
@@ -213,7 +224,7 @@ impl AppState {
     }
 }
 
-pub struct DownloadGuard<'a>(pub &'a AppState, pub String);
+pub struct DownloadGuard<'a>(pub &'a AppState, pub String, pub tokio::sync::OwnedMutexGuard<()>);
 impl<'a> Drop for DownloadGuard<'a> {
     fn drop(&mut self) {
         self.0.unregister_download(&self.1);
@@ -423,10 +434,45 @@ fn set_behavior(
         .collect();
     cfg.pill_auto_hide = pill_auto_hide;
     cfg.append_trailing_space = append_trailing_space;
+    let coedit_was_enabled = cfg.coedit_enabled;
     cfg.coedit_enabled = coedit_enabled;
     cfg.chunk_on_silence = chunk_on_silence;
     cfg.save_audio = save_audio;
     cfg.audio_clip_limit = audio_clip_limit;
+    if coedit_enabled && !coedit_was_enabled {
+        std::thread::spawn(coedit::prewarm);
+    }
+    Ok(())
+}
+
+/// Active accent palette for the inline-proofread suggestion popup. Index maps
+/// to squiggle::PALETTES order (violet, teal, amber-blue, orange, brightness).
+/// Theme is a popup-only visual choice, so it lives here rather than in
+/// RuntimeConfig — the frontend persists it and re-pushes on startup.
+#[tauri::command]
+fn set_popup_theme(theme: String) -> Result<(), String> {
+    let idx = match theme.as_str() {
+        "violet" => 0,
+        "teal" => 1,
+        "amber-blue" => 2,
+        "orange" => 3,
+        "brightness" => 4,
+        _ => 0,
+    };
+    system::squiggle::set_theme(idx);
+    Ok(())
+}
+
+/// Layout for the inline-proofread popup: "insights" (title + stacked rows) or
+/// "compact" (label + struck original → pill + numbered chips). Popup-only, so
+/// like the theme it lives here and the frontend re-pushes it on startup.
+#[tauri::command]
+fn set_popup_style(style: String) -> Result<(), String> {
+    let idx = match style.as_str() {
+        "compact" => 1,
+        _ => 0,
+    };
+    system::squiggle::set_style(idx);
     Ok(())
 }
 
@@ -597,8 +643,8 @@ async fn download_tts_model(
     url_onnx: String,
     url_json: String,
 ) -> Result<bool, String> {
-    let flag = state.register_download(&voice_id)?;
-    let _guard = DownloadGuard(&state, voice_id.clone());
+    let (flag, lock_guard) = state.register_download(&voice_id).await?;
+    let _guard = DownloadGuard(&state, voice_id.clone(), lock_guard);
     downloader::download_tts_model(app, voice_id, url_onnx, url_json, Some(&flag)).await
 }
 
@@ -688,8 +734,8 @@ async fn download_llm_model(
     model_id: String,
     url: String,
 ) -> Result<bool, String> {
-    let flag = state.register_download(&model_id)?;
-    let _guard = DownloadGuard(&state, model_id.clone());
+    let (flag, lock_guard) = state.register_download(&model_id).await?;
+    let _guard = DownloadGuard(&state, model_id.clone(), lock_guard);
     downloader::download_llm_model(app, model_id, url, Some(&flag)).await
 }
 
@@ -725,8 +771,8 @@ async fn download_model(
     url: String,
     file_name: String,
 ) -> Result<bool, String> {
-    let flag = state.register_download(&model_id)?;
-    let _guard = DownloadGuard(&state, model_id.clone());
+    let (flag, lock_guard) = state.register_download(&model_id).await?;
+    let _guard = DownloadGuard(&state, model_id.clone(), lock_guard);
     downloader::download_model(app, model_id, url, file_name, Some(&flag)).await
 }
 
@@ -739,8 +785,8 @@ async fn download_stt_archive(
     model_id: String,
     url: String,
 ) -> Result<bool, String> {
-    let flag = state.register_download(&model_id)?;
-    let _guard = DownloadGuard(&state, model_id.clone());
+    let (flag, lock_guard) = state.register_download(&model_id).await?;
+    let _guard = DownloadGuard(&state, model_id.clone(), lock_guard);
     downloader::download_stt_archive(app, model_id, url, Some(&flag)).await
 }
 
@@ -1000,8 +1046,8 @@ fn set_webview_memory_low(app: &AppHandle, low: bool) {
 #[tauri::command]
 async fn download_coedit_model(app: AppHandle, state: State<'_, AppState>) -> Result<bool, String> {
     let model_id = "coedit".to_string();
-    let flag = state.register_download(&model_id)?;
-    let _guard = DownloadGuard(&state, model_id);
+    let (flag, lock_guard) = state.register_download(&model_id).await?;
+    let _guard = DownloadGuard(&state, model_id, lock_guard);
     models::downloader::download_coedit_model(app, Some(&flag)).await
 }
 #[tauri::command]
@@ -1012,8 +1058,8 @@ fn delete_coedit_model() -> Result<(), String> { models::downloader::delete_coed
 #[tauri::command]
 async fn download_gector_model(app: AppHandle, state: State<'_, AppState>, variant: String) -> Result<bool, String> {
     let model_id = "gector".to_string();
-    let flag = state.register_download(&model_id)?;
-    let _guard = DownloadGuard(&state, model_id);
+    let (flag, lock_guard) = state.register_download(&model_id).await?;
+    let _guard = DownloadGuard(&state, model_id, lock_guard);
     models::downloader::download_gector_model(app, variant, Some(&flag)).await
 }
 #[tauri::command]
@@ -1024,8 +1070,8 @@ fn delete_gector_model() -> Result<(), String> { models::downloader::delete_gect
 #[tauri::command]
 async fn download_vad_model(app: AppHandle, state: State<'_, AppState>) -> Result<bool, String> {
     let model_id = "vad".to_string();
-    let flag = state.register_download(&model_id)?;
-    let _guard = DownloadGuard(&state, model_id);
+    let (flag, lock_guard) = state.register_download(&model_id).await?;
+    let _guard = DownloadGuard(&state, model_id, lock_guard);
     models::downloader::download_vad_model(app, Some(&flag)).await
 }
 #[tauri::command]
@@ -1167,6 +1213,8 @@ pub fn run() {
             update_runtime_config,
             set_text_replacements,
             set_behavior,
+            set_popup_theme,
+            set_popup_style,
             set_app_profiles,
             set_autostart,
             get_autostart,

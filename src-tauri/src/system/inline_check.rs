@@ -163,7 +163,9 @@ fn watcher(app: AppHandle) {
         // user's first dictation isn't the one that hitches.
         let mut warmed = false;
         loop {
-            let timeout = Duration::from_millis(if !last_squiggles.is_empty() {
+            // scroll_settle keeps the fast cadence through the settle window so
+            // underlines come back promptly once the view stops moving.
+            let timeout = Duration::from_millis(if !last_squiggles.is_empty() || scroll_settle > 0 {
                 ACTIVE_POLL_MS
             } else if last_field_focused {
                 if stable_polls >= STABLE_AFTER_POLLS { FIELD_IDLE_MS } else { POLL_MS }
@@ -309,6 +311,7 @@ fn watcher(app: AppHandle) {
                     &mut issues,
                     &overlay_tx,
                     was_active,
+                    scroll_settle > 0,
                 )
             })) {
                 Ok(r) => r,
@@ -326,7 +329,7 @@ fn watcher(app: AppHandle) {
             // a real text target was reached, just with nothing to squiggle.)
             // Governs whether we back off to FIELD_IDLE_MS or sleep deep.
             let field_focused =
-                matches!(reason, "active" | "empty text" | "no visible issue rects")
+                matches!(reason, "active" | "empty text" | "no visible issue rects" | "scrolling")
                     || is_transient_miss(reason);
             // Back off only when nothing changed. Squiggles-visible always
             // polls fast (ACTIVE_POLL_MS above), so this only relaxes the
@@ -354,12 +357,29 @@ fn watcher(app: AppHandle) {
             // bring it back once the view has been still for a couple of polls.
             // Detecting by rect delta (rather than a scroll event) is
             // deliberate — Chromium's UIA scroll events are unreliable.
-            let moved = !squiggles.is_empty()
-                && squiggles.len() == last_squiggles.len()
-                && squiggles
-                    .iter()
-                    .zip(last_squiggles.iter())
-                    .any(|(a, b)| (a.x - b.x).abs() > 2 || (a.y - b.y).abs() > 2);
+            // Match squiggles by their char span, not by array index: while
+            // scrolling, issues leave the top and enter the bottom, so the old
+            // index-zip compared unrelated issues and the length guard made
+            // `moved` false exactly when the view WAS moving.
+            let moved = !squiggles.is_empty() && !last_squiggles.is_empty() && {
+                let mut shifted = false;
+                let mut matched = 0usize;
+                for s in squiggles.iter() {
+                    if let Some(p) = last_squiggles
+                        .iter()
+                        .find(|p| p.start == s.start && p.end == s.end && p.expected == s.expected)
+                    {
+                        matched += 1;
+                        if (s.x - p.x).abs() > 2 || (s.y - p.y).abs() > 2 {
+                            shifted = true;
+                            break;
+                        }
+                    }
+                }
+                // No shared issue at all between two non-empty frames means the
+                // view jumped somewhere new - also a move.
+                shifted || matched == 0
+            };
             if moved {
                 scroll_settle = SCROLL_SETTLE_POLLS;
             } else if scroll_settle > 0 {
@@ -429,6 +449,7 @@ fn poll_once(
     issues: &mut Vec<proofread::ProofIssue>,
     overlay_tx: &std::sync::mpsc::Sender<Vec<SquiggleInfo>>,
     was_active: bool,
+    suppress_lint: bool,
 ) -> (Vec<SquiggleInfo>, &'static str) {
     unsafe {
         // Never squiggle our own dashboard (its WebView2 child has a different
@@ -521,6 +542,13 @@ fn poll_once(
             return (Vec::new(), "empty text");
         }
         // Re-lint only when the text actually changed; rects refresh every poll.
+        // While the view is still settling from a scroll, skip the whole cycle:
+        // the visible range keeps changing, so linting it would re-run GECToR
+        // every poll and the rect reads would be stale anyway. last_text is left
+        // untouched so the lint runs once the view stops.
+        if text != *last_text && suppress_lint {
+            return (Vec::new(), "scrolling");
+        }
         if text != *last_text {
             // Clearing on every keystroke made the underlines blink: the
             // overlay hid every strip, then redrew it once the re-lint

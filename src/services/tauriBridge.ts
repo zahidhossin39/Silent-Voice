@@ -25,6 +25,13 @@ export async function listenEvent<T>(
   return unlisten;
 }
 
+/** Broadcast a Tauri event to all windows (reaches the overlay pill). */
+export async function emitEvent<T>(event: string, payload: T): Promise<void> {
+  if (!isTauri()) return;
+  const { emit } = await import("@tauri-apps/api/event");
+  await emit(event, payload);
+}
+
 // ---------------- Overlay window self-control ----------------
 
 /** Resize + re-center the overlay window (handled in Rust, bottom-anchored). */
@@ -308,6 +315,24 @@ export async function setTts(voiceId: string, hotkey: string, enabled: boolean):
     await invoke<void>("set_tts", { voiceId, hotkey, enabled });
   } catch (e) {
     console.warn("set_tts failed", e);
+  }
+}
+
+export async function setPopupTheme(theme: string): Promise<void> {
+  if (!isTauri()) return;
+  try {
+    await invoke<void>("set_popup_theme", { theme });
+  } catch (e) {
+    console.warn("set_popup_theme failed", e);
+  }
+}
+
+export async function setPopupStyle(style: string): Promise<void> {
+  if (!isTauri()) return;
+  try {
+    await invoke<void>("set_popup_style", { style });
+  } catch (e) {
+    console.warn("set_popup_style failed", e);
   }
 }
 

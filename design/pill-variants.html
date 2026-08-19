@@ -1,0 +1,129 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Pill text-color variants</title>
+<style>
+  :root {
+    --bg: #151a26;
+    --fg: #e8ebf2;
+    --muted: #8b93a7;
+    --alt: #aab2c4;
+    --line: rgba(255,255,255,.10);
+    --footer: rgba(255,255,255,.045);
+    --chip: rgba(255,255,255,.05);
+    --accent: #2dd4bf;        /* teal */
+    --accent-pill: #1f8f81;   /* filled pill teal */
+    --accent-deep: #0e3b37;   /* deep fill */
+    --badge: rgba(0,0,0,.28);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 48px 40px;
+    background: #0b0e14;
+    font-family: "Segoe UI", system-ui, sans-serif;
+    color: var(--fg);
+    display: flex; flex-wrap: wrap; gap: 40px; align-items: flex-start;
+  }
+  h1 { width: 100%; font-size: 18px; font-weight: 600; margin: 0 0 4px; }
+  .lead { width: 100%; color: var(--muted); font-size: 13px; margin: -4px 0 12px; }
+  .col { display: flex; flex-direction: column; gap: 12px; align-items: center; }
+  .tag { font-size: 13px; font-weight: 600; color: var(--fg); }
+  .tag span { color: var(--muted); font-weight: 400; }
+
+  .card {
+    width: 300px; background: var(--bg);
+    border: 1.5px solid var(--accent);
+    border-radius: 18px; padding: 14px 16px 0;
+    box-shadow: 0 8px 30px rgba(0,0,0,.5);
+  }
+  .label { display:flex; align-items:center; gap:8px; }
+  .dot { width:8px; height:8px; border-radius:3px; background: var(--accent); }
+  .label .t { font-size:11px; font-weight:700; letter-spacing:.12em; color: var(--accent); }
+  .row { display:flex; align-items:center; gap:10px; margin-top:12px; flex-wrap:wrap; }
+  .orig { text-decoration: line-through; color: var(--muted); font-size:15px; }
+  .arrow { color: var(--muted); font-size:15px; }
+
+  /* the pill — filled, no border, badge on the RIGHT */
+  .pill {
+    display:inline-flex; align-items:center; gap:10px;
+    background: var(--accent-pill);
+    border-radius: 11px; padding: 6px 6px 6px 14px;
+  }
+  .pill .txt { font-size:15px; font-weight:600; }
+  .pill .badge {
+    display:grid; place-items:center; width:22px; height:22px;
+    border-radius:7px; background: var(--badge); font-size:13px; line-height:1;
+  }
+
+  /* variant A — dark text */
+  .A .pill .txt { color:#0d1420; }
+  .A .pill .badge { color:#0d1420; }
+  /* variant B — light/white text */
+  .B .pill .txt { color:#ffffff; }
+  .B .pill .badge { color:#eafffb; }
+  /* variant C — deep fill + bright accent text */
+  .C .pill { background: var(--accent-deep); }
+  .C .pill .txt { color: var(--accent); }
+  .C .pill .badge { background: rgba(255,255,255,.08); color: var(--accent); }
+
+  .chips { display:flex; gap:8px; margin-top:12px; }
+  .chip { background: var(--chip); color: var(--alt); border-radius:16px; padding:6px 13px; font-size:14px; }
+  .chip sup { color: var(--muted); font-size:10px; }
+  .expl { color: var(--muted); font-size:13px; margin:12px 0; line-height:1.35; }
+  .expl b { color: var(--fg); }
+  .footer {
+    display:flex; gap:24px; align-items:center;
+    margin: 0 -16px; padding: 12px 16px;
+    background: var(--footer); font-size:13px;
+  }
+  .footer .d { color: var(--muted); }
+</style>
+</head>
+<body>
+  <h1>Compact pill — “better” text-color variants</h1>
+  <p class="lead">All three: filled accent pill, no border, ↵ badge on the right. Only the text/fill treatment differs. Pick A, B, or C.</p>
+
+  <div class="col A">
+    <div class="tag">A <span>· dark text</span></div>
+    <div class="card">
+      <div class="label"><span class="dot"></span><span class="t">GRAMMAR</span></div>
+      <div class="row">
+        <span class="orig">more better</span><span class="arrow">→</span>
+        <span class="pill"><span class="txt">better</span><span class="badge">↵</span></span>
+      </div>
+      <div class="chips"><span class="chip">much better<sup>2</sup></span><span class="chip">far better<sup>3</sup></span></div>
+      <p class="expl">Using <b>more</b> with a comparative adjective is redundant.</p>
+      <div class="footer"><span>📖 Add to dictionary</span><span class="d">✕ Dismiss</span></div>
+    </div>
+  </div>
+
+  <div class="col B">
+    <div class="tag">B <span>· light text</span></div>
+    <div class="card">
+      <div class="label"><span class="dot"></span><span class="t">GRAMMAR</span></div>
+      <div class="row">
+        <span class="orig">more better</span><span class="arrow">→</span>
+        <span class="pill"><span class="txt">better</span><span class="badge">↵</span></span>
+      </div>
+      <div class="chips"><span class="chip">much better<sup>2</sup></span><span class="chip">far better<sup>3</sup></span></div>
+      <p class="expl">Using <b>more</b> with a comparative adjective is redundant.</p>
+      <div class="footer"><span>📖 Add to dictionary</span><span class="d">✕ Dismiss</span></div>
+    </div>
+  </div>
+
+  <div class="col C">
+    <div class="tag">C <span>· deep fill + accent text</span></div>
+    <div class="card">
+      <div class="label"><span class="dot"></span><span class="t">GRAMMAR</span></div>
+      <div class="row">
+        <span class="orig">more better</span><span class="arrow">→</span>
+        <span class="pill"><span class="txt">better</span><span class="badge">↵</span></span>
+      </div>
+      <div class="chips"><span class="chip">much better<sup>2</sup></span><span class="chip">far better<sup>3</sup></span></div>
+      <p class="expl">Using <b>more</b> with a comparative adjective is redundant.</p>
+      <div class="footer"><span>📖 Add to dictionary</span><span class="d">✕ Dismiss</span></div>
+    </div>
+  </div>
+</body>
+</html>

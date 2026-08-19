@@ -4,16 +4,13 @@ import ConfirmDialog from "../shared/ConfirmDialog";
 import Select from "../shared/Select";
 import { ROW_ACTION, ROW_ACTION_PRIMARY, ROW_ACTION_DANGER } from "./hf/HfBrowser";
 import {
-  STT_MODELS,
   TTS_MODELS,
   TTS_SAMPLE_TEXT,
-  sttLanguage,
 } from "../../services/catalog";
 import { formatMB } from "../../services/format";
 import { useModelStore } from "../../stores/modelStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import type {
-  SttPreset,
   TtsModel,
   CompatibilityLevel,
   PiperVoice,
@@ -25,15 +22,6 @@ import { ttsNaturalnessScore, ttsNaturalnessLabel, ttsSpeedScore, ttsSpeedLabel 
 
 type Tab = "stt" | "llm" | "tts";
 
-const CATEGORIES: { id: SttPreset | "all"; label: string }[] = [
-  { id: "all", label: "All categories" },
-  { id: "speed", label: "Speed" },
-  { id: "balanced", label: "Balanced" },
-  { id: "accuracy", label: "Accuracy" },
-  { id: "multilingual", label: "Multilingual" },
-];
-
-
 const DOT: Record<CompatibilityLevel, string> = {
   good: "bg-sv-good",
   warn: "bg-sv-warn",
@@ -42,8 +30,6 @@ const DOT: Record<CompatibilityLevel, string> = {
 
 export default function ModelStore() {
   const [tab, setTab] = useState<Tab>("stt");
-  const [category, setCategory] = useState<SttPreset | "all">("all");
-  const [language, setLanguage] = useState<string>("all");
   const downloadedTts = useModelStore((s) => s.downloadedTts);
 
   const activeTts = useSettingsStore((s) => s.settings.active_tts_voice);
@@ -53,12 +39,6 @@ export default function ModelStore() {
   const togglePinnedTts = useSettingsStore((s) => s.togglePinnedTts);
 
   const pinnedTts = useMemo(() => new Set(pinnedTtsArr || []), [pinnedTtsArr]);
-
-  // All languages present in the catalog, for the language dropdown.
-  const languages = useMemo(() => {
-    const set = new Set(STT_MODELS.map(sttLanguage));
-    return ["all", ...Array.from(set).sort()];
-  }, []);
 
 
   // TTS search + language filter.
@@ -123,8 +103,9 @@ export default function ModelStore() {
           v.id.toLowerCase().includes(q))
     );
     return list.sort((a, b) => {
-      const aActive = a.id === activeTts ? 0 : 1;
-      const bActive = b.id === activeTts ? 0 : 1;
+      const activeBase = (activeTts ?? '').split('#')[0];
+      const aActive = a.id === activeBase ? 0 : 1;
+      const bActive = b.id === activeBase ? 0 : 1;
       if (aActive !== bActive) return aActive - bActive;
       const aPinned = pinnedTts.has(a.id) ? 0 : 1;
       const bPinned = pinnedTts.has(b.id) ? 0 : 1;
@@ -209,7 +190,7 @@ export default function ModelStore() {
               <div key={v.id} className="sv-virtual-row">
                 <TtsCard
                   voice={v}
-                  active={Boolean(activeTts) && activeTts === v.id && downloadedTts.has(v.id)}
+                  active={Boolean(activeTts) && (activeTts ?? '').split('#')[0] === v.id && downloadedTts.has(v.id)}
                   onSelect={() => setSettings({ active_tts_voice: v.id })}
                   pinned={pinnedTts.has(v.id)}
                   onTogglePin={() => togglePinnedTts(v.id)}
@@ -220,25 +201,8 @@ export default function ModelStore() {
         </>
       ) : tab === "stt" ? (
         <>
-          <div className="mb-4 flex flex-wrap items-center gap-2">
-            <Select value={category} onChange={(v) => setCategory(v as SttPreset | "all")}>
-              {CATEGORIES.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.label}
-                </option>
-              ))}
-            </Select>
-            <Select value={language} onChange={setLanguage}>
-              {languages.map((l) => (
-                <option key={l} value={l}>
-                  {l === "all" ? "All languages" : l}
-                </option>
-              ))}
-            </Select>
-          </div>
-
           <div className="flex-1 overflow-hidden">
-            <HfBrowser track="stt" categoryFilter={category} languageFilter={language} />
+            <HfBrowser track="stt" />
           </div>
         </>
       ) : (
@@ -449,7 +413,7 @@ function TtsCard({
             )}
           </div>
 
-          <button onClick={onTogglePin} title={pinned ? "Unpin" : "Pin to top"} className={`transition-colors duration-75 ${pinned ? "text-sv-accent" : "text-sv-muted/40 hover:text-sv-accent"}`}>
+          <button onClick={onTogglePin} title={pinned ? "Unpin" : "Pin to top"} className={`transition-colors duration-75 ${pinned ? "text-sv-accent" : "text-sv-muted/70 hover:text-sv-accent"}`}>
             <svg viewBox="0 0 24 24" width="16" height="16" fill={pinned ? "currentColor" : "none"} stroke={pinned ? "none" : "currentColor"} strokeWidth={pinned ? undefined : "1.75"} strokeLinecap="round" strokeLinejoin="round"><path d="M12 2.5l2.9 6.2 6.6.6-5 4.6 1.4 6.6L12 17l-5.9 3.5L7.5 14l-5-4.6 6.6-.6L12 2.5z" /></svg>
           </button>
         </div>

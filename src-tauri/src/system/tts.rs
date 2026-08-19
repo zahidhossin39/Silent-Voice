@@ -200,17 +200,25 @@ enum Voice {
     /// sherpa-onnx VITS voice: extracted archive directory. `model` is the
     /// .onnx inside; tokens.txt (and optional espeak-ng-data) live in `dir`.
     Sherpa { dir: PathBuf, model: PathBuf },
+    /// Kokoro sherpa-onnx voice: one archive holds many voices, picked by sid.
+    Kokoro { dir: PathBuf, model: PathBuf, sid: i32 },
 }
 
 fn resolve_voice(voice_id: &str) -> Option<Voice> {
-    let piper = registry::tts_model_path(voice_id);
+    let (base_id, sid) = match voice_id.split_once('#') {
+        Some((a, b)) => (a, b.parse::<i32>().unwrap_or(0)),
+        None => (voice_id, 0),
+    };
+    let piper = registry::tts_model_path(base_id);
     if piper.exists() {
         return Some(Voice::Piper(piper));
     }
-    registry::sherpa_voice_model(voice_id).map(|model| Voice::Sherpa {
-        dir: registry::sherpa_voice_dir(voice_id),
-        model,
-    })
+    let model = registry::sherpa_voice_model(base_id)?;
+    let dir = registry::sherpa_voice_dir(base_id);
+    if dir.join("voices.bin").exists() {
+        return Some(Voice::Kokoro { dir, model, sid });
+    }
+    Some(Voice::Sherpa { dir, model })
 }
 
 fn spawn_playback(app: &AppHandle, voice: Voice, text: String) {
@@ -275,9 +283,10 @@ fn synthesize(voice: &Voice, text: &str, wav: &std::path::Path, num_threads: i32
 
     // sherpa voices go through the in-process C API (see sherpa.rs) — the
     // CLI mangles non-Latin text on Windows (narrow argv → ANSI codepage).
-    let Voice::Piper(model) = voice else {
-        let Voice::Sherpa { dir, model } = voice else { unreachable!() };
-        return super::sherpa::synthesize(dir, model, &one_line, wav, num_threads);
+    let model = match voice {
+        Voice::Sherpa { dir, model } => return super::sherpa::synthesize(dir, model, &one_line, wav, num_threads, 0),
+        Voice::Kokoro { dir, model, sid } => return super::sherpa::synthesize(dir, model, &one_line, wav, num_threads, *sid),
+        Voice::Piper(model) => model,
     };
 
     let exe = piper_exe();

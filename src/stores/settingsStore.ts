@@ -73,6 +73,9 @@ const DEFAULT_SETTINGS: Settings = {
   history_retention_custom_unit: "days",
   save_audio: true,
   audio_clip_limit: 20,
+  popup_theme: "violet",
+  popup_style: "insights",
+  app_theme: "orange",
 };
 
 interface SettingsState {

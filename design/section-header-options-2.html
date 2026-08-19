@@ -1,0 +1,123 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Section header — round 2</title>
+<style>
+  :root{
+    --bg:#0b0e14; --surface:#131722; --surface2:#1b2030; --border:#262c3d;
+    --text:#e6e9f0; --muted:#8b93a7; --accent:#f43f5e;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;padding:40px 34px 90px;background:#05070c;color:var(--text);
+    font-family:ui-sans-serif,system-ui,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased;}
+  h1{font-size:21px;font-weight:650;margin:0 0 4px;}
+  .lead{color:var(--muted);font-size:13px;max-width:780px;line-height:1.5;margin:0 0 6px;}
+  .lead b{color:#cfd4e0;}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:28px;margin-top:26px;align-items:start;}
+  .col{display:flex;flex-direction:column;gap:13px;}
+  .tagline .big{font-size:15px;font-weight:700;}
+  .tagline .desc{display:block;font-size:12px;color:var(--muted);line-height:1.45;margin-top:2px;}
+
+  .card{border:1px solid var(--border);border-radius:14px;background:var(--surface);overflow:hidden;position:relative;}
+  .ic svg{width:17px;height:17px;}
+  .cd{font-size:11.5px;color:var(--muted);line-height:1.4;}
+  .rows{padding:6px 18px 10px;}
+  .row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 0;border-bottom:1px solid rgba(255,255,255,.06);}
+  .row:last-child{border-bottom:0;}
+  .rl{font-size:13px;}.rh{font-size:11px;color:var(--muted);margin-top:2px;max-width:38ch;line-height:1.4;}
+  .tog{width:40px;height:23px;border-radius:999px;background:var(--accent);position:relative;flex-shrink:0;}
+  .tog.off{background:#3a4152;}
+  .tog i{position:absolute;top:3px;left:20px;width:17px;height:17px;border-radius:50%;background:#fff;}
+  .tog.off i{left:3px;}
+
+  /* ============ 1 · Spec-sheet index ============ */
+  .s1 .chead{position:relative;display:flex;align-items:baseline;gap:14px;padding:16px 18px 15px;border-bottom:1px solid var(--border);}
+  .s1 .chead::after{content:"";position:absolute;left:18px;bottom:-1px;width:44px;height:2px;background:var(--accent);}
+  .s1 .idx{font-family:var(--mono);font-size:12px;font-weight:600;color:var(--accent);letter-spacing:.06em;line-height:1.4;}
+  .s1 .ct{font-size:14px;font-weight:600;}
+  .s1 .ct .k{font-family:var(--mono);font-size:10px;letter-spacing:.18em;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:3px;font-weight:500;}
+
+  /* ============ 2 · Category spine ============ */
+  .s2::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--accent);}
+  .s2 .chead{display:flex;align-items:center;gap:12px;padding:14px 18px 14px 22px;border-bottom:1px solid var(--border);}
+  .s2 .ic{display:grid;place-items:center;width:32px;height:32px;border-radius:9px;background:var(--accent);color:#fff;flex-shrink:0;}
+  .s2 .ct{font-size:14px;font-weight:600;}
+  .s2 .rows{padding-left:22px;}
+
+  /* ============ 3 · Label plate ============ */
+  .s3 .chead{padding:16px 18px 14px;border-bottom:1px solid var(--border);}
+  .s3 .plate{display:inline-flex;align-items:center;gap:8px;background:var(--accent);color:#fff;
+    padding:7px 13px 7px 11px;border-radius:9px;font-size:13px;font-weight:600;box-shadow:0 2px 10px color-mix(in srgb,var(--accent) 35%,transparent);}
+  .s3 .plate svg{width:15px;height:15px;}
+  .s3 .cd{margin-top:9px;}
+
+  /* ============ 4 · Icon watermark ============ */
+  .s4 .chead{position:relative;overflow:hidden;display:flex;align-items:center;gap:12px;padding:15px 18px;border-bottom:1px solid var(--border);}
+  .s4 .wm{position:absolute;right:-14px;top:50%;transform:translateY(-50%);color:var(--accent);opacity:.12;pointer-events:none;}
+  .s4 .wm svg{width:86px;height:86px;}
+  .s4 .ic{display:grid;place-items:center;width:32px;height:32px;border-radius:9px;background:var(--surface2);border:1px solid var(--border);color:var(--accent);flex-shrink:0;position:relative;}
+  .s4 .ct{font-size:14px;font-weight:600;position:relative;}
+
+  .MIC{}
+</style>
+</head>
+<body>
+  <h1>Section header — round 2, pushed harder</h1>
+  <p class="lead">Four headers where the accent does a <b>structural job</b>, each a different idea: a <b>numbering system</b>, a <b>category spine</b>, a physical <b>label plate</b>, and a graphic <b>watermark</b>. No gradients, no haze — every mark is deliberate. Rose accent to match your theme.</p>
+
+  <div class="grid">
+
+    <!-- 1 -->
+    <div class="col">
+      <div class="tagline"><span class="big">1 · Spec-sheet index</span><span class="desc">a monospace section number + a short accent rule lead-in. Reads like a precision instrument manual (Braun / Teenage Engineering).</span></div>
+      <div class="card s1">
+        <div class="chead">
+          <span class="idx">01</span>
+          <div><div class="ct"><span class="k">Dictation</span>Recording</div>
+          <div class="cd" style="margin-top:4px">How the push-to-talk hotkey behaves and how your voice is captured.</div></div>
+        </div>
+        <div class="rows"><div class="row"><div><div class="rl">Double-tap to lock recording</div><div class="rh">Tap the hotkey twice to keep recording hands-free</div></div><span class="tog"><i></i></span></div><div class="row"><div><div class="rl">Auto-hide the pill</div><div class="rh">Fades ~5s after it's done</div></div><span class="tog off"><i></i></span></div></div>
+      </div>
+    </div>
+
+    <!-- 2 -->
+    <div class="col">
+      <div class="tagline"><span class="big">2 · Category spine</span><span class="desc">a solid accent bar runs the full height of the card, with a filled icon tile. The whole section visibly “belongs” to its color — structural, not decorative.</span></div>
+      <div class="card s2">
+        <div class="chead"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4"/></svg></span>
+          <div><div class="ct">Recording</div><div class="cd" style="margin-top:2px">How the push-to-talk hotkey behaves and how your voice is captured.</div></div>
+        </div>
+        <div class="rows"><div class="row"><div><div class="rl">Double-tap to lock recording</div><div class="rh">Tap the hotkey twice to keep recording hands-free</div></div><span class="tog"><i></i></span></div><div class="row"><div><div class="rl">Auto-hide the pill</div><div class="rh">Fades ~5s after it's done</div></div><span class="tog off"><i></i></span></div></div>
+      </div>
+    </div>
+
+    <!-- 3 -->
+    <div class="col">
+      <div class="tagline"><span class="big">3 · Label plate</span><span class="desc">the section name sits in a solid accent “plate” — like a labeled hardware panel. Tactile and confident; the color is a physical tag, not a glow.</span></div>
+      <div class="card s3">
+        <div class="chead">
+          <span class="plate"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4"/></svg>Recording</span>
+          <div class="cd">How the push-to-talk hotkey behaves and how your voice is captured.</div>
+        </div>
+        <div class="rows"><div class="row"><div><div class="rl">Double-tap to lock recording</div><div class="rh">Tap the hotkey twice to keep recording hands-free</div></div><span class="tog"><i></i></span></div><div class="row"><div><div class="rl">Auto-hide the pill</div><div class="rh">Fades ~5s after it's done</div></div><span class="tog off"><i></i></span></div></div>
+      </div>
+    </div>
+
+    <!-- 4 -->
+    <div class="col">
+      <div class="tagline"><span class="big">4 · Icon watermark</span><span class="desc">an oversized <i>crisp line-art</i> icon bleeds off the right edge as a graphic mark (sharp vector, low opacity — not a blur). Bold and distinctive.</span></div>
+      <div class="card s4">
+        <div class="chead">
+          <span class="wm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4"/></svg></span>
+          <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4"/></svg></span>
+          <div><div class="ct">Recording</div><div class="cd" style="margin-top:2px;position:relative">How the push-to-talk hotkey behaves and how your voice is captured.</div></div>
+        </div>
+        <div class="rows"><div class="row"><div><div class="rl">Double-tap to lock recording</div><div class="rh">Tap the hotkey twice to keep recording hands-free</div></div><span class="tog"><i></i></span></div><div class="row"><div><div class="rl">Auto-hide the pill</div><div class="rh">Fades ~5s after it's done</div></div><span class="tog off"><i></i></span></div></div>
+      </div>
+    </div>
+
+  </div>
+</body>
+</html>

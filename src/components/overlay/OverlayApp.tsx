@@ -9,7 +9,8 @@ import {
   ttsResume,
   ttsStop,
 } from "../../services/tauriBridge";
-import type { RecordingState } from "../../types";
+import { applyAppTheme } from "../../services/appThemes";
+import type { RecordingState, AppTheme } from "../../types";
 
 // Read-aloud playback state (mirrors the Rust `tts://state` event).
 export type TtsState = "idle" | "synthesizing" | "speaking" | "paused";
@@ -45,6 +46,18 @@ export default function OverlayApp() {
     const unlisten = listenEvent<{ state: RecordingState }>(
       "pipeline://state",
       (p) => setState(p.state)
+    );
+    return () => {
+      unlisten.then((f) => f());
+    };
+  }, []);
+
+  // Live app-accent changes from the main window (this pill has its own store
+  // instance, so it never sees the dashboard's setSettings). The waveform is
+  // bg-sv-accent, so re-pointing the accent tokens recolors it instantly.
+  useEffect(() => {
+    const unlisten = listenEvent<AppTheme>("app-theme://changed", (id) =>
+      applyAppTheme(id)
     );
     return () => {
       unlisten.then((f) => f());
