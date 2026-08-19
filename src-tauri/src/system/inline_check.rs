@@ -148,6 +148,8 @@ fn watcher(app: AppHandle) {
         // short enough to feel immediate once the text stops.
         const SCROLL_SETTLE_POLLS: u32 = 2;
         let mut scroll_settle: u32 = 0;
+        // Range saved from the last drawn frame, used to measure scroll delta.
+        let mut probe: Option<ScrollProbe> = None;
         // poll_once already computes exactly why a cycle produced nothing; it
         // used to be discarded, which left "squiggles don't show up yet" with
         // no evidence to diagnose from. Logged on transition only — logging
@@ -312,6 +314,8 @@ fn watcher(app: AppHandle) {
                     &overlay_tx,
                     was_active,
                     scroll_settle > 0,
+                    &last_squiggles,
+                    &mut probe,
                 )
             })) {
                 Ok(r) => r,
@@ -329,7 +333,15 @@ fn watcher(app: AppHandle) {
             // a real text target was reached, just with nothing to squiggle.)
             // Governs whether we back off to FIELD_IDLE_MS or sleep deep.
             let field_focused =
-                matches!(reason, "active" | "empty text" | "no visible issue rects" | "scrolling" | "scroll-move")
+                matches!(
+                    reason,
+                    "active"
+                        | "empty text"
+                        | "no visible issue rects"
+                        | "scrolling"
+                        | "scroll-move"
+                        | "scroll-track"
+                )
                     || is_transient_miss(reason);
             // Back off only when nothing changed. Squiggles-visible always
             // polls fast (ACTIVE_POLL_MS above), so this only relaxes the
@@ -361,7 +373,12 @@ fn watcher(app: AppHandle) {
             // scrolling, issues leave the top and enter the bottom, so the old
             // index-zip compared unrelated issues and the length guard made
             // `moved` false exactly when the view WAS moving.
-            let moved = !squiggles.is_empty() && !last_squiggles.is_empty() && {
+            // A tracked frame moves by design; only treat movement as a scroll
+            // to hide for when we could NOT track it.
+            let moved = reason != "scroll-track"
+                && !squiggles.is_empty()
+                && !last_squiggles.is_empty()
+                && {
                 let mut shifted = false;
                 let mut matched = 0usize;
                 for s in squiggles.iter() {
@@ -378,13 +395,17 @@ fn watcher(app: AppHandle) {
                 }
                 // No shared issue at all between two non-empty frames means the
                 // view jumped somewhere new - also a move.
-                shifted || matched == 0
-            };
+                    shifted || matched == 0
+                };
             // Only a genuine mid-read move re-arms the settle window. The
             // lint-suppressed poll must NOT: it leaves last_text stale on
             // purpose, so `text != last_text` stays true every poll, and
             // re-arming there pinned scroll_settle above zero forever and the
             // underlines never came back after a scroll.
+            if reason == "scroll-track" {
+                // We have real positions again — drop any pending hide.
+                scroll_settle = 0;
+            }
             if moved || reason == "scroll-move" {
                 scroll_settle = SCROLL_SETTLE_POLLS;
             } else if scroll_settle > 0 {
@@ -431,6 +452,18 @@ fn watcher(app: AppHandle) {
     }
 }
 
+/// A saved text range plus where it was drawn last frame. A UIA text range
+/// follows the text it covers, so re-reading its rect tells us exactly how far
+/// the content moved — one COM call instead of re-reading every issue, which is
+/// what makes tracking a live scroll affordable. `pid` guards against reusing a
+/// range after focus moved to another process.
+struct ScrollProbe {
+    range: IUIAutomationTextRange,
+    x: i64,
+    y: i64,
+    pid: u32,
+}
+
 /// A poll that produced nothing because UIA momentarily lost the field —
 /// not because the user left it. Chromium/Electron hosts drop and rebuild
 /// their accessibility tree constantly while typing, so treating these as
@@ -465,6 +498,8 @@ fn poll_once(
     overlay_tx: &std::sync::mpsc::Sender<Vec<SquiggleInfo>>,
     was_active: bool,
     suppress_lint: bool,
+    last_squiggles: &[SquiggleInfo],
+    probe: &mut Option<ScrollProbe>,
 ) -> (Vec<SquiggleInfo>, &'static str) {
     unsafe {
         // Never squiggle our own dashboard (its WebView2 child has a different
@@ -503,6 +538,50 @@ fn poll_once(
         // scrolled out of view — UIA still reports rects for some of those, and
         // drawing them left underlines stranded below/above the visible field.
         let el_rect = el.CurrentBoundingRectangle().unwrap_or(RECT::default());
+
+        // ---- scroll tracking ----
+        // Re-read the saved range's rect. If the content moved, translate the
+        // last drawn frame by that delta and draw it immediately instead of
+        // hiding: one COM call, so it keeps up with a live scroll where
+        // re-reading every issue never could. The words are the same words, so
+        // start/end/expected stay valid — only the pixels move.
+        let probe_now = probe.as_ref().and_then(|pr| {
+            if pr.pid != pid || last_squiggles.is_empty() {
+                return None;
+            }
+            let rects = pr.range.GetBoundingRectangles().ok().map(read_rects)?;
+            let first = rects.first()?;
+            Some((first.0 as i64, first.1 as i64, pr.x, pr.y))
+        });
+        if let Some((nx, ny, px, py)) = probe_now {
+            let (dx, dy) = ((nx - px) as i32, (ny - py) as i32);
+            if dx != 0 || dy != 0 {
+                let shifted: Vec<SquiggleInfo> = last_squiggles
+                    .iter()
+                    .filter_map(|sq| {
+                        let x = sq.x + dx;
+                        let y = sq.y + dy;
+                        // A word scrolled out of the field must not leave a
+                        // stranded underline behind.
+                        if el_rect.right > el_rect.left {
+                            let cy = y + sq.h / 2;
+                            if cy < el_rect.top - 1 || cy > el_rect.bottom + 1 {
+                                return None;
+                            }
+                        }
+                        let mut moved_sq = sq.clone();
+                        moved_sq.x = x;
+                        moved_sq.y = y;
+                        Some(moved_sq)
+                    })
+                    .collect();
+                if let Some(pr) = probe.as_mut() {
+                    pr.x = nx;
+                    pr.y = ny;
+                }
+                return (shifted, "scroll-track");
+            }
+        }
         let pattern: IUIAutomationTextPattern = match el
             .GetCurrentPattern(UIA_TextPatternId)
             .and_then(|unk| unk.cast())
@@ -565,6 +644,9 @@ fn poll_once(
             return (Vec::new(), "scrolling");
         }
         if text != *last_text {
+            // The text changed, so the saved range no longer describes the same
+            // words — never translate across an edit.
+            *probe = None;
             // Clearing on every keystroke made the underlines blink: the
             // overlay hid every strip, then redrew it once the re-lint
             // finished. apply() already diffs the new list against what is
@@ -659,7 +741,14 @@ fn poll_once(
                 .and_then(|i| issue_rects(&doc, chars, i))
                 .and_then(|r| r.first().map(|f| (f.0 as i64, f.1 as i64)));
             match still {
-                Some((nx, ny)) if (nx - ax).abs() <= 1 && (ny - ay).abs() <= 1 => {}
+                Some((nx, ny)) if (nx - ax).abs() <= 1 && (ny - ay).abs() <= 1 => {
+                    // Frame is internally consistent — save this issue's range
+                    // as the probe for the next poll's scroll delta.
+                    *probe = issues
+                        .get(idx)
+                        .and_then(|i| range_for(&doc, chars, i.start, i.end))
+                        .map(|range| ScrollProbe { range, x: nx, y: ny, pid });
+                }
                 _ => return (Vec::new(), "scroll-move"),
             }
         }
