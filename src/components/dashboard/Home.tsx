@@ -150,8 +150,11 @@ export default function Home() {
             )}
           </div>
           <div className="mt-5 shrink-0 border-t border-sv-border pt-4">
-            <div className="mb-2.5 text-[10px] font-semibold uppercase tracking-[0.13em] text-sv-muted">
-              Last 12 weeks
+            <div className="mb-2.5 flex items-baseline gap-2">
+              <span className="text-[10px] font-semibold uppercase tracking-[0.13em] text-sv-muted">
+                Last 12 weeks
+              </span>
+              <span className="text-[11px] text-sv-muted">each square is one day</span>
             </div>
             <div className="flex items-stretch gap-6">
               <div className="shrink-0">
@@ -184,7 +187,7 @@ export default function Home() {
                   })}
                 </div>
                 <div className="mt-2 flex items-center justify-end gap-1 text-[10px] text-sv-muted">
-                  Less
+                  Fewer words
                   <span className="h-2 w-2 rounded-[2px] bg-sv-border/50" />
                   <span className="h-2 w-2 rounded-[2px] bg-sv-accent/25" />
                   <span className="h-2 w-2 rounded-[2px] bg-sv-accent/45" />
@@ -197,24 +200,29 @@ export default function Home() {
                 <div>
                   <div className="text-lg font-semibold tabular-nums text-sv-text">
                     {strip.activeDays}
+                    <span className="text-sm font-medium text-sv-muted">
+                      {strip.activeDays === 1 ? " day" : " days"}
+                    </span>
                   </div>
-                  <div className="text-[11px] text-sv-muted">days you dictated</div>
+                  <div className="text-[11px] text-sv-muted">you dictated on</div>
                 </div>
                 <div>
                   <div className="text-lg font-semibold tabular-nums text-sv-text">
-                    {strip.bestWords > 0 ? strip.bestWords.toLocaleString() : "—"}
+                    {strip.bestWords.toLocaleString()}
+                    <span className="text-sm font-medium text-sv-muted"> words</span>
                   </div>
                   <div className="text-[11px] text-sv-muted">
                     {strip.bestWords > 0
-                      ? `best day · ${new Date(strip.bestMs).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`
-                      : "best day"}
+                      ? `on your busiest day, ${new Date(strip.bestMs).toLocaleDateString(undefined, { month: "long", day: "numeric" })}`
+                      : "on your busiest day"}
                   </div>
                 </div>
                 <div>
                   <div className="text-lg font-semibold tabular-nums text-sv-text">
-                    {strip.avgPerActiveDay > 0 ? strip.avgPerActiveDay.toLocaleString() : "—"}
+                    {strip.avgPerActiveDay.toLocaleString()}
+                    <span className="text-sm font-medium text-sv-muted"> words</span>
                   </div>
-                  <div className="text-[11px] text-sv-muted">words per active day</div>
+                  <div className="text-[11px] text-sv-muted">on an average day you use it</div>
                 </div>
               </div>
             </div>
