@@ -150,52 +150,54 @@ export default function Home() {
             )}
           </div>
           <div className="mt-5 shrink-0 border-t border-sv-border pt-4">
-            <div className="mb-2.5 flex items-baseline justify-between">
-              <span className="text-[10px] font-semibold uppercase tracking-[0.13em] text-sv-muted">
-                Last 12 weeks
-              </span>
-              <span className="text-[11px] text-sv-muted tabular-nums">
-                {strip.windowWords > 0
-                  ? `${strip.windowWords.toLocaleString()} words · ${strip.savedMin} min saved`
-                  : "Nothing dictated yet"}
-              </span>
+            <div className="mb-2.5 text-[10px] font-semibold uppercase tracking-[0.13em] text-sv-muted">
+              Last 12 weeks
             </div>
-            {/* Square cells across 12 columns force height = 7/12 of width, so
-                an unconstrained grid would be ~470px tall in this panel. */}
-            <div className="grid max-w-[210px] grid-flow-col grid-rows-7 gap-[3px]">
-              {strip.cells.map((c) => {
-                const bg = c.future
-                  ? "bg-transparent"
-                  : c.level === 0
-                  ? "bg-sv-border/50"
-                  : c.level === 1
-                  ? "bg-sv-accent/25"
-                  : c.level === 2
-                  ? "bg-sv-accent/45"
-                  : c.level === 3
-                  ? "bg-sv-accent/70"
-                  : "bg-sv-accent";
-                const title = c.future
-                  ? undefined
-                  : `${c.words === 0 ? "No dictation" : `${c.words} words`} · ${new Date(c.ms).toLocaleDateString()}`;
+            <div className="flex items-stretch gap-6">
+              <div className="shrink-0">
+                {/* Square cells across 12 columns force height = 7/12 of width, so the
+                    grid needs an explicit cap or it grows to fill the panel. */}
+                <div className="grid w-[300px] grid-flow-col grid-rows-7 gap-[3px]">
+                  {strip.cells.map((c) => {
+                    const bg = c.future
+                      ? "bg-transparent"
+                      : c.level === 0
+                      ? "bg-sv-border/50"
+                      : c.level === 1
+                      ? "bg-sv-accent/25"
+                      : c.level === 2
+                      ? "bg-sv-accent/45"
+                      : c.level === 3
+                      ? "bg-sv-accent/70"
+                      : "bg-sv-accent";
+                    const title = c.future
+                      ? undefined
+                      : `${c.words === 0 ? "No dictation" : `${c.words} words`} · ${new Date(c.ms).toLocaleDateString()}`;
 
-                return (
-                  <div
-                    key={c.ms}
-                    title={title}
-                    className={`aspect-square rounded-[3px] ${bg}`}
-                  />
-                );
-              })}
-            </div>
-            <div className="mt-2 flex items-center justify-end gap-1 text-[10px] text-sv-muted">
-              Less
-              <span className="h-2 w-2 rounded-[2px] bg-sv-border/50" />
-              <span className="h-2 w-2 rounded-[2px] bg-sv-accent/25" />
-              <span className="h-2 w-2 rounded-[2px] bg-sv-accent/45" />
-              <span className="h-2 w-2 rounded-[2px] bg-sv-accent/70" />
-              <span className="h-2 w-2 rounded-[2px] bg-sv-accent" />
-              More
+                    return (
+                      <div
+                        key={c.ms}
+                        title={title}
+                        className={`aspect-square rounded-[3px] ${bg}`}
+                      />
+                    );
+                  })}
+                </div>
+                <div className="mt-2 flex items-center justify-end gap-1 text-[10px] text-sv-muted">
+                  Less
+                  <span className="h-2 w-2 rounded-[2px] bg-sv-border/50" />
+                  <span className="h-2 w-2 rounded-[2px] bg-sv-accent/25" />
+                  <span className="h-2 w-2 rounded-[2px] bg-sv-accent/45" />
+                  <span className="h-2 w-2 rounded-[2px] bg-sv-accent/70" />
+                  <span className="h-2 w-2 rounded-[2px] bg-sv-accent" />
+                  More
+                </div>
+              </div>
+              <div className="flex min-w-0 flex-1 flex-col justify-center border-l border-sv-border pl-6">
+                <TodayStat label="Words" value={strip.windowWords.toLocaleString()} />
+                <TodayStat label="Time saved vs typing" value={strip.savedMin} unit="min" />
+                <TodayStat label="Days active" value={`${strip.activeDays} / 84`} />
+              </div>
             </div>
           </div>
         </div>
@@ -552,6 +554,7 @@ function useStripStats(entries: HistoryEntry[]) {
     const cells = [];
     let windowWords = 0;
     let windowSpeakMs = 0;
+    let activeDays = 0;
 
     for (let i = 0; i < 84; i++) {
       const d = new Date(startMs);
@@ -560,6 +563,8 @@ function useStripStats(entries: HistoryEntry[]) {
 
       const b = buckets.get(ms);
       const words = b?.words ?? 0;
+
+      if (words > 0) activeDays++;
 
       let level = 0;
       if (words > 0) {
@@ -582,7 +587,7 @@ function useStripStats(entries: HistoryEntry[]) {
 
     const typeMs = (windowWords / TYPING_WPM) * 60_000;
     const savedMin = Math.max(0, Math.round((typeMs - windowSpeakMs) / 60_000));
-    return { cells, windowWords, savedMin: String(savedMin) };
+    return { cells, windowWords, savedMin: String(savedMin), activeDays };
   }, [entries]);
 }
 
