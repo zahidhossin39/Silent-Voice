@@ -193,10 +193,30 @@ export default function Home() {
                   More
                 </div>
               </div>
-              <div className="flex min-w-0 flex-1 flex-col justify-center border-l border-sv-border pl-6">
-                <TodayStat label="Words" value={strip.windowWords.toLocaleString()} />
-                <TodayStat label="Time saved vs typing" value={strip.savedMin} unit="min" />
-                <TodayStat label="Days active" value={`${strip.activeDays} / 84`} />
+              <div className="flex min-w-0 flex-1 flex-col justify-center gap-5 border-l border-sv-border pl-6">
+                <div>
+                  <div className="text-lg font-semibold tabular-nums text-sv-text">
+                    {strip.activeDays}
+                    <span className="text-sm font-medium text-sv-muted"> / 84 days</span>
+                  </div>
+                  <div className="text-[11px] text-sv-muted">days you dictated</div>
+                </div>
+                <div>
+                  <div className="text-lg font-semibold tabular-nums text-sv-text">
+                    {strip.bestWords > 0 ? strip.bestWords.toLocaleString() : "—"}
+                  </div>
+                  <div className="text-[11px] text-sv-muted">
+                    {strip.bestWords > 0
+                      ? `best day · ${new Date(strip.bestMs).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`
+                      : "best day"}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-lg font-semibold tabular-nums text-sv-text">
+                    {strip.avgPerActiveDay > 0 ? strip.avgPerActiveDay.toLocaleString() : "—"}
+                  </div>
+                  <div className="text-[11px] text-sv-muted">words per active day</div>
+                </div>
               </div>
             </div>
           </div>
@@ -535,25 +555,21 @@ function useStripStats(entries: HistoryEntry[]) {
     const startMs = start.getTime();
     const todayMs = today.getTime();
 
-    const buckets = new Map<number, { words: number; speakMs: number }>();
+    const buckets = new Map<number, number>();
     for (const e of entries) {
       if (e.timestamp < startMs) continue;
       const d = new Date(e.timestamp);
       d.setHours(0, 0, 0, 0);
       const dayMs = d.getTime();
 
-      let b = buckets.get(dayMs);
-      if (!b) {
-        b = { words: 0, speakMs: 0 };
-        buckets.set(dayMs, b);
-      }
-      b.words += countWords(e.processed_text || e.raw_text);
-      b.speakMs += e.duration_ms;
+      buckets.set(
+        dayMs,
+        (buckets.get(dayMs) ?? 0) + countWords(e.processed_text || e.raw_text)
+      );
     }
 
     const cells = [];
     let windowWords = 0;
-    let windowSpeakMs = 0;
     let activeDays = 0;
 
     for (let i = 0; i < 84; i++) {
@@ -561,8 +577,7 @@ function useStripStats(entries: HistoryEntry[]) {
       d.setDate(d.getDate() + i);
       const ms = d.getTime();
 
-      const b = buckets.get(ms);
-      const words = b?.words ?? 0;
+      const words = buckets.get(ms) ?? 0;
 
       if (words > 0) activeDays++;
 
@@ -582,12 +597,19 @@ function useStripStats(entries: HistoryEntry[]) {
       });
 
       windowWords += words;
-      if (b) windowSpeakMs += b.speakMs;
     }
 
-    const typeMs = (windowWords / TYPING_WPM) * 60_000;
-    const savedMin = Math.max(0, Math.round((typeMs - windowSpeakMs) / 60_000));
-    return { cells, windowWords, savedMin: String(savedMin), activeDays };
+    let bestWords = 0;
+    let bestMs = 0;
+    for (const c of cells) {
+      if (c.words > bestWords) {
+        bestWords = c.words;
+        bestMs = c.ms;
+      }
+    }
+    const avgPerActiveDay = activeDays > 0 ? Math.round(windowWords / activeDays) : 0;
+
+    return { cells, activeDays, bestWords, bestMs, avgPerActiveDay };
   }, [entries]);
 }
 
