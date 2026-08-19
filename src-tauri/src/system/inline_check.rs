@@ -329,7 +329,7 @@ fn watcher(app: AppHandle) {
             // a real text target was reached, just with nothing to squiggle.)
             // Governs whether we back off to FIELD_IDLE_MS or sleep deep.
             let field_focused =
-                matches!(reason, "active" | "empty text" | "no visible issue rects" | "scrolling")
+                matches!(reason, "active" | "empty text" | "no visible issue rects" | "scrolling" | "scroll-move")
                     || is_transient_miss(reason);
             // Back off only when nothing changed. Squiggles-visible always
             // polls fast (ACTIVE_POLL_MS above), so this only relaxes the
@@ -380,12 +380,18 @@ fn watcher(app: AppHandle) {
                 // view jumped somewhere new - also a move.
                 shifted || matched == 0
             };
-            if moved {
+            // Only a genuine mid-read move re-arms the settle window. The
+            // lint-suppressed poll must NOT: it leaves last_text stale on
+            // purpose, so `text != last_text` stays true every poll, and
+            // re-arming there pinned scroll_settle above zero forever and the
+            // underlines never came back after a scroll.
+            if moved || reason == "scroll-move" {
                 scroll_settle = SCROLL_SETTLE_POLLS;
             } else if scroll_settle > 0 {
                 scroll_settle -= 1;
             }
             if scroll_settle > 0 {
+                stable_polls = 0;
                 if was_active {
                     let _ = overlay_tx.send(Vec::new());
                     was_active = false;
@@ -432,7 +438,16 @@ fn watcher(app: AppHandle) {
 fn is_transient_miss(reason: &str) -> bool {
     matches!(
         reason,
-        "no text element" | "no text pattern" | "no document range" | "GetText failed" | "empty text"
+        "no text element"
+            | "no text pattern"
+            | "no document range"
+            | "GetText failed"
+            | "empty text"
+            // GetFocusedElement() itself fails transiently in Chromium too;
+            // without this it cleared instantly AND dropped the poll rate to
+            // DEEP_IDLE_MS, blanking squiggles for up to 3s on a field the
+            // user never left.
+            | "no focused element"
     )
 }
 
@@ -565,7 +580,14 @@ fn poll_once(
         }
         let chars: &Vec<char> = last_chars;
         let mut squiggles = Vec::new();
-        for issue in issues.iter() {
+        // Anchor: the first issue that yields a rect, remembered with that rect.
+        // Reading N issues' rects takes N cross-process COM calls, so the view
+        // can scroll midway and the frame ends up describing two different
+        // scroll positions at once — that is what draws underlines above the
+        // text or through the middle of words. We re-read this one rect after
+        // the loop; if it moved, the whole frame is discarded.
+        let mut anchor: Option<(usize, i64, i64)> = None;
+        for (issue_idx, issue) in issues.iter().enumerate() {
             // The overlay draws at most MAX_SQUIGGLES; fetching rects (COM
             // calls) for more would also leave invisible squiggles hoverable.
             if squiggles.len() >= super::squiggle::MAX_SQUIGGLES {
@@ -579,6 +601,11 @@ fn poll_once(
                 continue;
             }
             if let Some(rects) = issue_rects(&doc, chars, issue) {
+                if anchor.is_none() {
+                    if let Some(r) = rects.first() {
+                        anchor = Some((issue_idx, r.0 as i64, r.1 as i64));
+                    }
+                }
                 for (x, y, w, h) in rects {
                     if squiggles.len() >= super::squiggle::MAX_SQUIGGLES {
                         break;
@@ -622,6 +649,18 @@ fn poll_once(
                         expected: expected.clone(),
                     });
                 }
+            }
+        }
+        // Did the view move while we were reading? If so this frame is a
+        // mix of scroll positions — throw it away rather than draw it wrong.
+        if let Some((idx, ax, ay)) = anchor {
+            let still = issues
+                .get(idx)
+                .and_then(|i| issue_rects(&doc, chars, i))
+                .and_then(|r| r.first().map(|f| (f.0 as i64, f.1 as i64)));
+            match still {
+                Some((nx, ny)) if (nx - ax).abs() <= 1 && (ny - ay).abs() <= 1 => {}
+                _ => return (Vec::new(), "scroll-move"),
             }
         }
         if squiggles.is_empty() {
