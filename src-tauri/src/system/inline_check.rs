@@ -148,8 +148,6 @@ fn watcher(app: AppHandle) {
         // short enough to feel immediate once the text stops.
         const SCROLL_SETTLE_POLLS: u32 = 2;
         let mut scroll_settle: u32 = 0;
-        // Range saved from the last drawn frame, used to measure scroll delta.
-        let mut probe: Option<ScrollProbe> = None;
         // poll_once already computes exactly why a cycle produced nothing; it
         // used to be discarded, which left "squiggles don't show up yet" with
         // no evidence to diagnose from. Logged on transition only — logging
@@ -314,8 +312,6 @@ fn watcher(app: AppHandle) {
                     &overlay_tx,
                     was_active,
                     scroll_settle > 0,
-                    &last_squiggles,
-                    &mut probe,
                 )
             })) {
                 Ok(r) => r,
@@ -340,7 +336,6 @@ fn watcher(app: AppHandle) {
                         | "no visible issue rects"
                         | "scrolling"
                         | "scroll-move"
-                        | "scroll-track"
                 )
                     || is_transient_miss(reason);
             // Back off only when nothing changed. Squiggles-visible always
@@ -373,10 +368,7 @@ fn watcher(app: AppHandle) {
             // scrolling, issues leave the top and enter the bottom, so the old
             // index-zip compared unrelated issues and the length guard made
             // `moved` false exactly when the view WAS moving.
-            // A tracked frame moves by design; only treat movement as a scroll
-            // to hide for when we could NOT track it.
-            let moved = reason != "scroll-track"
-                && !squiggles.is_empty()
+            let moved = !squiggles.is_empty()
                 && !last_squiggles.is_empty()
                 && {
                 let mut shifted = false;
@@ -402,10 +394,6 @@ fn watcher(app: AppHandle) {
             // purpose, so `text != last_text` stays true every poll, and
             // re-arming there pinned scroll_settle above zero forever and the
             // underlines never came back after a scroll.
-            if reason == "scroll-track" {
-                // We have real positions again — drop any pending hide.
-                scroll_settle = 0;
-            }
             if moved || reason == "scroll-move" {
                 scroll_settle = SCROLL_SETTLE_POLLS;
             } else if scroll_settle > 0 {
@@ -452,30 +440,6 @@ fn watcher(app: AppHandle) {
     }
 }
 
-/// A saved text range plus where it was drawn last frame. A UIA text range
-/// follows the text it covers, so re-reading its rect tells us exactly how far
-/// the content moved — one COM call instead of re-reading every issue, which is
-/// what makes tracking a live scroll affordable. `pid` guards against reusing a
-/// range after focus moved to another process.
-struct ScrollProbe {
-    range: IUIAutomationTextRange,
-    /// Where the range sat when `base` was measured. f64 and never updated
-    /// while tracking: the delta is always computed against this fixed origin,
-    /// so rounding cannot accumulate. Updating it per poll and translating the
-    /// already-translated frame made the underlines drift further from the
-    /// text the longer you scrolled.
-    base_x: f64,
-    base_y: f64,
-    /// The exact frame measured at that origin. Every tracked frame is this
-    /// one translated once — never a translation of a translation.
-    base: Vec<SquiggleInfo>,
-    /// Previous poll's absolute delta. Used ONLY to measure how fast the view
-    /// is moving; positions still come from `base`, so this cannot drift.
-    last_dx: f64,
-    last_dy: f64,
-    pid: u32,
-}
-
 /// A poll that produced nothing because UIA momentarily lost the field —
 /// not because the user left it. Chromium/Electron hosts drop and rebuild
 /// their accessibility tree constantly while typing, so treating these as
@@ -510,8 +474,6 @@ fn poll_once(
     overlay_tx: &std::sync::mpsc::Sender<Vec<SquiggleInfo>>,
     was_active: bool,
     suppress_lint: bool,
-    last_squiggles: &[SquiggleInfo],
-    probe: &mut Option<ScrollProbe>,
 ) -> (Vec<SquiggleInfo>, &'static str) {
     unsafe {
         // Never squiggle our own dashboard (its WebView2 child has a different
@@ -551,72 +513,6 @@ fn poll_once(
         // drawing them left underlines stranded below/above the visible field.
         let el_rect = el.CurrentBoundingRectangle().unwrap_or(RECT::default());
 
-        // ---- scroll tracking ----
-        // Re-read the saved range's rect. If the content moved, translate the
-        // last drawn frame by that delta and draw it immediately instead of
-        // hiding: one COM call, so it keeps up with a live scroll where
-        // re-reading every issue never could. The words are the same words, so
-        // start/end/expected stay valid — only the pixels move.
-        let probe_now = probe.as_ref().and_then(|pr| {
-            if pr.pid != pid || pr.base.is_empty() {
-                return None;
-            }
-            let rects = pr.range.GetBoundingRectangles().ok().map(read_rects)?;
-            let first = rects.first()?;
-            // Absolute delta from the fixed origin — no accumulation.
-            Some((first.0 - pr.base_x, first.1 - pr.base_y, pr.last_dx, pr.last_dy))
-        });
-        if let Some((dxf, dyf, ldx, ldy)) = probe_now {
-            let dx = dxf.round() as i32;
-            let dy = dyf.round() as i32;
-            // Translation is only honest for small movements. A UIA rect read
-            // is 5-25ms of cross-process IPC and Chromium scrolls on its
-            // compositor thread, so on a fast flick the delta we just measured
-            // is already out of date and the underlines would visibly trail the
-            // text. Past a couple of lines, hide instead — the rule is that
-            // underlines vanish rather than drift away from their words.
-            let limit = probe
-                .as_ref()
-                .and_then(|pr| pr.base.first().map(|b| (b.h * 2).max(24)))
-                .unwrap_or(24);
-            // Velocity, NOT displacement: gating on distance-from-base would
-            // bail permanently once you had scrolled a couple of lines, and
-            // since this returns before the refresh path the probe would never
-            // get a new base — underlines would hide forever.
-            if (dxf - ldx).abs() > limit as f64 || (dyf - ldy).abs() > limit as f64 {
-                // Drop the probe so the next poll takes the full refresh path
-                // and re-anchors instead of bailing here again.
-                *probe = None;
-                return (Vec::new(), "scroll-move");
-            }
-            if dx != 0 || dy != 0 {
-                let base = probe.as_ref().map(|pr| pr.base.clone()).unwrap_or_default();
-                let shifted: Vec<SquiggleInfo> = base
-                    .iter()
-                    .filter_map(|sq| {
-                        let x = sq.x + dx;
-                        let y = sq.y + dy;
-                        // A word scrolled out of the field must not leave a
-                        // stranded underline behind.
-                        if el_rect.right > el_rect.left {
-                            let cy = y + sq.h / 2;
-                            if cy < el_rect.top - 1 || cy > el_rect.bottom + 1 {
-                                return None;
-                            }
-                        }
-                        let mut moved_sq = sq.clone();
-                        moved_sq.x = x;
-                        moved_sq.y = y;
-                        Some(moved_sq)
-                    })
-                    .collect();
-                if let Some(pr) = probe.as_mut() {
-                    pr.last_dx = dxf;
-                    pr.last_dy = dyf;
-                }
-                return (shifted, "scroll-track");
-            }
-        }
         let pattern: IUIAutomationTextPattern = match el
             .GetCurrentPattern(UIA_TextPatternId)
             .and_then(|unk| unk.cast())
@@ -679,9 +575,6 @@ fn poll_once(
             return (Vec::new(), "scrolling");
         }
         if text != *last_text {
-            // The text changed, so the saved range no longer describes the same
-            // words — never translate across an edit.
-            *probe = None;
             // Clearing on every keystroke made the underlines blink: the
             // overlay hid every strip, then redrew it once the re-lint
             // finished. apply() already diffs the new list against what is
@@ -776,23 +669,7 @@ fn poll_once(
                 .and_then(|i| issue_rects(&doc, chars, i))
                 .and_then(|r| r.first().map(|f| (f.0, f.1)));
             match still {
-                Some((nx, ny)) if (nx - ax).abs() <= 1.0 && (ny - ay).abs() <= 1.0 => {
-                    // Frame is internally consistent — save this issue's range
-                    // together with the frame it belongs to, as the fixed
-                    // origin every future tracked frame translates from.
-                    *probe = issues
-                        .get(idx)
-                        .and_then(|i| range_for(&doc, chars, i.start, i.end))
-                        .map(|range| ScrollProbe {
-                            range,
-                            base_x: nx,
-                            base_y: ny,
-                            base: squiggles.clone(),
-                            last_dx: 0.0,
-                            last_dy: 0.0,
-                            pid,
-                        });
-                }
+                Some((nx, ny)) if (nx - ax).abs() <= 1.0 && (ny - ay).abs() <= 1.0 => {}
                 _ => return (Vec::new(), "scroll-move"),
             }
         }

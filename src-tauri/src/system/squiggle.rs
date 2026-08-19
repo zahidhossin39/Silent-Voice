@@ -14,13 +14,13 @@
 // thread, which owns the UIA objects (COM apartment rules: don't touch UIA
 // from this thread).
 
-use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicIsize, AtomicU64, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use windows::core::w;
 use windows::Win32::Foundation::{
-    COLORREF, HWND, LPARAM, LRESULT, POINT, RECT, SIZE, WPARAM,
+    COLORREF, HINSTANCE, HWND, LPARAM, LRESULT, POINT, RECT, SIZE, WPARAM,
 };
 use windows::Win32::Graphics::Gdi::{
     CreateCompatibleDC, CreateDIBSection, CreateFontW, CreateSolidBrush, DeleteDC,
@@ -31,6 +31,8 @@ use windows::Win32::Graphics::Gdi::{
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::WindowsAndMessaging::{
+    CallNextHookEx, SetWindowsHookExW, GetMessageW, WH_MOUSE_LL, WM_MOUSEWHEEL,
+    WM_MOUSEHWHEEL,
     CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetCursorPos, PeekMessageW,
     RegisterClassW, SetWindowPos, ShowWindow, TranslateMessage, UpdateLayeredWindow,
     HWND_TOPMOST, MA_NOACTIVATE, MSG, PM_REMOVE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
@@ -180,8 +182,35 @@ pub enum OverlayAction {
     AddToVocab { word: String },
 }
 
+/// The wheel hook lives on its own thread with nothing but a message pump.
+/// A low-level hook is dispatched through the installing thread's message
+/// queue, and Windows skips (and may drop) a hook whose thread does not respond
+/// within LowLevelHooksTimeout (~300ms) — the overlay thread blocks up to 500ms
+/// waiting on its channel, so it cannot host this.
+fn spawn_wheel_hook() {
+    std::thread::spawn(|| unsafe {
+        let hinst = match GetModuleHandleW(None) {
+            Ok(h) => h,
+            Err(e) => {
+                crate::logging::log_error("squiggle", &format!("wheel hook GetModuleHandleW: {e}"));
+                return;
+            }
+        };
+        if let Err(e) = SetWindowsHookExW(WH_MOUSE_LL, Some(mouse_hook), HINSTANCE(hinst.0), 0) {
+            crate::logging::log_error("squiggle", &format!("SetWindowsHookExW failed: {e}"));
+            return;
+        }
+        let mut msg = MSG::default();
+        while GetMessageW(&mut msg, None, 0, 0).as_bool() {
+            let _ = TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
+    });
+}
+
 pub fn spawn(action_tx: Sender<OverlayAction>) -> Sender<Vec<SquiggleInfo>> {
     let (tx, rx) = channel::<Vec<SquiggleInfo>>();
+    spawn_wheel_hook();
     // Restart on panic: a dead overlay thread means squiggles freeze at
     // stale positions forever (and the watcher's channel disconnects).
     std::thread::spawn(move || loop {
@@ -543,6 +572,47 @@ unsafe fn render_popup(hwnd: HWND, x: i32, y: i32) {
     ReleaseDC(None, screen);
 }
 
+// ---- scroll intent ----
+// A UIA rect read costs 5-25ms of cross-process IPC and Chromium scrolls on its
+// compositor thread, so no amount of polling can reposition underlines fast
+// enough to stay on their words — they visibly trail the text. A low-level
+// mouse hook sees the wheel event before the scroll is even painted, so we hide
+// the overlay on the spot and let the watcher bring it back once the view
+// settles. Hiding instantly is the only way the user never sees a stale frame.
+static SCROLL_CLOCK: OnceLock<Instant> = OnceLock::new();
+fn now_ms() -> u64 {
+    SCROLL_CLOCK.get_or_init(Instant::now).elapsed().as_millis() as u64
+}
+static LAST_WHEEL_MS: AtomicU64 = AtomicU64::new(0);
+static OVERLAY_HWND: AtomicIsize = AtomicIsize::new(0);
+/// How long after the last wheel tick the overlay stays suppressed.
+const SCROLL_HIDE_MS: u64 = 220;
+
+fn scrolling_now() -> bool {
+    let last = LAST_WHEEL_MS.load(Ordering::Relaxed);
+    if last == 0 {
+        return false;
+    }
+    now_ms().saturating_sub(last) < SCROLL_HIDE_MS
+}
+
+// Runs on the overlay thread (the thread that installed the hook), which is the
+// same thread that owns the overlay window — so calling ShowWindow here is safe
+// and gives a ~0ms hide.
+unsafe extern "system" fn mouse_hook(code: i32, wp: WPARAM, lp: LPARAM) -> LRESULT {
+    if code >= 0 {
+        let msg = wp.0 as u32;
+        if msg == WM_MOUSEWHEEL || msg == WM_MOUSEHWHEEL {
+            LAST_WHEEL_MS.store(now_ms(), Ordering::Relaxed);
+            let h = OVERLAY_HWND.load(Ordering::Relaxed);
+            if h != 0 {
+                let _ = ShowWindow(HWND(h as *mut std::ffi::c_void), SW_HIDE);
+            }
+        }
+    }
+    CallNextHookEx(None, code, wp, lp)
+}
+
 // ---------------------------- overlay thread ----------------------------
 
 struct Overlay {
@@ -652,6 +722,8 @@ fn run(rx: &Receiver<Vec<SquiggleInfo>>, action_tx: &Sender<OverlayAction>) {
             }
         };
 
+        OVERLAY_HWND.store(overlay_hwnd.0 as isize, Ordering::Relaxed);
+
         let mut overlay = Overlay {
             hwnd: overlay_hwnd,
             x: 0,
@@ -673,6 +745,7 @@ fn run(rx: &Receiver<Vec<SquiggleInfo>>, action_tx: &Sender<OverlayAction>) {
         // Set when the idle blocking recv below received a list; consumed at
         // the top of the next iteration.
         let mut pending: Option<Vec<SquiggleInfo>> = None;
+        let mut was_scrolling = false;
 
         loop {
             let mut msg = MSG::default();
@@ -680,6 +753,16 @@ fn run(rx: &Receiver<Vec<SquiggleInfo>>, action_tx: &Sender<OverlayAction>) {
                 let _ = TranslateMessage(&msg);
                 DispatchMessageW(&msg);
             }
+
+            // The wheel hook hid the overlay without touching `drawn`, and
+            // apply() only runs when the incoming list differs from `drawn` —
+            // so clear it on scroll-end, otherwise an unchanged list would
+            // never re-apply and the underlines would stay hidden.
+            let scrolling = scrolling_now();
+            if was_scrolling && !scrolling {
+                drawn.clear();
+            }
+            was_scrolling = scrolling;
 
             // Newest squiggle list wins.
             let mut latest: Option<Vec<SquiggleInfo>> = pending.take();
@@ -941,6 +1024,16 @@ unsafe fn apply(
     drawn: &[SquiggleInfo],
 ) {
     let show = squiggles.len().min(MAX_SQUIGGLES);
+    // A wheel tick just happened — stay hidden until the view settles rather
+    // than paint underlines at positions the scroll has already invalidated.
+    if scrolling_now() {
+        if overlay.alpha != 0 {
+            let _ = ShowWindow(overlay.hwnd, SW_HIDE);
+            overlay.alpha = 0;
+            overlay.hiding = false;
+        }
+        return;
+    }
     if show == 0 {
         if overlay.alpha != 0 {
             let _ = ShowWindow(overlay.hwnd, SW_HIDE);
