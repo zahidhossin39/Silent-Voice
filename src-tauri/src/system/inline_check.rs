@@ -459,8 +459,20 @@ fn watcher(app: AppHandle) {
 /// range after focus moved to another process.
 struct ScrollProbe {
     range: IUIAutomationTextRange,
-    x: i64,
-    y: i64,
+    /// Where the range sat when `base` was measured. f64 and never updated
+    /// while tracking: the delta is always computed against this fixed origin,
+    /// so rounding cannot accumulate. Updating it per poll and translating the
+    /// already-translated frame made the underlines drift further from the
+    /// text the longer you scrolled.
+    base_x: f64,
+    base_y: f64,
+    /// The exact frame measured at that origin. Every tracked frame is this
+    /// one translated once — never a translation of a translation.
+    base: Vec<SquiggleInfo>,
+    /// Previous poll's absolute delta. Used ONLY to measure how fast the view
+    /// is moving; positions still come from `base`, so this cannot drift.
+    last_dx: f64,
+    last_dy: f64,
     pid: u32,
 }
 
@@ -546,17 +558,40 @@ fn poll_once(
         // re-reading every issue never could. The words are the same words, so
         // start/end/expected stay valid — only the pixels move.
         let probe_now = probe.as_ref().and_then(|pr| {
-            if pr.pid != pid || last_squiggles.is_empty() {
+            if pr.pid != pid || pr.base.is_empty() {
                 return None;
             }
             let rects = pr.range.GetBoundingRectangles().ok().map(read_rects)?;
             let first = rects.first()?;
-            Some((first.0 as i64, first.1 as i64, pr.x, pr.y))
+            // Absolute delta from the fixed origin — no accumulation.
+            Some((first.0 - pr.base_x, first.1 - pr.base_y, pr.last_dx, pr.last_dy))
         });
-        if let Some((nx, ny, px, py)) = probe_now {
-            let (dx, dy) = ((nx - px) as i32, (ny - py) as i32);
+        if let Some((dxf, dyf, ldx, ldy)) = probe_now {
+            let dx = dxf.round() as i32;
+            let dy = dyf.round() as i32;
+            // Translation is only honest for small movements. A UIA rect read
+            // is 5-25ms of cross-process IPC and Chromium scrolls on its
+            // compositor thread, so on a fast flick the delta we just measured
+            // is already out of date and the underlines would visibly trail the
+            // text. Past a couple of lines, hide instead — the rule is that
+            // underlines vanish rather than drift away from their words.
+            let limit = probe
+                .as_ref()
+                .and_then(|pr| pr.base.first().map(|b| (b.h * 2).max(24)))
+                .unwrap_or(24);
+            // Velocity, NOT displacement: gating on distance-from-base would
+            // bail permanently once you had scrolled a couple of lines, and
+            // since this returns before the refresh path the probe would never
+            // get a new base — underlines would hide forever.
+            if (dxf - ldx).abs() > limit as f64 || (dyf - ldy).abs() > limit as f64 {
+                // Drop the probe so the next poll takes the full refresh path
+                // and re-anchors instead of bailing here again.
+                *probe = None;
+                return (Vec::new(), "scroll-move");
+            }
             if dx != 0 || dy != 0 {
-                let shifted: Vec<SquiggleInfo> = last_squiggles
+                let base = probe.as_ref().map(|pr| pr.base.clone()).unwrap_or_default();
+                let shifted: Vec<SquiggleInfo> = base
                     .iter()
                     .filter_map(|sq| {
                         let x = sq.x + dx;
@@ -576,8 +611,8 @@ fn poll_once(
                     })
                     .collect();
                 if let Some(pr) = probe.as_mut() {
-                    pr.x = nx;
-                    pr.y = ny;
+                    pr.last_dx = dxf;
+                    pr.last_dy = dyf;
                 }
                 return (shifted, "scroll-track");
             }
@@ -668,7 +703,7 @@ fn poll_once(
         // scroll positions at once — that is what draws underlines above the
         // text or through the middle of words. We re-read this one rect after
         // the loop; if it moved, the whole frame is discarded.
-        let mut anchor: Option<(usize, i64, i64)> = None;
+        let mut anchor: Option<(usize, f64, f64)> = None;
         for (issue_idx, issue) in issues.iter().enumerate() {
             // The overlay draws at most MAX_SQUIGGLES; fetching rects (COM
             // calls) for more would also leave invisible squiggles hoverable.
@@ -685,7 +720,7 @@ fn poll_once(
             if let Some(rects) = issue_rects(&doc, chars, issue) {
                 if anchor.is_none() {
                     if let Some(r) = rects.first() {
-                        anchor = Some((issue_idx, r.0 as i64, r.1 as i64));
+                        anchor = Some((issue_idx, r.0, r.1));
                     }
                 }
                 for (x, y, w, h) in rects {
@@ -739,15 +774,24 @@ fn poll_once(
             let still = issues
                 .get(idx)
                 .and_then(|i| issue_rects(&doc, chars, i))
-                .and_then(|r| r.first().map(|f| (f.0 as i64, f.1 as i64)));
+                .and_then(|r| r.first().map(|f| (f.0, f.1)));
             match still {
-                Some((nx, ny)) if (nx - ax).abs() <= 1 && (ny - ay).abs() <= 1 => {
+                Some((nx, ny)) if (nx - ax).abs() <= 1.0 && (ny - ay).abs() <= 1.0 => {
                     // Frame is internally consistent — save this issue's range
-                    // as the probe for the next poll's scroll delta.
+                    // together with the frame it belongs to, as the fixed
+                    // origin every future tracked frame translates from.
                     *probe = issues
                         .get(idx)
                         .and_then(|i| range_for(&doc, chars, i.start, i.end))
-                        .map(|range| ScrollProbe { range, x: nx, y: ny, pid });
+                        .map(|range| ScrollProbe {
+                            range,
+                            base_x: nx,
+                            base_y: ny,
+                            base: squiggles.clone(),
+                            last_dx: 0.0,
+                            last_dy: 0.0,
+                            pid,
+                        });
                 }
                 _ => return (Vec::new(), "scroll-move"),
             }
