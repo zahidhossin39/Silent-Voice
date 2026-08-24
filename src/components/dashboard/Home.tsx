@@ -112,7 +112,7 @@ export default function Home() {
           <div className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.13em] text-sv-muted">
             Status
           </div>
-          <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-5 overflow-hidden text-center">
+          <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 overflow-hidden text-center [@media(min-height:820px)]:gap-5">
             <div className="text-2xl font-semibold tracking-tight text-sv-text">
               {STATUS_LABEL[recordingState] ?? "Idle"}
             </div>
@@ -149,7 +149,7 @@ export default function Home() {
               </span>
             )}
           </div>
-          <div className="mt-5 hidden shrink-0 border-t border-sv-border pt-4 [@media(min-height:820px)]:block">
+          <div className="mt-4 shrink-0 border-t border-sv-border pt-3">
             <div className="mb-2.5 flex items-baseline gap-2">
               <span className="text-[10px] font-semibold uppercase tracking-[0.13em] text-sv-muted">
                 Last 12 weeks
@@ -157,7 +157,7 @@ export default function Home() {
               <span className="text-[11px] text-sv-muted">each square is one day</span>
             </div>
             <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:gap-6">
-              <div className="w-full max-w-[300px] xl:shrink-0">
+              <div className="w-full max-w-[200px] xl:max-w-[300px] xl:shrink-0">
                 {/* Square cells across 12 columns mean height follows width, so this
                     column is capped at 300px and shrinks rather than pushing the
                     stats out. */}
@@ -187,7 +187,7 @@ export default function Home() {
                     );
                   })}
                 </div>
-                <div className="mt-2 flex items-center justify-end gap-1 text-[10px] text-sv-muted">
+                <div className="mt-2 hidden items-center justify-end gap-1 text-[10px] text-sv-muted xl:flex">
                   Fewer words
                   <span className="h-2 w-2 rounded-[2px] bg-sv-border/50" />
                   <span className="h-2 w-2 rounded-[2px] bg-sv-accent/25" />
@@ -197,7 +197,7 @@ export default function Home() {
                   More
                 </div>
               </div>
-              <div className="flex flex-row flex-wrap gap-x-8 gap-y-3 xl:min-w-[180px] xl:flex-1 xl:flex-col xl:justify-center xl:gap-5 xl:border-l xl:border-sv-border xl:pl-6">
+              <div className="hidden xl:flex xl:min-w-[180px] xl:flex-1 xl:flex-col xl:justify-center xl:gap-5 xl:border-l xl:border-sv-border xl:pl-6">
                 <div>
                   <div className="text-lg font-semibold tabular-nums text-sv-text">
                     {strip.activeDays}
