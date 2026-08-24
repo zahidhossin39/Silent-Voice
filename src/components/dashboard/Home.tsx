@@ -156,8 +156,8 @@ export default function Home() {
               </span>
               <span className="text-[11px] text-sv-muted">each square is one day</span>
             </div>
-            <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:gap-6">
-              <div className="w-full max-w-[200px] xl:max-w-[300px] xl:shrink-0">
+            <div className="flex items-start gap-5 xl:gap-6">
+              <div className="w-full max-w-[200px] shrink-0 xl:max-w-[300px]">
                 {/* Square cells across 12 columns mean height follows width, so this
                     column is capped at 300px and shrinks rather than pushing the
                     stats out. */}
@@ -197,7 +197,7 @@ export default function Home() {
                   More
                 </div>
               </div>
-              <div className="hidden xl:flex xl:min-w-[180px] xl:flex-1 xl:flex-col xl:justify-center xl:gap-5 xl:border-l xl:border-sv-border xl:pl-6">
+              <div className="flex min-w-0 flex-1 flex-col justify-center gap-4 border-l border-sv-border pl-5 xl:gap-5 xl:pl-6">
                 <div>
                   <div className="text-lg font-semibold tabular-nums text-sv-text">
                     {strip.activeDays}
@@ -218,13 +218,15 @@ export default function Home() {
                       : "on your busiest day"}
                   </div>
                 </div>
-                <div>
-                  <div className="text-lg font-semibold tabular-nums text-sv-text">
-                    {strip.avgPerActiveDay.toLocaleString()}
-                    <span className="text-sm font-medium text-sv-muted"> words</span>
+                {strip.activeDays >= 2 && (
+                  <div>
+                    <div className="text-lg font-semibold tabular-nums text-sv-text">
+                      {strip.avgPerActiveDay.toLocaleString()}
+                      <span className="text-sm font-medium text-sv-muted"> words</span>
+                    </div>
+                    <div className="text-[11px] text-sv-muted">on a typical day</div>
                   </div>
-                  <div className="text-[11px] text-sv-muted">on an average day you use it</div>
-                </div>
+                )}
               </div>
             </div>
           </div>
