@@ -112,7 +112,7 @@ export default function Home() {
           <div className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.13em] text-sv-muted">
             Status
           </div>
-          <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 overflow-hidden text-center [@media(min-height:820px)]:gap-5">
+          <div className="flex min-h-0 flex-1 basis-0 flex-col items-center justify-center gap-3 overflow-hidden text-center [@media(min-height:820px)]:gap-5">
             <div className="text-2xl font-semibold tracking-tight text-sv-text">
               {STATUS_LABEL[recordingState] ?? "Idle"}
             </div>
@@ -149,7 +149,7 @@ export default function Home() {
               </span>
             )}
           </div>
-          <div className="mt-4 shrink-0 border-t border-sv-border pt-3">
+          <div className="mt-4 flex min-h-0 flex-1 basis-0 flex-col justify-center overflow-hidden border-t border-sv-border pt-3">
             <div className="mb-2.5 flex items-baseline gap-2">
               <span className="text-[10px] font-semibold uppercase tracking-[0.13em] text-sv-muted">
                 Last 12 weeks
@@ -197,7 +197,7 @@ export default function Home() {
                   More
                 </div>
               </div>
-              <div className="flex min-w-0 flex-1 flex-col justify-center gap-4 border-l border-sv-border pl-5 xl:gap-5 xl:pl-6">
+              <div className="flex min-w-0 flex-1 flex-col justify-between gap-4 border-l border-sv-border pl-5 xl:gap-5 xl:pl-6">
                 <div>
                   <div className="text-lg font-semibold tabular-nums text-sv-text">
                     {strip.activeDays}
@@ -218,15 +218,13 @@ export default function Home() {
                       : "on your busiest day"}
                   </div>
                 </div>
-                {strip.activeDays >= 2 && (
-                  <div>
-                    <div className="text-lg font-semibold tabular-nums text-sv-text">
-                      {strip.avgPerActiveDay.toLocaleString()}
-                      <span className="text-sm font-medium text-sv-muted"> words</span>
-                    </div>
-                    <div className="text-[11px] text-sv-muted">on a typical day</div>
+                <div>
+                  <div className="text-lg font-semibold tabular-nums text-sv-text">
+                    {strip.avgPerDictation.toLocaleString()}
+                    <span className="text-sm font-medium text-sv-muted"> words</span>
                   </div>
-                )}
+                  <div className="text-[11px] text-sv-muted">in a typical dictation</div>
+                </div>
               </div>
             </div>
           </div>
@@ -566,8 +564,10 @@ function useStripStats(entries: HistoryEntry[]) {
     const todayMs = today.getTime();
 
     const buckets = new Map<number, number>();
+    let windowDictations = 0;
     for (const e of entries) {
       if (e.timestamp < startMs) continue;
+      windowDictations++;
       const d = new Date(e.timestamp);
       d.setHours(0, 0, 0, 0);
       const dayMs = d.getTime();
@@ -617,9 +617,9 @@ function useStripStats(entries: HistoryEntry[]) {
         bestMs = c.ms;
       }
     }
-    const avgPerActiveDay = activeDays > 0 ? Math.round(windowWords / activeDays) : 0;
+    const avgPerDictation = windowDictations > 0 ? Math.round(windowWords / windowDictations) : 0;
 
-    return { cells, activeDays, bestWords, bestMs, avgPerActiveDay };
+    return { cells, activeDays, bestWords, bestMs, avgPerDictation };
   }, [entries]);
 }
 
