@@ -463,18 +463,6 @@ fn set_popup_theme(theme: String) -> Result<(), String> {
     Ok(())
 }
 
-/// Layout for the inline-proofread popup: "insights" (title + stacked rows) or
-/// "compact" (label + struck original → pill + numbered chips). Popup-only, so
-/// like the theme it lives here and the frontend re-pushes it on startup.
-#[tauri::command]
-fn set_popup_style(style: String) -> Result<(), String> {
-    let idx = match style.as_str() {
-        "compact" => 1,
-        _ => 0,
-    };
-    system::squiggle::set_style(idx);
-    Ok(())
-}
 
 /// Card surface for the inline-proofread popup: "dark" (#151a26, the original
 /// look) or "light" (#ffffff). Popup-only like the theme/style above, so the
@@ -1223,7 +1211,7 @@ pub fn run() {
             set_text_replacements,
             set_behavior,
             set_popup_theme,
-            set_popup_style,
+
             set_popup_surface,
             set_app_profiles,
             set_autostart,

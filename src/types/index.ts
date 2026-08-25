@@ -234,7 +234,7 @@ export interface Settings {
   save_audio: boolean;      // keep a copy of the audio for each dictation
   audio_clip_limit: number; // how many recordings to keep
   popup_theme: PopupTheme;  // accent palette for the inline-proofread suggestion popup
-  popup_style: PopupStyle;  // layout for the inline-proofread popup
+
   popup_surface: PopupSurface;  // card background for the inline-proofread popup
   app_theme: AppTheme;
 }
@@ -243,7 +243,7 @@ export interface Settings {
 // the accent swaps). Order matches squiggle.rs PALETTES.
 export type PopupTheme = "violet" | "teal" | "amber-blue" | "orange" | "brightness";
 export type PopupSurface = "dark" | "light";
-export type PopupStyle = "insights" | "compact";
+
 export type AppTheme = "orange" | "ocean" | "iris" | "reef" | "rose" | "meadow";
 
 // ---------- Hugging Face ----------

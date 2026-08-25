@@ -2,7 +2,7 @@ import { useState } from "react";
 import Page from "../shared/Page";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { APP_THEMES } from "../../services/appThemes";
-import type { PopupTheme, PopupStyle, PopupSurface } from "../../types";
+import type { PopupTheme, PopupSurface } from "../../types";
 
 // Accent palettes for the grammar-suggestion popup. The surface is always the
 // dark card below; only the accent (border ring, primary pill, chips, footer
@@ -52,10 +52,6 @@ function PrimaryPill({ accent, text }: { accent: Accent; text: string }) {
   );
 }
 
-const LAYOUTS: { id: PopupStyle; label: string; blurb: string }[] = [
-  { id: "insights", label: "Insights", blurb: "Title, subtitle, and each fix on its own line — roomy and calm." },
-  { id: "compact", label: "Compact", blurb: "Before → after with a filled pill and numbered alternatives — dense and quick." },
-];
 
 // Card surfaces — same values as squiggle.rs SURFACES and the TH table in
 // design/popup-final.html. The accent rides on top of whichever is picked.
@@ -90,7 +86,6 @@ const SURFACE_OPTS: { id: PopupSurface; label: string; blurb: string }[] = [
 
 export default function Theme() {
   const popupTheme = useSettingsStore((s) => s.settings.popup_theme);
-  const popupStyle = useSettingsStore((s) => s.settings.popup_style);
   const popupSurface = useSettingsStore((s) => s.settings.popup_surface);
   const appTheme = useSettingsStore((s) => s.settings.app_theme);
   const setSettings = useSettingsStore((s) => s.setSettings);
@@ -162,43 +157,6 @@ export default function Theme() {
       <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         {/* Left: pickers */}
         <div className="space-y-8">
-          {/* Layout */}
-          <section>
-            <h2 className="mb-3 text-sm font-medium text-sv-muted">Layout</h2>
-            <div className="grid grid-cols-2 gap-3">
-              {LAYOUTS.map((l) => {
-                const selected = l.id === popupStyle;
-                return (
-                  <button
-                    key={l.id}
-                    onClick={() => setSettings({ popup_style: l.id })}
-                    aria-pressed={selected}
-                    className={`flex flex-col gap-3 rounded-xl border p-3 text-left transition ${
-                      selected
-                        ? "border-sv-accent bg-sv-surface-2"
-                        : "border-sv-border bg-sv-surface hover:border-sv-muted/50 hover:bg-sv-surface-2"
-                    }`}
-                  >
-                    <div className="flex h-[172px] items-center justify-center overflow-hidden rounded-lg bg-sv-bg/60 p-3">
-                      {/* `zoom` (not transform:scale) shrinks the popup's actual
-                          layout footprint, so it centers cleanly and never clips. */}
-                      <div style={{ zoom: 0.52 }}>
-                        <Popup accent={accent} style={l.id} surface={surfaceTokens} />
-                      </div>
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-1.5 text-sm font-medium text-sv-text">
-                        {l.label}
-                        {selected && <Check className="text-sv-accent" />}
-                      </div>
-                      <div className="mt-0.5 text-xs text-sv-muted">{l.blurb}</div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </section>
-
           {/* Surface */}
           <section>
             <h2 className="mb-3 text-sm font-medium text-sv-muted">Surface</h2>
@@ -290,7 +248,7 @@ export default function Theme() {
         <section className="lg:sticky lg:top-7 lg:self-start">
           <h2 className="mb-3 text-sm font-medium text-sv-muted">Preview</h2>
           <div className="grid min-h-[340px] place-items-center rounded-xl border border-sv-border bg-[repeating-linear-gradient(135deg,#0d1017,#0d1017_12px,#0f131b_12px,#0f131b_24px)] p-6">
-            <Popup accent={accent} style={popupStyle} surface={surfaceTokens} />
+            <InsightsPreview accent={accent} surface={surfaceTokens} />
           </div>
           <p className="mt-3 text-center text-xs text-sv-muted">
             Hover a flagged word in your real text to see this. Click the fix to
@@ -307,14 +265,6 @@ function Check({ className = "", style }: { className?: string; style?: React.CS
     <svg viewBox="0 0 24 24" className={`h-3 w-3 ${className}`} style={style} fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round">
       <path d="M5 12l5 5 9-10" />
     </svg>
-  );
-}
-
-function Popup({ accent, style, surface }: { accent: Accent; style: PopupStyle; surface: SurfaceTokens }) {
-  return style === "compact" ? (
-    <CompactPreview accent={accent} surface={surface} />
-  ) : (
-    <InsightsPreview accent={accent} surface={surface} />
   );
 }
 
@@ -348,70 +298,6 @@ function InsightsPreview({ accent, surface }: { accent: Accent; surface: Surface
         </div>
       </div>
       <Footer accent={accent} surface={surface} />
-    </div>
-  );
-}
-
-// Faithful replica of squiggle.rs render_compact.
-function CompactPreview({ accent, surface }: { accent: Accent; surface: SurfaceTokens }) {
-  return (
-    <div
-      className="w-[300px] overflow-hidden rounded-[20px] px-4 pb-0 pt-3.5 shadow-2xl"
-      style={{ background: surface.bg, border: `1.5px solid ${accent.dot}` }}
-    >
-      {/* Category label */}
-      <div className="flex items-center gap-2">
-        <span className="h-2 w-2 rounded-sm" style={{ background: accent.dot }} />
-        <span
-          className="text-[11px] font-bold tracking-[0.12em]"
-          style={{ color: accent.dot }}
-        >
-          GRAMMAR
-        </span>
-      </div>
-
-      {/* before → pill */}
-      <div className="mt-2.5 flex flex-wrap items-center gap-2">
-        <span className="text-[15px] line-through" style={{ color: surface.muted }}>
-          more better
-        </span>
-        <span className="text-[15px]" style={{ color: surface.muted }}>
-          →
-        </span>
-        <PrimaryPill accent={accent} text="better" />
-      </div>
-
-      {/* alternative chips */}
-      <div className="mt-3 flex flex-wrap gap-2">
-        {[
-          { t: "much better", n: 2 },
-          { t: "far better", n: 3 },
-        ].map((c) => (
-          <span
-            key={c.t}
-            className="inline-flex items-start rounded-lg px-3 py-1.5 text-[14px]"
-            style={{ background: surface.chip, color: surface.alt }}
-          >
-            {c.t}
-            <sup className="ml-0.5 text-[10px]" style={{ color: surface.muted }}>
-              {c.n}
-            </sup>
-          </span>
-        ))}
-      </div>
-
-      {/* explanation */}
-      <p className="mt-3 text-[13px] leading-snug" style={{ color: surface.muted }}>
-        Using{" "}
-        <span className="font-semibold" style={{ color: surface.fg }}>
-          more
-        </span>{" "}
-        with a comparative adjective is redundant.
-      </p>
-
-      <div className="-mx-4 mt-3">
-        <Footer accent={accent} surface={surface} />
-      </div>
     </div>
   );
 }

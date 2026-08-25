@@ -327,14 +327,6 @@ export async function setPopupTheme(theme: string): Promise<void> {
   }
 }
 
-export async function setPopupStyle(style: string): Promise<void> {
-  if (!isTauri()) return;
-  try {
-    await invoke<void>("set_popup_style", { style });
-  } catch (e) {
-    console.warn("set_popup_style failed", e);
-  }
-}
 
 export async function setPopupSurface(surface: string): Promise<void> {
   if (!isTauri()) return;

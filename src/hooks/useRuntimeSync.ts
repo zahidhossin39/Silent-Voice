@@ -10,7 +10,6 @@ import {
   setAutostart,
   setTts,
   setPopupTheme,
-  setPopupStyle,
   setPopupSurface,
   listenEvent,
 } from "../services/tauriBridge";
@@ -76,7 +75,7 @@ export function useRuntimeSync() {
   const ttsEnabled = useSettingsStore((s) => s.settings.tts_enabled);
   const autoStart = useSettingsStore((s) => s.settings.auto_start);
   const popupTheme = useSettingsStore((s) => s.settings.popup_theme);
-  const popupStyle = useSettingsStore((s) => s.settings.popup_style);
+
   const popupSurface = useSettingsStore((s) => s.settings.popup_surface);
   const setSettings = useSettingsStore((s) => s.setSettings);
 
@@ -171,9 +170,7 @@ export function useRuntimeSync() {
     setPopupTheme(popupTheme);
   }, [popupTheme]);
 
-  useEffect(() => {
-    setPopupStyle(popupStyle);
-  }, [popupStyle]);
+
 
   useEffect(() => {
     setPopupSurface(popupSurface);

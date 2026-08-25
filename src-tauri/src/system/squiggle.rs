@@ -109,7 +109,7 @@ pub(crate) const PALETTES: [(u8, u8, u8); 5] = [
     (0x8b, 0x93, 0xa7), // brightness
 ];
 static THEME_IDX: AtomicI32 = AtomicI32::new(3); // orange, matches settingsStore default
-static STYLE_IDX: AtomicI32 = AtomicI32::new(0);
+
 
 /// Selects the popup border/highlight accent. Index into PALETTES.
 pub fn set_theme(idx: usize) {
@@ -117,11 +117,7 @@ pub fn set_theme(idx: usize) {
     NEEDS_REDRAW.store(true, Ordering::Relaxed);
 }
 
-/// Selects the popup layout. Currently the popup has one layout, so this is
-/// stored for the frontend round-trip but doesn't change rendering yet.
-pub fn set_style(idx: usize) {
-    STYLE_IDX.store(idx as i32, Ordering::Relaxed);
-}
+
 
 fn current_accent() -> (u8, u8, u8) {
     let idx = THEME_IDX.load(Ordering::Relaxed) as usize;
