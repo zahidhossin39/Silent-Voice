@@ -5,7 +5,8 @@ and the full rationale behind every "must never change" rule. `CLAUDE.md` at
 the repo root is the short always-loaded summary; read the relevant section
 HERE before modifying any subsystem it points to.
 
-**Current state:** `v0.1.6` is released (tagged, built by CI, published).
+**Current state:** `v0.1.7` is released (tagged, built by CI, published).
+`0.1.8` is prepared locally and not yet tagged.
 Post-0.1.6 work in progress: hyphenated-word duplication fix in
 `format_numbers`, Windows 10 rounded-corner fallback for the overlay pill
 (`SetWindowRgn`), CLAUDE.md split into short summary + this handbook, and a
@@ -79,7 +80,7 @@ Silent voice/
 │   │   ├── recommend.ts             ← hardware-based compat badge logic
 │   │   └── tauriBridge.ts           ← ALL Tauri invoke calls (degrades in browser)
 │   └── stores/
-│       ├── settingsStore.ts         ← Zustand + localStorage
+│       ├── settingsStore.ts         ← Zustand + tauri-plugin-store
 │       ├── modelStore.ts            ← downloaded STT + LLM model sets
 │       ├── historyStore.ts          ← transcription history
 │       └── uiStore.ts               ← live recordingState
@@ -225,7 +226,7 @@ The user never loses their words.
 | TTS temp WAV | `%APPDATA%\SilentVoice\audio\tts.wav` |
 | TTS (Piper) voices | `%APPDATA%\SilentVoice\tts\<id>.onnx` + `<id>.onnx.json` (pair required) |
 | Error log | `%APPDATA%\SilentVoice\logs\silent-voice.log` (rotates to `.old` at 2MB) |
-| Settings | localStorage (key: `silent-voice-settings`) |
+| Settings | `settings.json` via `tauri-plugin-store` (localStorage only in browser dev) |
 
 ---
 

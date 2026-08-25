@@ -62,7 +62,8 @@ After `cargo build`, whisper DLLs must be copied from `sidecars/` into
 ## Key facts
 
 - Data root `%APPDATA%\SilentVoice\` (models, llm, tts, history.json, logs).
-  Settings live in localStorage key `silent-voice-settings`.
+  Settings live in `settings.json` via `tauri-plugin-store` (localStorage is only
+  the browser-dev fallback; the key is `silent-voice-settings` in both).
 - Pipeline: hotkey release → trim_silence gate → whisper sidecar →
   collapse_repeated_words → optional LLM → replacements → format_numbers →
   paste. Any AI failure falls back to raw text — user never loses words.
@@ -75,10 +76,10 @@ After `cargo build`, whisper DLLs must be copied from `sidecars/` into
   "None" (not pre-release) → publish. Details in HANDBOOK §16.
 - Phase 5 (always-listening VAD/wake-word) is the only unbuilt phase.
 
-**Current state:** v0.1.6 released, v0.1.7 unreleased locally. Model Store
-overhauled: live HF trending feed (empty-query browse), per-row device-fit
-dots (exact for staff picks, param-estimated for HF results), "show
-incompatible" toggle, in-use/pinned/downloaded hierarchy sort, and an
-LM Studio-style quant row picker — applies to STT and LLM tracks (TTS already
-had its own sort/badges). GECToR grammar pass and HF model browser (from the
-prior session) are stable.
+**Current state:** v0.1.7 released; 0.1.8 prepared locally and unreleased.
+Home gained a 12-week dictation strip in the Status panel (heatmap + days
+active / busiest day / words per dictation), the onboarding was rebuilt as a
+left-rail flow that downloads the model in the background, and spoken fillers
+("um", "uh") are now stripped from every transcript so Parakeet matches
+Whisper. Model Store overhaul (live HF trending feed, per-row device-fit dots,
+quant row picker), GECToR grammar pass, and the HF model browser are stable.
