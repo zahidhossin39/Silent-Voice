@@ -25,6 +25,16 @@ jobs:
       - name: Install frontend deps
         run: npm ci
 
+      - name: Fail if the signing secret is missing
+        shell: bash
+        run: |
+          if [ -z "${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}" ]; then
+            echo "TAURI_SIGNING_PRIVATE_KEY is not set. Publishing now would ship a"
+            echo "release with no .sig files, and every installed client would"
+            echo "silently refuse the update forever."
+            exit 1
+          fi
+
       - name: Build, sign, and publish
         uses: tauri-apps/tauri-action@v0
         env:
@@ -39,3 +49,17 @@ jobs:
           prerelease: false
           # Generates latest.json (the updater manifest) alongside the NSIS installer.
           includeUpdaterJson: true
+
+      - name: Verify the installer was actually signed
+        shell: bash
+        run: |
+          # tauri build exits 0 even when signing fails, so a missing .sig is
+          # otherwise published as a green build that no client can install.
+          shopt -s nullglob
+          sigs=(src-tauri/target/release/bundle/nsis/*.sig)
+          if [ ${#sigs[@]} -eq 0 ]; then
+            echo "No .sig file was produced - the release is unsigned. Refusing to publish."
+            ls -R src-tauri/target/release/bundle || true
+            exit 1
+          fi
+          echo "Signed: ${sigs[*]}"
