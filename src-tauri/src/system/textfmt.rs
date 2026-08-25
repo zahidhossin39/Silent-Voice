@@ -843,4 +843,16 @@ second line";
     fn test_strip_fillers_does_not_break_abbreviations() {
         assert_eq!(strip_fillers("um use e.g. here"), "Use e.g. here");
     }
+
+    #[test]
+    fn test_strip_fillers_real_parakeet_transcript() {
+        // Verbatim output from the Parakeet model, as reported.
+        let got = strip_fillers(
+            "Um it's been a while. Um yeah, that's all. Sometimes we do a lot of things. Um we can also uh make it",
+        );
+        assert_eq!(
+            got,
+            "It's been a while. Yeah, that's all. Sometimes we do a lot of things. We can also make it"
+        );
+    }
 }
