@@ -362,7 +362,7 @@ export default function Settings() {
                             setCoeditFetching(false);
                           }
                         }}
-                        title="Resume download"
+                        title="Resume download" aria-label="Resume download"
                         className="p-1 text-sv-muted transition-colors duration-75 hover:text-sv-text"
                       >
                         <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
@@ -370,7 +370,7 @@ export default function Settings() {
                     ) : (
                       <button
                         onClick={() => pauseDownload("coedit")}
-                        title="Pause download"
+                        title="Pause download" aria-label="Pause download"
                         className="p-1 text-sv-muted transition-colors duration-75 hover:text-sv-text"
                       >
                         <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1" /><rect x="14" y="4" width="4" height="16" rx="1" /></svg>
@@ -378,7 +378,7 @@ export default function Settings() {
                     )}
                     <button
                       onClick={() => cancelDownload("coedit")}
-                      title="Cancel download"
+                      title="Cancel download" aria-label="Cancel download"
                       className="p-1 text-sv-muted transition-colors duration-75 hover:text-sv-bad"
                     >
                       <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
@@ -754,7 +754,7 @@ export default function Settings() {
                     <button
                       onClick={() => deleteSnippet(sn.id)}
                       className="rounded-lg px-2 py-2 text-sv-muted hover:text-sv-bad"
-                      title="Delete"
+                      title="Delete" aria-label="Delete"
                     >
                       ✕
                     </button>
@@ -809,7 +809,7 @@ export default function Settings() {
                     <button
                       onClick={() => deleteAppProfile(p.id)}
                       className="rounded-lg px-2 py-2 text-sv-muted hover:text-sv-bad"
-                      title="Delete"
+                      title="Delete" aria-label="Delete"
                     >
                       ✕
                     </button>

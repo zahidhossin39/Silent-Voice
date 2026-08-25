@@ -177,7 +177,7 @@ export default function ScrollNumberPicker({
         onClick={() => setOpen(true)}
         style={{ width, height: COLLAPSED_H }}
         className="rounded-lg border border-sv-border bg-sv-bg text-sm font-semibold tabular-nums text-sv-text transition hover:border-sv-accent/60"
-        title="Click to change"
+        title="Click to change" aria-label="Click to change"
       >
         {value}
       </button>

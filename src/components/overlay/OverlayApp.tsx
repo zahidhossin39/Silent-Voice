@@ -130,7 +130,7 @@ function TtsControlBar({ tts }: { tts: TtsState }) {
       </button>
       <button
         onClick={() => ttsStop()}
-        title="Stop"
+        title="Stop" aria-label="Stop"
         className="flex h-5 w-5 items-center justify-center rounded-full text-[11px] text-sv-bad hover:bg-white/10"
       >
         ■

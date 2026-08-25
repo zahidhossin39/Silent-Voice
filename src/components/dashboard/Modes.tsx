@@ -227,7 +227,7 @@ export default function Modes() {
                   {m.builtin && m.customized && (
                     <button
                       onClick={() => resetMode(m.id)}
-                      title="Discard your edits and restore the original"
+                      title="Discard your edits and restore the original" aria-label="Discard your edits and restore the original"
                       className="rounded-lg border border-transparent px-2.5 py-1.5 text-xs font-medium text-sv-muted transition-colors duration-75 hover:border-sv-border hover:text-sv-text"
                     >
                       Reset

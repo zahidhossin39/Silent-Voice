@@ -578,7 +578,7 @@ function SttRow({
                 {isDownloading ? (
                   <button
                     onClick={() => pauseStore(model.id)}
-                    title="Pause download"
+                    title="Pause download" aria-label="Pause download"
                     className="p-1 text-sv-muted transition-colors duration-75 hover:text-sv-text"
                   >
                     <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1" /><rect x="14" y="4" width="4" height="16" rx="1" /></svg>
@@ -586,7 +586,7 @@ function SttRow({
                 ) : (
                   <button
                     onClick={handleDownload}
-                    title="Resume download"
+                    title="Resume download" aria-label="Resume download"
                     className="p-1 text-sv-accent transition-colors duration-75 hover:text-sv-accent/80"
                   >
                     <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><polygon points="5,3 19,12 5,21" /></svg>
@@ -594,7 +594,7 @@ function SttRow({
                 )}
                 <button
                   onClick={() => cancelStore(model.id)}
-                  title="Cancel download"
+                  title="Cancel download" aria-label="Cancel download"
                   className="p-1 text-sv-muted transition-colors duration-75 hover:text-sv-bad"
                 >
                   <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
@@ -747,7 +747,7 @@ function LlmRow({
                 {isDownloading ? (
                   <button
                     onClick={() => pauseStore(model.id)}
-                    title="Pause download"
+                    title="Pause download" aria-label="Pause download"
                     className="p-1 text-sv-muted transition-colors duration-75 hover:text-sv-text"
                   >
                     <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1" /><rect x="14" y="4" width="4" height="16" rx="1" /></svg>
@@ -755,7 +755,7 @@ function LlmRow({
                 ) : (
                   <button
                     onClick={handleDownload}
-                    title="Resume download"
+                    title="Resume download" aria-label="Resume download"
                     className="p-1 text-sv-accent transition-colors duration-75 hover:text-sv-accent/80"
                   >
                     <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><polygon points="5,3 19,12 5,21" /></svg>
@@ -763,7 +763,7 @@ function LlmRow({
                 )}
                 <button
                   onClick={() => cancelStore(model.id)}
-                  title="Cancel download"
+                  title="Cancel download" aria-label="Cancel download"
                   className="p-1 text-sv-muted transition-colors duration-75 hover:text-sv-bad"
                 >
                   <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
@@ -1101,7 +1101,7 @@ function HfDetail({ details, hardware, track }: { details: HfModelDetails; hardw
                       {isDownloading ? (
                         <button
                           onClick={() => pauseStore(mId)}
-                          title="Pause download"
+                          title="Pause download" aria-label="Pause download"
                           className="p-1 text-sv-muted transition-colors duration-75 hover:text-sv-text"
                         >
                           <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1" /><rect x="14" y="4" width="4" height="16" rx="1" /></svg>
@@ -1109,7 +1109,7 @@ function HfDetail({ details, hardware, track }: { details: HfModelDetails; hardw
                       ) : (
                         <button
                           onClick={doDownload}
-                          title="Resume download"
+                          title="Resume download" aria-label="Resume download"
                           className="p-1 text-sv-accent transition-colors duration-75 hover:text-sv-accent/80"
                         >
                           <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><polygon points="5,3 19,12 5,21" /></svg>
@@ -1117,7 +1117,7 @@ function HfDetail({ details, hardware, track }: { details: HfModelDetails; hardw
                       )}
                       <button
                         onClick={() => cancelStore(mId)}
-                        title="Cancel download"
+                        title="Cancel download" aria-label="Cancel download"
                         className="p-1 text-sv-muted transition-colors duration-75 hover:text-sv-bad"
                       >
                         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>

@@ -452,7 +452,7 @@ function InlineHotkey({
     <button
       onClick={() => setRecording(true)}
       className="flex items-center gap-1 rounded-lg border border-sv-border bg-sv-bg px-2.5 py-1.5 transition hover:border-sv-accent/60"
-      title="Click to record a new push-to-talk hotkey"
+      title="Click to record a new push-to-talk hotkey" aria-label="Click to record a new push-to-talk hotkey"
     >
       {value.split("+").map((k, i, arr) => (
         <span key={i} className="flex items-center gap-1">

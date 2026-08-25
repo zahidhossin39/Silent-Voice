@@ -28,7 +28,7 @@ export function Titlebar() {
         <button
           className="flex h-full w-12 items-center justify-center text-sv-muted hover:bg-sv-surface-2 hover:text-sv-text"
           onClick={() => appWindow?.minimize()}
-          title="Minimize"
+          title="Minimize" aria-label="Minimize"
         >
           <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
             <path d="M5 11h14v2H5z" />
@@ -71,7 +71,7 @@ export function Titlebar() {
         <button
           className="flex h-full w-12 items-center justify-center text-sv-muted hover:bg-sv-bad hover:text-white"
           onClick={() => appWindow?.close()}
-          title="Close"
+          title="Close" aria-label="Close"
         >
           <svg
             viewBox="0 0 24 24"
