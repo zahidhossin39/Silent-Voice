@@ -74,16 +74,6 @@ export function speedScore(
   return Math.max(0.05, Math.min(1, s));
 }
 
-// Human caption for the device-adjusted speed, e.g. "≈5.3x realtime".
-export function deviceRealtimeLabel(
-  speedLabel: string,
-  hw: HardwareInfo | null
-): string | null {
-  const rt = deviceRealtime(speedLabel, hw);
-  if (rt === null) return null;
-  const rounded = rt >= 10 ? Math.round(rt) : Math.round(rt * 10) / 10;
-  return `≈${rounded}x realtime on your device`;
-}
 
 export function accuracyCaption(wer: string): string {
   const w = parseWer(wer);

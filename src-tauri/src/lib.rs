@@ -18,7 +18,7 @@ use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
-use system::{hardware, hotkey, overlay, paste, tray};
+use system::{hardware, hotkey, overlay, tray};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
@@ -994,11 +994,6 @@ async fn stop_and_transcribe(
     .await
 }
 
-#[tauri::command]
-fn paste_text(text: String) -> Result<(), String> {
-    paste::paste_at_cursor(&text)
-}
-
 // The webview's navigator.clipboard.writeText() needs a clipboard permission
 // WebView2 has no prompt UI for in a desktop app, so it can silently fail.
 // Going through arboard (already a dependency for paste) writes to the OS
@@ -1268,7 +1263,6 @@ pub fn run() {
             prune_audio_clips,
             start_recording,
             stop_and_transcribe,
-            paste_text,
             copy_to_clipboard,
             quit_app,
             hide_overlay,

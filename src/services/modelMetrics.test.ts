@@ -4,7 +4,6 @@ import {
   accuracyScore,
   deviceSpeedFactor,
   speedScore,
-  deviceRealtimeLabel,
 } from "./modelMetrics";
 import type { HardwareInfo } from "../types";
 
@@ -75,11 +74,5 @@ describe("modelMetrics", () => {
     expect(speedScore("unparseable", hw())).toBe(0.5);
   });
 
-  it("deviceRealtimeLabel returns formatted label or null", () => {
-    expect(deviceRealtimeLabel("unparseable", hw())).toBeNull();
-    const label = deviceRealtimeLabel("~5x realtime", hw());
-    expect(label).not.toBeNull();
-    expect(label).toContain("5");
-    expect(label).toContain("realtime");
-  });
+
 });
