@@ -48,4 +48,17 @@ jobs:
 
       - name: cargo check
         working-directory: src-tauri
-        run: cargo check --no-default-features
+        shell: bash
+        run: |
+          set +e
+          cargo check --no-default-features --message-format=short 2>&1 | tee check.log
+          code=${PIPESTATUS[0]}
+          # Re-emit each compiler error as a workflow annotation. Job logs need
+          # admin rights to read over the API; annotations do not, so this is
+          # what makes the failures visible without downloading logs.
+          grep -E "error(\[E[0-9]+\])?:" check.log | sort -u | head -60             | while IFS= read -r line; do echo "::error::$line"; done
+          echo "### ${{ matrix.label }} — cargo check" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          grep -E "error(\[E[0-9]+\])?:" check.log | sort -u | head -60 >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          exit $code
