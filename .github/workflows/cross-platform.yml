@@ -2,7 +2,7 @@ name: Cross-platform check
 
 # Does the Rust crate still compile on macOS and Linux? Nothing here produces a
 # release — it exists so the Windows-only code stays properly gated and we find
-# out on push instead of guessing. Runs manually, or on changes to Rust sources.
+# out on push instead of guessing.
 on:
   workflow_dispatch:
   push:
@@ -13,6 +13,8 @@ on:
 jobs:
   check:
     continue-on-error: true
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -47,18 +49,28 @@ jobs:
         run: npm run build
 
       - name: cargo check
+        id: check
         working-directory: src-tauri
         shell: bash
         run: |
           set +e
           cargo check --no-default-features --message-format=short 2>&1 | tee check.log
-          code=${PIPESTATUS[0]}
-          # Re-emit each compiler error as a workflow annotation. Job logs need
-          # admin rights to read over the API; annotations do not, so this is
-          # what makes the failures visible without downloading logs.
-          grep -E "error(\[E[0-9]+\])?:" check.log | sort -u | head -60             | while IFS= read -r line; do echo "::error::$line"; done
-          echo "### ${{ matrix.label }} — cargo check" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          grep -E "error(\[E[0-9]+\])?:" check.log | sort -u | head -60 >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          exit $code
+          echo "code=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
+
+      - name: Post the errors as a commit comment
+        if: always()
+        working-directory: src-tauri
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Job logs need admin rights over the API. A commit comment on a public
+          # repo does not, so that is where the compile errors go.
+          {
+            echo "### ${{ matrix.label }} - cargo check exit ${{ steps.check.outputs.code }}"
+            echo ""
+            grep -E "error" check.log | sort -u | head -40 || echo "(no lines matched 'error')"
+          } > body.md
+          gh api -X POST "repos/${{ github.repository }}/commits/${{ github.sha }}/comments" \
+            -f body="$(cat body.md)"
+          exit ${{ steps.check.outputs.code }}
