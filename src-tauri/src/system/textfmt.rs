@@ -13,6 +13,10 @@
 
 use std::collections::HashMap;
 
+/// Spoken fillers. Whisper omits these on its own; Parakeet/NeMo transcribe them
+/// verbatim, so the pipeline strips them to keep output the same across engines.
+pub const FILLER_WORDS: &[&str] = &["um", "umm", "uh", "uhh", "erm"];
+
 fn units_map() -> HashMap<&'static str, u64> {
     HashMap::from([
         ("zero", 0), ("one", 1), ("two", 2), ("three", 3), ("four", 4),
@@ -364,6 +368,65 @@ fn tokenize_repeated(text: &str) -> Vec<RepeatToken> {
     tokens
 }
 
+pub fn strip_fillers(text: &str) -> String {
+    // Untouched when there is nothing to strip — Whisper output has no fillers,
+    // and rebuilding the string would flatten line breaks the way format_numbers
+    // does, which structure_text depends on later in the pipeline.
+    if !text.split_whitespace().any(is_filler_token) {
+        return text.to_string();
+    }
+    text.split('\n')
+        .map(strip_fillers_line)
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn strip_fillers_line(line: &str) -> String {
+    let mut kept: Vec<String> = Vec::new();
+    let mut cap_next = false;
+    for token in line.split_whitespace() {
+        if is_filler_token(token) {
+            // Only a filler that opened a sentence leaves a gap worth fixing;
+            // capitalizing anywhere else would turn "e.g. here" into "e.g. Here".
+            if kept
+                .last()
+                .map_or(true, |prev| prev.ends_with(['.', '!', '?']))
+            {
+                cap_next = true;
+            }
+            continue;
+        }
+        if cap_next {
+            kept.push(capitalize_first(token));
+            cap_next = false;
+        } else {
+            kept.push(token.to_string());
+        }
+    }
+    kept.join(" ")
+}
+
+fn is_filler_token(token: &str) -> bool {
+    let bare = token
+        .trim_matches(|c: char| c.is_ascii_punctuation())
+        .to_lowercase();
+    FILLER_WORDS.contains(&bare.as_str())
+}
+
+fn capitalize_first(token: &str) -> String {
+    let mut out = String::with_capacity(token.len());
+    let mut done = false;
+    for c in token.chars() {
+        if !done && c.is_alphabetic() {
+            out.extend(c.to_uppercase());
+            done = true;
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
 /// Collapse immediate consecutive duplicate words.
 /// Only collapses when the word is >= 2 chars and consists of letters (plus internal hyphens/apostrophes).
 /// Preserves casing of the first occurrence and spacing.
@@ -644,7 +707,7 @@ pub fn structure_text(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{collapse_repeated_words, format_numbers, structure_text};
+    use super::{collapse_repeated_words, format_numbers, strip_fillers, structure_text};
 
     #[test]
     fn small_numbers_become_digits_too() {
@@ -749,5 +812,35 @@ mod tests {
         // A decimal must not capitalise the following word (abbreviations like
         // "u.s. team" stay ambiguous and are accepted as-is).
         assert_eq!(structure_text("it is 3.5 stars now"), "It is 3.5 stars now");
+    }
+
+    #[test]
+    fn test_strip_fillers() {
+        assert_eq!(strip_fillers("Um it's been a while."), "It's been a while.");
+        assert_eq!(strip_fillers("Um yeah, that's all. Um we can also uh make it"), "Yeah, that's all. We can also make it");
+        assert_eq!(strip_fillers("The drummer went rat-a-tat."), "The drummer went rat-a-tat.");
+        assert_eq!(strip_fillers("um uh"), "");
+    }
+
+    #[test]
+    fn test_strip_fillers_keeps_line_breaks() {
+        let input = "Um first line
+second um line";
+        assert_eq!(strip_fillers(input), "First line
+second line");
+    }
+
+    #[test]
+    fn test_strip_fillers_leaves_clean_text_byte_identical() {
+        // No filler present -> returned untouched, including line breaks and
+        // any leading lowercase the pipeline may rely on.
+        let input = "hello world
+second line";
+        assert_eq!(strip_fillers(input), input);
+    }
+
+    #[test]
+    fn test_strip_fillers_does_not_break_abbreviations() {
+        assert_eq!(strip_fillers("um use e.g. here"), "Use e.g. here");
     }
 }

@@ -15,8 +15,6 @@ use harper_core::{Dialect, DictWordMetadata, Document};
 use serde::Serialize;
 use std::sync::{Arc, Mutex};
 
-const FILLER_WORDS: &[&str] = &["um", "umm", "uh", "uhh", "erm"];
-
 /// Cheap heuristic: does this text look like code/JSON/template markup
 /// rather than English prose? Inline proofreading polls whatever field has
 /// focus, including code editors and workflow-builder expression fields
@@ -280,7 +278,7 @@ pub fn check(text: &str, vocabulary: &str, disabled_rules: &[String], gector_sen
             break;
         }
         let text_lower = word.text.to_lowercase();
-        if FILLER_WORDS.contains(&text_lower.as_str()) && !custom_lower.contains(&text_lower) {
+        if crate::system::textfmt::FILLER_WORDS.contains(&text_lower.as_str()) && !custom_lower.contains(&text_lower) {
             let mut start = word.start;
             let mut end = word.end;
             

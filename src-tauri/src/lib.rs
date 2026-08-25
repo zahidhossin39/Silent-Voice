@@ -897,7 +897,8 @@ async fn retranscribe_clip(
     )
     .await?;
 
-    let text = system::textfmt::collapse_repeated_words(&raw);
+    let text = system::textfmt::strip_fillers(&raw);
+    let text = system::textfmt::collapse_repeated_words(&text);
     let text = hotkey::apply_replacements(&text, &replacements);
     let text = system::textfmt::format_numbers(&text);
     Ok(RetranscribeResult { text, model_id })
