@@ -459,7 +459,10 @@ fn set_popup_theme(theme: String) -> Result<(), String> {
         "brightness" => 4,
         _ => 0,
     };
+    #[cfg(windows)]
     system::squiggle::set_theme(idx);
+    #[cfg(not(windows))]
+    let _ = idx;
     Ok(())
 }
 
@@ -473,7 +476,10 @@ fn set_popup_surface(surface: String) -> Result<(), String> {
         "light" => 1,
         _ => 0,
     };
+    #[cfg(windows)]
     system::squiggle::set_surface(idx);
+    #[cfg(not(windows))]
+    let _ = idx;
     Ok(())
 }
 
@@ -1170,6 +1176,7 @@ pub fn run() {
             }
 
             // Inline proofreading watcher (squiggles in any app's text field).
+            #[cfg(windows)]
             system::inline_check::start(app.handle().clone());
 
             system::job::reap_orphans();
@@ -1282,6 +1289,7 @@ pub fn run() {
                         server.stop();
                     }
                 }
+                #[cfg(windows)]
                 system::inline_check::reset_screen_reader();
             }
         });
