@@ -1135,6 +1135,19 @@ unsafe fn apply(
     
     push_overlay(overlay);
     let _ = ShowWindow(overlay.hwnd, SW_SHOWNOACTIVATE);
+    // Same reason show_popup() does this: WS_EX_TOPMOST only puts us in the
+    // topmost band, and within that band z-order still follows activation. The
+    // target app can sit above us, which hides the underlines while the popup
+    // (which re-asserts this) stays visible.
+    let _ = SetWindowPos(
+        overlay.hwnd,
+        HWND_TOPMOST,
+        0,
+        0,
+        0,
+        0,
+        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+    );
 }
 
 unsafe fn push_overlay(overlay: &mut Overlay) {
