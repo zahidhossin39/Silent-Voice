@@ -2,8 +2,8 @@
   "$schema": "https://schema.tauri.app/config/2",
   "bundle": {
     "targets": [
-      "appimage",
-      "deb"
+      "deb",
+      "appimage"
     ],
     "icon": [
       "icons/128x128.png",

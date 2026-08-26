@@ -59,7 +59,7 @@ jobs:
           NO_STRIP: "true"
         run: |
           set +e
-          npx tauri build 2>&1 | tee build.log
+          npx tauri build --verbose 2>&1 | tee build.log
           echo "code=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
 
       # Collect and upload before deciding the job failed: a .deb is still
@@ -91,7 +91,7 @@ jobs:
             echo "### ${{ matrix.label }} build failed (exit ${{ steps.build.outputs.code }})"
             echo ""
             echo '```'
-            grep -iE 'error|failed|linuxdeploy' build.log | tail -40
+            tail -80 build.log
             echo '```'
           } > body.md
           gh api -X POST "repos/${{ github.repository }}/commits/${{ github.sha }}/comments" \
