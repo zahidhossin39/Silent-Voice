@@ -36,3 +36,26 @@ if ! grep -q "Silent Voice starting" "$LOGDIR/silent-voice.log" 2>/dev/null; the
   exit 1
 fi
 echo "PASS: launches and reaches startup"
+
+# Booting only proves the GUI starts. This proves the actual feature: run the
+# bundled whisper CLI against a known clip and check it comes back with the
+# right words. It also exercises the rpath fixes, since the CLI has to find its
+# sibling libwhisper/libggml at runtime.
+CLI=$(ls src-tauri/sidecars/whisper-cpp-* 2>/dev/null | head -1)
+if [ -z "$CLI" ]; then
+  echo "FAIL: no whisper CLI sidecar found to test"
+  exit 1
+fi
+
+mkdir -p .smoke
+[ -f .smoke/ggml-tiny.en.bin ] ||   curl -fsSL -o .smoke/ggml-tiny.en.bin     "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin"
+[ -f .smoke/jfk.wav ] ||   curl -fsSL -o .smoke/jfk.wav     "https://github.com/ggml-org/whisper.cpp/raw/master/samples/jfk.wav"
+
+"$CLI" -m .smoke/ggml-tiny.en.bin -f .smoke/jfk.wav --no-timestamps > stt.log 2>&1
+echo "--- transcription ---"; cat stt.log
+
+if ! grep -qi "ask not what your country" stt.log; then
+  echo "FAIL: the bundled whisper build did not transcribe the sample correctly"
+  exit 1
+fi
+echo "PASS: transcribes audio end to end"
