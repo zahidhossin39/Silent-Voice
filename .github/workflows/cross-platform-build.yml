@@ -107,13 +107,13 @@ jobs:
         if: steps.build.outputs.code == '0'
         shell: bash
         run: |
-          shopt -s nullglob globstar
-          sigs=(src-tauri/target/release/bundle/**/*.sig)
-          if [ ${#sigs[@]} -eq 0 ]; then
+          found=$(find src-tauri/target/release/bundle -name '*.sig')
+          if [ -z "$found" ]; then
             echo "No .sig produced - a release built this way could never be updated."
+            find src-tauri/target/release/bundle -maxdepth 2 || true
             exit 1
           fi
-          echo "signed: ${sigs[@]}"
+          echo "signed:"; echo "$found"
 
       - name: Smoke test - does it actually start
         id: smoke
@@ -122,10 +122,12 @@ jobs:
         run: |
           set +e
           bash scripts/smoke-test.sh 2>&1 | tee smoke.log
-          echo "code=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
+          CODE=${PIPESTATUS[0]}
+          echo "code=$CODE" >> $GITHUB_OUTPUT
+          exit $CODE
 
       - name: Post the failure where it can be read
-        if: steps.build.outputs.code != '0' || steps.smoke.outputs.code != '0'
+        if: always() && (steps.build.outputs.code != '0' || steps.smoke.outputs.code != '0')
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

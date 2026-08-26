@@ -41,9 +41,10 @@ echo "PASS: launches and reaches startup"
 # bundled whisper CLI against a known clip and check it comes back with the
 # right words. It also exercises the rpath fixes, since the CLI has to find its
 # sibling libwhisper/libggml at runtime.
-CLI=$(ls src-tauri/sidecars/whisper-cpp-* 2>/dev/null | head -1)
-if [ -z "$CLI" ]; then
-  echo "FAIL: no whisper CLI sidecar found to test"
+CLI="src-tauri/sidecars/whisper-cpp-$(rustc -vV | sed -n 's/^host: //p')"
+if [ ! -x "$CLI" ]; then
+  echo "FAIL: no whisper CLI sidecar for this host at $CLI"
+  ls -la src-tauri/sidecars/ || true
   exit 1
 fi
 
