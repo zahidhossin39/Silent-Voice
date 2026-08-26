@@ -57,6 +57,9 @@ jobs:
           # linuxdeploy strips every binary it deploys and chokes on the
           # whisper and sherpa libraries shipped alongside the app.
           NO_STRIP: "true"
+          # The whisper-cpp sidecar lands in usr/bin while libwhisper.so.1 goes
+          # to the resource dir, so linuxdeploy cannot resolve it on its own.
+          LD_LIBRARY_PATH: ${{ github.workspace }}/src-tauri/sidecars
         run: |
           set +e
           npx tauri build --verbose 2>&1 | tee build.log
