@@ -105,11 +105,14 @@ The script also fixes each binary's rpath (`@loader_path` / `$ORIGIN`), since
 Tauri flattens the resources next to the app executable and they must find
 their sibling libraries there.
 
-Still missing: **code signing and notarization**. An unsigned `.dmg` is
-refused by Gatekeeper until the user right-clicks → Open. Updater artifacts are
-disabled on both platforms (`createUpdaterArtifacts: false`) because no signing
-key is wired up for them — a release with no `.sig` would be permanently
-un-updatable.
+Auto-update is on for all three platforms. The updater key is minisign, which
+is platform-independent, so the one existing secret signs everything, and the
+release workflow refuses to publish any platform whose `.sig` is missing.
+
+Still missing: **code signing and notarization**, which is a different thing
+from updater signing. It needs a paid Apple Developer membership and a
+certificate tied to a real Apple ID — there is no way around that. Until then
+Gatekeeper refuses the `.dmg` until the user right-clicks → Open.
 
 ## Wayland
 
@@ -123,6 +126,6 @@ feature, and it will not be lifted.
 1. Run it. Nothing below is worth doing before someone launches the `.dmg`
    or installs the `.deb`. Grab them from the workflow's artifacts.
 2. macOS permission onboarding (see Permissions above).
-3. Code signing + notarization, then re-enable updater artifacts.
+3. Code signing + notarization (needs a paid Apple Developer account).
 4. Inline proofreading, if ever — `AXUIElement` on macOS, AT-SPI on Linux.
    Over half the remaining porting cost, for one feature. Ship without it.
