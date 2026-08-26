@@ -25,6 +25,8 @@ jobs:
           - os: ubuntu-22.04
             label: Linux
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
     name: ${{ matrix.label }}
     steps:
       - uses: actions/checkout@v4
@@ -37,7 +39,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
-            librsvg2-dev patchelf libasound2-dev pkg-config
+            librsvg2-dev patchelf libasound2-dev pkg-config libfuse2
 
       - uses: actions/setup-node@v4
         with:
@@ -50,7 +52,28 @@ jobs:
         run: bash scripts/fetch-sidecars.sh
 
       - name: Build the app
-        run: npx tauri build
+        id: build
+        shell: bash
+        run: |
+          set +e
+          npx tauri build 2>&1 | tee build.log
+          echo "code=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
+
+      - name: Post the build failure where it can be read
+        if: steps.build.outputs.code != '0'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          {
+            echo "### ${{ matrix.label }} build failed (exit ${{ steps.build.outputs.code }})"
+            echo ""
+            echo '```'
+            tail -60 build.log
+            echo '```'
+          } > body.md
+          gh api -X POST "repos/${{ github.repository }}/commits/${{ github.sha }}/comments"             -f body="$(cat body.md)"
+          exit ${{ steps.build.outputs.code }}
 
       - name: Collect the installers
         id: collect
