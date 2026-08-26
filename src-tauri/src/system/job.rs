@@ -183,5 +183,42 @@ pub fn reap_orphans() {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(unix)]
+pub fn reap_orphans() {
+    let exe = std::env::current_exe().unwrap_or_default();
+    let app_dir = exe.parent().unwrap_or_else(|| std::path::Path::new(""));
+
+    let whisper_path = app_dir.join("whisper-server");
+    let llama_path = app_dir.join("llama").join("llama-server");
+
+    let mut reaped_count = 0;
+
+    // pkill -f matches against the full command line. By passing the absolute path,
+    // we only kill processes we actually launched from our own install directory -
+    // never a whisper-server the user is running from somewhere else.
+    for path in [whisper_path, llama_path] {
+        if let Some(path_str) = path.to_str() {
+            if let Ok(status) = std::process::Command::new("pkill")
+                .arg("-f")
+                .arg(path_str)
+                .status()
+            {
+                if status.success() {
+                    reaped_count += 1;
+                }
+            }
+        }
+    }
+
+    // pkill reports only whether it matched, not how many, so this counts
+    // sidecars reaped rather than processes.
+    if reaped_count > 0 {
+        crate::logging::log_info(
+            "job",
+            &format!("Reaped {} orphaned sidecar(s)", reaped_count),
+        );
+    }
+}
+
+#[cfg(not(any(windows, unix)))]
 pub fn reap_orphans() {}

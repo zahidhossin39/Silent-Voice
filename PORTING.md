@@ -38,15 +38,18 @@ first.**
 | `foreground.rs` | `GetForegroundWindow` | `osascript` | `xprop` | yes |
 | `hardware.rs` | DXGI | `system_profiler` | `lspci` | yes |
 | `sherpa.rs` | `.dll` | `.dylib` | `.so` | yes |
-| `job.rs` | Job Objects kill sidecars | — | — | no |
+| `job.rs` | Job Objects kill sidecars | `pkill` at startup | `pkill` at startup | yes |
 | `clipboard_file.rs` | clipboard file formats | — | — | no |
 | `secure_field.rs` | UIA password detection | — | — | no |
 | `overlay.rs` round corners | DWM | — | — | no |
 
-The four unfinished ones all degrade to a no-op, not a crash. `job.rs` is the
-only one with a real cost: if the app dies abnormally, `whisper-server` and
-`llama-server` are orphaned instead of being killed with the parent. A
-portable `reap_orphans()` at startup would close it.
+The three unfinished ones all degrade to a no-op, not a crash — a square-
+cornered pill, a disabled "copy audio" button, and no password-field guard.
+
+`job.rs` is weaker off Windows rather than absent. Windows Job Objects kill the
+sidecars even on power loss; the Unix path instead reaps leftovers at the next
+startup, so a crash can leave `llama-server` holding memory until the app is
+opened again.
 
 `hotkey.rs`'s `key_still_down` is deliberately Windows-only. It works around a
 `global-hotkey` polling artifact that only exists on Windows; returning false
@@ -103,6 +106,5 @@ feature, and it will not be lifted.
 1. Run it. Nothing below is worth doing before someone launches the `.dmg`.
 2. macOS permission onboarding (see Permissions above).
 3. Code signing + notarization, then re-enable updater artifacts.
-4. `job.rs` orphan cleanup.
-5. Inline proofreading, if ever — `AXUIElement` on macOS, AT-SPI on Linux.
+4. Inline proofreading, if ever — `AXUIElement` on macOS, AT-SPI on Linux.
    Over half the remaining porting cost, for one feature. Ship without it.
