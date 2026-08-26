@@ -1,0 +1,30 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "targets": [
+      "appimage",
+      "deb"
+    ],
+    "icon": [
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/32x32.png"
+    ],
+    "linux": {
+      "deb": {
+        "depends": [
+          "libasound2",
+          "x11-utils",
+          "xclip"
+        ]
+      }
+    },
+    "resources": {
+      "sidecars/*.so*": "./",
+      "sidecars/whisper-server": "./",
+      "sidecars/llama/": "llama/",
+      "sidecars/piper/": "piper/",
+      "sidecars/sherpa/": "sherpa/"
+    }
+  }
+}

@@ -14,7 +14,7 @@
 
 #![allow(non_snake_case)]
 
-use libloading::{Library, Symbol};
+use libloading::{library_filename, Library, Symbol};
 use std::ffi::{c_char, c_float, c_int, CString};
 use std::path::Path;
 use std::sync::OnceLock;
@@ -160,14 +160,14 @@ pub(crate) fn lib() -> Result<&'static Library, String> {
         // name always wins dependency resolution, so loading ours first pins
         // it.
         let ort = ORT.get_or_init(|| {
-            let p = dir.join("onnxruntime.dll");
+            let p = dir.join(library_filename("onnxruntime"));
             unsafe { Library::new(&p) }
                 .map_err(|e| format!("could not load {}: {e} — reinstall the app.", p.display()))
         });
         if let Err(e) = ort {
             return Err(e.clone());
         }
-        let dll = dir.join("sherpa-onnx-c-api.dll");
+        let dll = dir.join(library_filename("sherpa-onnx-c-api"));
         unsafe { Library::new(&dll) }
             .map_err(|e| format!("could not load {}: {e} — reinstall the app.", dll.display()))
     })

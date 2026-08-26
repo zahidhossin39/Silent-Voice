@@ -5,10 +5,15 @@ use enigo::{
 };
 use std::{thread, time::Duration};
 
-/// Copy `text` to the clipboard, simulate Ctrl+V to paste at the current
+/// Cmd on macOS, Ctrl everywhere else — the platform's clipboard modifier.
+pub fn clipboard_modifier() -> Key {
+    if cfg!(target_os = "macos") { Key::Meta } else { Key::Control }
+}
+
+/// Copy `text` to the clipboard, simulate the paste shortcut at the current
 /// cursor, then restore the previous clipboard contents.
 ///
-/// Build plan §13 — Paste at Cursor (Windows).
+/// Build plan §13 — Paste at Cursor.
 pub fn paste_at_cursor(text: &str) -> Result<(), String> {
     let mut clipboard = Clipboard::new().map_err(|e| e.to_string())?;
     let original = clipboard.get_text().ok();
@@ -20,11 +25,11 @@ pub fn paste_at_cursor(text: &str) -> Result<(), String> {
     let mut enigo = Enigo::new(&EnigoSettings::default()).map_err(|e| e.to_string())?;
     thread::sleep(Duration::from_millis(50));
 
-    enigo.key(Key::Control, Press).map_err(|e| e.to_string())?;
+    enigo.key(clipboard_modifier(), Press).map_err(|e| e.to_string())?;
     enigo
         .key(Key::Unicode('v'), Click)
         .map_err(|e| e.to_string())?;
-    enigo.key(Key::Control, Release).map_err(|e| e.to_string())?;
+    enigo.key(clipboard_modifier(), Release).map_err(|e| e.to_string())?;
 
     // Restore the user's original clipboard after the paste lands — but only if
     // the clipboard still holds OUR text. If the user copied something new during

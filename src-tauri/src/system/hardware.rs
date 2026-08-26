@@ -176,6 +176,19 @@ pub fn recommend(hw: &HardwareInfo) -> DeviceRecommendation {
     }
 }
 
+fn vendor_from_name(name: &str) -> &'static str {
+    let lower = name.to_lowercase();
+    if lower.contains("nvidia") {
+        "NVIDIA"
+    } else if lower.contains("amd") || lower.contains("radeon") {
+        "AMD"
+    } else if lower.contains("intel") {
+        "Intel"
+    } else {
+        "Unknown"
+    }
+}
+
 #[cfg(windows)]
 fn detect_gpu() -> (Option<String>, Option<String>, Option<f64>) {
     use windows::Win32::Graphics::Dxgi::{
@@ -208,17 +221,7 @@ fn detect_gpu() -> (Option<String>, Option<String>, Option<f64>) {
 
         match best {
             Some((name, vram)) => {
-                let vendor = if name.to_lowercase().contains("nvidia") {
-                    "NVIDIA"
-                } else if name.to_lowercase().contains("amd")
-                    || name.to_lowercase().contains("radeon")
-                {
-                    "AMD"
-                } else if name.to_lowercase().contains("intel") {
-                    "Intel"
-                } else {
-                    "Unknown"
-                };
+                let vendor = vendor_from_name(&name);
                 (Some(vendor.to_string()), Some(name), Some(vram))
             }
             None => (None, None, None),
@@ -226,7 +229,54 @@ fn detect_gpu() -> (Option<String>, Option<String>, Option<f64>) {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
 fn detect_gpu() -> (Option<String>, Option<String>, Option<f64>) {
-    (None, None, None)
+    std::process::Command::new("system_profiler")
+        .arg("SPDisplaysDataType")
+        .output()
+        .ok()
+        .and_then(|out| {
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            let name = stdout
+                .lines()
+                .find(|l| l.contains("Chipset Model:"))?
+                .split("Chipset Model:")
+                .nth(1)?
+                .trim()
+                .to_string();
+            if name.is_empty() {
+                return None;
+            }
+            let vendor = if name.contains("Apple") {
+                "Apple"
+            } else {
+                vendor_from_name(&name)
+            };
+            // Apple Silicon has unified memory (no dedicated VRAM)
+            Some((Some(vendor.to_string()), Some(name), None))
+        })
+        .unwrap_or((None, None, None))
+}
+
+#[cfg(target_os = "linux")]
+fn detect_gpu() -> (Option<String>, Option<String>, Option<f64>) {
+    std::process::Command::new("lspci")
+        .output()
+        .ok()
+        .and_then(|out| {
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            let name = stdout
+                .lines()
+                .find(|l| l.contains("VGA compatible controller") || l.contains("3D controller"))?
+                .rsplit(": ")
+                .next()?
+                .trim()
+                .to_string();
+            if name.is_empty() {
+                return None;
+            }
+            // lspci does not report VRAM
+            Some((Some(vendor_from_name(&name).to_string()), Some(name), None))
+        })
+        .unwrap_or((None, None, None))
 }

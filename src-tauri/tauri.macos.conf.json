@@ -1,0 +1,25 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "targets": [
+      "app",
+      "dmg"
+    ],
+    "icon": [
+      "icons/icon.icns",
+      "icons/128x128@2x.png",
+      "icons/128x128.png",
+      "icons/32x32.png"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "11.0"
+    },
+    "resources": {
+      "sidecars/*.dylib": "./",
+      "sidecars/whisper-server": "./",
+      "sidecars/llama/": "llama/",
+      "sidecars/piper/": "piper/",
+      "sidecars/sherpa/": "sherpa/"
+    }
+  }
+}

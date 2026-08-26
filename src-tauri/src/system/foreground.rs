@@ -42,9 +42,38 @@ pub fn foreground_app() -> Option<String> {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
 pub fn foreground_app() -> Option<String> {
-    None
+    run_cmd(
+        "osascript",
+        &[
+            "-e",
+            "tell application \"System Events\" to get name of first process whose frontmost is true",
+        ],
+    )
+    .filter(|s| !s.is_empty())
+    .map(|s| s.to_lowercase())
+}
+
+#[cfg(target_os = "linux")]
+pub fn foreground_app() -> Option<String> {
+    let active_win = run_cmd("xprop", &["-root", "_NET_ACTIVE_WINDOW"])?;
+    let win_id = active_win.split_whitespace().last()?;
+    let wm_class = run_cmd("xprop", &["-id", win_id, "WM_CLASS"])?;
+    let trimmed = wm_class.trim_end().trim_end_matches('"');
+    let start = trimmed.rfind('"')?;
+    Some(trimmed[start + 1..].to_lowercase())
+}
+
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn run_cmd(cmd: &str, args: &[&str]) -> Option<String> {
+    std::process::Command::new(cmd)
+        .args(args)
+        .output()
+        .ok()
+        .filter(|out| out.status.success())
+        .and_then(|out| String::from_utf8(out.stdout).ok())
+        .map(|s| s.trim().to_string())
 }
 
 /// Raw handle (as isize) of the current foreground window, 0 if none. Captured
@@ -56,7 +85,25 @@ pub fn foreground_hwnd() -> isize {
     unsafe { GetForegroundWindow().0 as isize }
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
 pub fn foreground_hwnd() -> isize {
-    0
+    // Provides app-level, not window-level, granularity on macOS.
+    use std::hash::{Hash, Hasher};
+    foreground_app()
+        .map(|app| {
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            app.hash(&mut hasher);
+            hasher.finish() as isize
+        })
+        .unwrap_or(0)
+}
+
+#[cfg(target_os = "linux")]
+pub fn foreground_hwnd() -> isize {
+    run_cmd("xprop", &["-root", "_NET_ACTIVE_WINDOW"])
+        .and_then(|out| {
+            let id = out.split_whitespace().last()?;
+            i64::from_str_radix(id.trim_start_matches("0x"), 16).ok()
+        })
+        .unwrap_or(0) as isize
 }

@@ -9,14 +9,14 @@ use std::time::{Duration, Instant};
 
 pub const WHISPER_PORT: u16 = 8090;
 
-/// whisper-server.exe sits next to the app executable, beside the whisper
-/// DLLs (bundle.resources maps sidecars/whisper-server.exe → app root).
+/// whisper-server sits next to the app executable, beside the whisper
+/// DLLs (bundle.resources maps sidecars/whisper-server → app root).
 fn server_exe() -> PathBuf {
     std::env::current_exe()
         .ok()
         .and_then(|p| p.parent().map(|d| d.to_path_buf()))
         .unwrap_or_default()
-        .join("whisper-server.exe")
+        .join(if cfg!(windows) { "whisper-server.exe" } else { "whisper-server" })
 }
 
 #[derive(Default)]

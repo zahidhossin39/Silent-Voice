@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- macOS kills the app outright if it touches the microphone without a usage
+     string, and silently returns nothing from osascript without the Apple
+     Events one. Tauri merges this into the .app's own Info.plist. -->
+<plist version="1.0">
+<dict>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Silent Voice records your voice so it can transcribe what you say. Audio never leaves your Mac.</string>
+  <key>NSAppleEventsUsageDescription</key>
+  <string>Silent Voice checks which app is in front so it can apply the right dictation profile.</string>
+  <key>LSUIElement</key>
+  <false/>
+</dict>
+</plist>

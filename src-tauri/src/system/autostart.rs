@@ -41,12 +41,79 @@ pub fn is_enabled() -> bool {
         .is_ok()
 }
 
-#[cfg(not(windows))]
-pub fn set_enabled(_enabled: bool) -> Result<(), String> {
-    Err("Launch at startup is only implemented on Windows".into())
+#[cfg(target_os = "macos")]
+pub fn set_enabled(enabled: bool) -> Result<(), String> {
+    // Per-user LaunchAgent for macOS autostart.
+    let path = dirs::home_dir()
+        .ok_or("No home dir")?
+        .join("Library/LaunchAgents/app.silentvoice.desktop.plist");
+
+    if enabled {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+        let plist = format!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+            <!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n\
+            <plist version=\"1.0\">\n\
+            <dict>\n\
+                <key>Label</key>\n\
+                <string>app.silentvoice.desktop</string>\n\
+                <key>ProgramArguments</key>\n\
+                <array>\n\
+                    <string>{}</string>\n\
+                </array>\n\
+                <key>RunAtLoad</key>\n\
+                <true/>\n\
+            </dict>\n\
+            </plist>",
+            exe.display()
+        );
+        std::fs::write(&path, plist).map_err(|e| e.to_string())?;
+    } else {
+        let _ = std::fs::remove_file(&path);
+    }
+    Ok(())
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
 pub fn is_enabled() -> bool {
-    false
+    dirs::home_dir()
+        .map(|d| d.join("Library/LaunchAgents/app.silentvoice.desktop.plist").exists())
+        .unwrap_or(false)
+}
+
+#[cfg(target_os = "linux")]
+pub fn set_enabled(enabled: bool) -> Result<(), String> {
+    // XDG autostart path for Linux desktops.
+    let path = dirs::config_dir()
+        .ok_or("No config dir")?
+        .join("autostart/silent-voice.desktop");
+
+    if enabled {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+        let desktop = format!(
+            "[Desktop Entry]\n\
+            Type=Application\n\
+            Name=Silent Voice\n\
+            Exec={}\n\
+            X-GNOME-Autostart-enabled=true\n",
+            exe.display()
+        );
+        std::fs::write(&path, desktop).map_err(|e| e.to_string())?;
+    } else {
+        let _ = std::fs::remove_file(&path);
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+pub fn is_enabled() -> bool {
+    dirs::config_dir()
+        .map(|d| d.join("autostart/silent-voice.desktop").exists())
+        .unwrap_or(false)
 }

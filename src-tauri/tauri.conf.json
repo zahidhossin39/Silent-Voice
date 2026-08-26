@@ -31,7 +31,9 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
+    "targets": [
+      "nsis"
+    ],
     "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
@@ -39,19 +41,9 @@
       "icons/128x128@2x.png",
       "icons/icon.ico"
     ],
-    "windows": {
-      "nsis": {
-        "installerIcon": "icons/icon.ico"
-      }
-    },
-    "resources": {
-      "sidecars/*.dll": "./",
-      "sidecars/whisper-server.exe": "./",
-      "sidecars/llama/": "llama/",
-      "sidecars/piper/": "piper/",
-      "sidecars/sherpa/": "sherpa/"
-    },
-    "externalBin": ["sidecars/whisper-cpp"]
+    "externalBin": [
+      "sidecars/whisper-cpp"
+    ]
   },
   "plugins": {
     "updater": {
