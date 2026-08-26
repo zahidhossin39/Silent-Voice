@@ -1,16 +1,31 @@
 # Porting to macOS and Linux
 
-Status: **packages cleanly for macOS and Linux; never launched on either.**
+Status: **builds, installs, and launches on macOS and Linux.**
 
-`.github/workflows/cross-platform-build.yml` is green on both runners and
-produces a `.dmg` (~94 MB), a `.deb`, and an `.AppImage`. `cross-platform.yml`
-stays as the fast `cargo check` gate on every push — but note it did NOT catch
-the missing `libxdo`, because checking does not link. Only the packaging build
-proves the link step.
+`.github/workflows/cross-platform-build.yml` installs the real `.deb` / `.app`
+on a GitHub runner, launches it (headless under xvfb on Linux), and fails unless
+the app writes its own `Silent Voice starting` line. It then runs the bundled
+whisper CLI against a known clip and requires the right words back. Both are
+gates, not diagnostics.
 
-What that does *not* mean: nobody has run the result. Every claim below about
-runtime behaviour on macOS or Linux is reasoned from the code, not observed.
-The first person to launch it should expect to find things.
+`cross-platform.yml` stays as the fast `cargo check` on every push — but note it
+did NOT catch the missing `libxdo`, because checking does not link. Only the
+packaging build proves the link step, and only the smoke test proves it runs.
+
+## What is still unverified
+
+CI proves the app starts and that transcription works. It cannot press a key, so
+nothing below has ever been exercised:
+
+| Unverified | Why CI cannot cover it |
+| --- | --- |
+| Hold-hotkey → speak → paste | needs a real microphone and a focused text field |
+| macOS Accessibility banner | needs a Mac where the permission is denied |
+| Per-app profiles | needs real windows to focus |
+| Read-aloud (TTS) | needs an audio output device |
+| The updater | needs a published release to update from |
+
+**These are yours to check.** Everything in that table is reasoned from code.
 
 ## What already works everywhere
 
