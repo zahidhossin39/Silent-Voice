@@ -70,6 +70,11 @@ jobs:
           # linuxdeploy strips every binary it deploys and chokes on the
           # whisper and sherpa libraries shipped alongside the app.
           NO_STRIP: "true"
+          # Updater artifacts are enabled for these platforms, and tauri build
+          # hard-fails without the key. Passing it here also proves the release
+          # workflow will produce signed bundles, without pushing a tag first.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           # linuxdeploy resolves each bundled binary's dependencies against the
           # normal library path, where none of our sidecars live. Every sidecar
           # directory has to be listed or it fails on the first missing .so.
@@ -97,6 +102,18 @@ jobs:
           name: silent-voice-${{ matrix.label }}
           path: out/*
           if-no-files-found: warn
+
+      - name: Every bundle must be signed
+        if: steps.build.outputs.code == '0'
+        shell: bash
+        run: |
+          shopt -s nullglob globstar
+          sigs=(src-tauri/target/release/bundle/**/*.sig)
+          if [ ${#sigs[@]} -eq 0 ]; then
+            echo "No .sig produced - a release built this way could never be updated."
+            exit 1
+          fi
+          echo "signed: ${sigs[@]}"
 
       - name: Smoke test - does it actually start
         id: smoke
