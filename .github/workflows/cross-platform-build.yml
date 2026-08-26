@@ -32,6 +32,10 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
       - name: Install Linux system deps
         if: runner.os == 'Linux'
         run: |
@@ -47,7 +51,15 @@ jobs:
       - name: Install frontend deps
         run: npm ci
 
+      - name: Cache the fetched sidecars
+        id: sidecar-cache
+        uses: actions/cache@v4
+        with:
+          path: src-tauri/sidecars
+          key: sidecars-${{ runner.os }}-${{ hashFiles('scripts/fetch-sidecars.sh') }}
+
       - name: Fetch sidecars
+        if: steps.sidecar-cache.outputs.cache-hit != 'true'
         run: bash scripts/fetch-sidecars.sh
 
       - name: Build the app
@@ -85,57 +97,36 @@ jobs:
           path: out/*
           if-no-files-found: warn
 
-      # Packaging green only proves it links. This proves it BOOTS: install the
-      # real artifact, launch it, and require the startup line in its own log.
-      - name: Smoke test — does it actually start
+      - name: Smoke test - does it actually start
+        id: smoke
         if: steps.build.outputs.code == '0'
         shell: bash
         run: |
-          set -x
-          if [ "$RUNNER_OS" = Linux ]; then
-            sudo apt-get install -y ./out/*.deb
-            BIN=$(ls /usr/bin/silent-voice* /usr/bin/Silent* 2>/dev/null | head -1)
-            LOGDIR="$HOME/.config/SilentVoice/logs"
-            rm -rf "$HOME/.config/SilentVoice"
-            xvfb-run -a --server-args="-screen 0 1280x800x24" "$BIN" > app.log 2>&1 &
-          else
-            APP=$(find src-tauri/target/release/bundle/macos -maxdepth 1 -name '*.app' | head -1)
-            BIN=$(find "$APP/Contents/MacOS" -maxdepth 1 -type f | head -1)
-            LOGDIR="$HOME/Library/Application Support/SilentVoice/logs"
-            rm -rf "$HOME/Library/Application Support/SilentVoice"
-            "$BIN" > app.log 2>&1 &
-          fi
-          PID=$!
-          sleep 30
+          set +e
+          bash scripts/smoke-test.sh 2>&1 | tee smoke.log
+          echo "code=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
 
-          echo "--- stdout/stderr ---"; cat app.log || true
-          echo "--- app log ---"; cat "$LOGDIR/silent-voice.log" 2>/dev/null || echo "(no log file)"
-
-          if ! kill -0 $PID 2>/dev/null; then
-            echo "FAIL: the app exited within 30s of launch"
-            exit 1
-          fi
-          kill $PID 2>/dev/null || true
-
-          if ! grep -q "Silent Voice starting" "$LOGDIR/silent-voice.log" 2>/dev/null; then
-            echo "FAIL: process stayed up but never reached its own startup log line"
-            exit 1
-          fi
-          echo "PASS: ${{ matrix.label }} launches and reaches startup"
-
-      - name: Post the build failure where it can be read
-        if: steps.build.outputs.code != '0'
+      - name: Post the failure where it can be read
+        if: steps.build.outputs.code != '0' || steps.smoke.outputs.code != '0'
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           {
-            echo "### ${{ matrix.label }} build failed (exit ${{ steps.build.outputs.code }})"
-            echo ""
-            echo '```'
-            tail -80 build.log
-            echo '```'
+            if [ "${{ steps.build.outputs.code }}" != "0" ]; then
+              echo "### ${{ matrix.label }} build failed (exit ${{ steps.build.outputs.code }})"
+              echo ""
+              echo '```'
+              tail -80 build.log
+              echo '```'
+            else
+              echo "### ${{ matrix.label }} smoke test failed (exit ${{ steps.smoke.outputs.code }})"
+              echo ""
+              echo '```'
+              tail -90 smoke.log
+              echo '```'
+            fi
           } > body.md
           gh api -X POST "repos/${{ github.repository }}/commits/${{ github.sha }}/comments" \
             -f body="$(cat body.md)"
-          exit ${{ steps.build.outputs.code }}
+          exit 1
