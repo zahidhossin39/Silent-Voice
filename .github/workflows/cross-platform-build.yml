@@ -1,0 +1,64 @@
+name: Cross-platform build
+
+# Produces an installable .dmg / .AppImage. Manual for now: the sidecar fetch
+# builds whisper.cpp from source on macOS, so this is far slower than the
+# cargo-check gate in cross-platform.yml.
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            label: macOS
+          - os: ubuntu-22.04
+            label: Linux
+    runs-on: ${{ matrix.os }}
+    name: ${{ matrix.label }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux system deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
+            librsvg2-dev patchelf libasound2-dev pkg-config
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install frontend deps
+        run: npm ci
+
+      - name: Fetch sidecars
+        run: bash scripts/fetch-sidecars.sh
+
+      - name: Build the app
+        run: npx tauri build
+
+      - name: Collect the installers
+        id: collect
+        shell: bash
+        run: |
+          mkdir -p out
+          find src-tauri/target/release/bundle \
+            \( -name '*.dmg' -o -name '*.AppImage' -o -name '*.deb' \) \
+            -exec cp {} out/ \;
+          ls -la out
+          if [ -z "$(ls -A out)" ]; then
+            echo "tauri build produced no installer for ${{ matrix.label }}"
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: silent-voice-${{ matrix.label }}
+          path: out/*

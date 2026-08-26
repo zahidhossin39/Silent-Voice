@@ -25,6 +25,7 @@
       "sidecars/llama/": "llama/",
       "sidecars/piper/": "piper/",
       "sidecars/sherpa/": "sherpa/"
-    }
+    },
+    "createUpdaterArtifacts": false
   }
 }

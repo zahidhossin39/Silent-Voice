@@ -1,13 +1,14 @@
 # Porting to macOS and Linux
 
-Status: **compiles on macOS and Linux; not yet runnable there.**
+Status: **compiles on both; packaging wired up but not yet proven green.**
 
-`cargo check` passes clean on both, verified by
-`.github/workflows/cross-platform.yml` on real GitHub runners. That workflow is
-now a gate: if Windows-only code lands without a `cfg` guard, it fails.
+`cargo check` passes on both, gated by `.github/workflows/cross-platform.yml`.
+`.github/workflows/cross-platform-build.yml` (manual trigger) fetches the
+platform's sidecars and produces a real `.dmg` / `.AppImage` / `.deb`.
 
-What that does *not* mean: the app has never been built, packaged, or run on
-either platform. Compiling is the first of several steps, not the finish line.
+What that does *not* mean: nobody has launched the result. Every claim below
+about runtime behaviour on macOS or Linux is reasoned from the code, not
+observed. The first person to run it should expect to find things.
 
 ## What already works everywhere
 
@@ -28,37 +29,67 @@ in `lib.rs` gated the same way. Together they are the inline-proofreading
 feature — over half the total porting cost, for one feature. **Ship without it
 first.**
 
-## What compiles but does nothing yet
+## Per-platform shims
 
-These are already `cfg`-guarded well enough to compile off Windows — that was
-confirmed by CI, not assumed. But behind the guards there is no implementation,
-so on macOS and Linux each is silently a no-op. Each is one function with three
-implementations, not a rewrite.
+| Module | Windows | macOS | Linux | Done |
+| --- | --- | --- | --- | --- |
+| `paste.rs` / `tts.rs` | Ctrl+V / Ctrl+C | Cmd+V / Cmd+C | Ctrl+V / Ctrl+C | yes |
+| `autostart.rs` | registry Run key | LaunchAgent plist | XDG `.desktop` | yes |
+| `foreground.rs` | `GetForegroundWindow` | `osascript` | `xprop` | yes |
+| `hardware.rs` | DXGI | `system_profiler` | `lspci` | yes |
+| `sherpa.rs` | `.dll` | `.dylib` | `.so` | yes |
+| `job.rs` | Job Objects kill sidecars | — | — | no |
+| `clipboard_file.rs` | clipboard file formats | — | — | no |
+| `secure_field.rs` | UIA password detection | — | — | no |
+| `overlay.rs` round corners | DWM | — | — | no |
 
-| Module | Windows uses | macOS | Linux |
-| --- | --- | --- | --- |
-| `autostart.rs` | registry Run key | LaunchAgent plist | `.desktop` in autostart |
-| `foreground.rs` | `GetForegroundWindow` | `NSWorkspace` | X11 active window |
-| `job.rs` | Job Objects to kill sidecars | process group | process group |
-| `clipboard_file.rs` | clipboard formats | `NSPasteboard` | X11 targets |
-| `secure_field.rs` | UIA password detection | accessibility API | AT-SPI |
-| `hardware.rs` | DXGI for GPU | Metal / `system_profiler` | `/sys` or `lspci` |
-| `hotkey.rs` | `GetAsyncKeyState` for hold | `CGEventSource.keyState` | `XQueryKeymap` |
+The four unfinished ones all degrade to a no-op, not a crash. `job.rs` is the
+only one with a real cost: if the app dies abnormally, `whisper-server` and
+`llama-server` are orphaned instead of being killed with the parent. A
+portable `reap_orphans()` at startup would close it.
 
-The hotkey plumbing itself is already cross-platform — it goes through
-`tauri-plugin-global-shortcut`. Only the "is the key still held" check is
-Windows-specific.
+`hotkey.rs`'s `key_still_down` is deliberately Windows-only. It works around a
+`global-hotkey` polling artifact that only exists on Windows; returning false
+elsewhere is the correct behaviour, not a stub.
+
+## Permissions
+
+macOS gates both halves of the core feature behind user consent:
+
+- **Microphone** — `Info.plist` carries `NSMicrophoneUsageDescription`; without
+  it macOS kills the process on first mic access.
+- **Accessibility** — required for `enigo` to synthesize the paste keystroke
+  and for the global hotkey. The OS prompts once, but nothing in the app
+  explains it yet. First-run onboarding should, and should link to
+  `x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility`.
+
+Linux needs `x11-utils` (for `xprop`) for per-app profiles; the `.deb` declares
+it. The AppImage does not, so per-app profiles silently degrade without it.
 
 ## Sidecars
 
-Every bundled binary is a Windows build: whisper.cpp, llama.cpp, piper,
-sherpa-onnx, and the ONNX runtime. All of them publish macOS and Linux builds
-upstream, so this is packaging work rather than porting. Swap the Vulkan build
-for Metal on macOS.
+`scripts/fetch-sidecars.sh` populates `src-tauri/sidecars/` for the host
+platform. Pinned versions live at the top of that file.
 
-`tauri.conf.json` currently targets `nsis` only, and the release workflow runs on
-`windows-latest`. Both need extending for `.dmg` / `.AppImage`, along with
-per-platform updater signing.
+| | macOS | Linux |
+| --- | --- | --- |
+| whisper.cpp | built from source (no upstream release asset; Metal by default) | `whisper-bin-ubuntu-x64` release asset |
+| llama.cpp | `bin-macos-arm64` asset | `bin-ubuntu-x64` asset |
+| piper | `piper_macos_aarch64` | `piper_linux_x86_64` |
+| sherpa-onnx | `osx-arm64-shared` | `linux-x64-shared` |
+
+Only whisper is fatal to the build. The other three back optional features and
+are skipped with a log line if their download fails.
+
+The script also fixes each binary's rpath (`@loader_path` / `$ORIGIN`), since
+Tauri flattens the resources next to the app executable and they must find
+their sibling libraries there.
+
+Still missing: **code signing and notarization**. An unsigned `.dmg` is
+refused by Gatekeeper until the user right-clicks → Open. Updater artifacts are
+disabled on both platforms (`createUpdaterArtifacts: false`) because no signing
+key is wired up for them — a release with no `.sig` would be permanently
+un-updatable.
 
 ## Wayland
 
@@ -67,10 +98,11 @@ keystrokes to another, which is exactly what "hold a key, speak, paste at the
 cursor" requires. X11 is fine. This is a security boundary, not a missing
 feature, and it will not be lifted.
 
-## Suggested order
+## What is left
 
-1. Get `cross-platform.yml` green — fix whatever the gating missed.
-2. Build the sidecars for the target platform and bundle them.
-3. Fill in the shims in the table above.
-4. Add `.dmg` / `.AppImage` targets and extend the release workflow.
+1. Run it. Nothing below is worth doing before someone launches the `.dmg`.
+2. macOS permission onboarding (see Permissions above).
+3. Code signing + notarization, then re-enable updater artifacts.
+4. `job.rs` orphan cleanup.
 5. Inline proofreading, if ever — `AXUIElement` on macOS, AT-SPI on Linux.
+   Over half the remaining porting cost, for one feature. Ship without it.
