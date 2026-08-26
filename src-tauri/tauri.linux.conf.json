@@ -14,8 +14,8 @@
       "deb": {
         "depends": [
           "libasound2",
-          "x11-utils",
-          "xclip"
+          "libxdo3",
+          "x11-utils"
         ]
       }
     },
