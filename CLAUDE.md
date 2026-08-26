@@ -75,9 +75,10 @@ After `cargo build`, whisper DLLs must be copied from `sidecars/` into
   commit, `git tag vX.Y.Z`, push tag → CI builds draft release → set label
   "None" (not pre-release) → publish. Details in HANDBOOK §16.
 - Phase 5 (always-listening VAD/wake-word) is the only unbuilt phase.
-- macOS and Linux build and package (`.dmg` / `.deb` / `.AppImage`) via
-  `cross-platform-build.yml`, but have never been run. Inline proofreading
-  (squiggles/UIA) is Windows-only by design. See `PORTING.md`.
+- macOS and Linux build, install, launch, and transcribe — gated by
+  `cross-platform-build.yml` (boot + whisper smoke test + signing check).
+  Untested there: hotkey/paste, TTS, per-app profiles, the updater. Inline
+  proofreading (squiggles/UIA) is Windows-only by design. See `PORTING.md`.
 
 **Current state:** v0.1.7 released; 0.1.8 prepared locally and unreleased.
 Home gained a 12-week dictation strip in the Status panel (heatmap + days

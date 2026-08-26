@@ -1,21 +1,22 @@
 # Porting to macOS and Linux
 
-Status: **builds, installs, and launches on macOS and Linux.**
+Status: **builds, installs, launches, and transcribes on macOS and Linux.**
 
-`.github/workflows/cross-platform-build.yml` installs the real `.deb` / `.app`
-on a GitHub runner, launches it (headless under xvfb on Linux), and fails unless
-the app writes its own `Silent Voice starting` line. It then runs the bundled
-whisper CLI against a known clip and requires the right words back. Both are
-gates, not diagnostics.
+`.github/workflows/cross-platform-build.yml` is a gate, not a report. On every
+packaging change it installs the real `.deb` / `.app` on a GitHub runner,
+launches it (headless under xvfb on Linux), requires the app's own
+`Silent Voice starting` line, then runs the bundled whisper CLI against a known
+clip and requires the right words back. It also fails if no `.sig` is produced,
+so a release that could never be updated cannot pass.
 
-`cross-platform.yml` stays as the fast `cargo check` on every push — but note it
-did NOT catch the missing `libxdo`, because checking does not link. Only the
-packaging build proves the link step, and only the smoke test proves it runs.
+Two things that look like gates but are not: `cargo check` did NOT catch the
+missing `libxdo`, because checking does not link; and a green *step* is not a
+green *test* unless the step exits with the test's code — an earlier version of
+the smoke step ended on `echo` and reported success no matter what happened.
 
 ## What is still unverified
 
-CI proves the app starts and that transcription works. It cannot press a key, so
-nothing below has ever been exercised:
+CI cannot press a key or hold a microphone, so none of this has been exercised:
 
 | Unverified | Why CI cannot cover it |
 | --- | --- |
