@@ -1,9 +1,13 @@
 # Porting to macOS and Linux
 
-Status: **not ported.** The Windows-only subsystems are now gated so the rest of
-the crate can compile elsewhere, but nothing has been built or run on another
-platform yet. `.github/workflows/cross-platform.yml` is what tells us how far it
-gets — it is expected to fail at first, and its failures are the to-do list.
+Status: **compiles on macOS and Linux; not yet runnable there.**
+
+`cargo check` passes clean on both, verified by
+`.github/workflows/cross-platform.yml` on real GitHub runners. That workflow is
+now a gate: if Windows-only code lands without a `cfg` guard, it fails.
+
+What that does *not* mean: the app has never been built, packaged, or run on
+either platform. Compiling is the first of several steps, not the finish line.
 
 ## What already works everywhere
 
@@ -24,10 +28,12 @@ in `lib.rs` gated the same way. Together they are the inline-proofreading
 feature — over half the total porting cost, for one feature. **Ship without it
 first.**
 
-## What still needs a per-platform implementation
+## What compiles but does nothing yet
 
-These already contain some `cfg(windows)` guards, but have no non-Windows path
-behind them. Each is one function with three implementations, not a rewrite.
+These are already `cfg`-guarded well enough to compile off Windows — that was
+confirmed by CI, not assumed. But behind the guards there is no implementation,
+so on macOS and Linux each is silently a no-op. Each is one function with three
+implementations, not a rewrite.
 
 | Module | Windows uses | macOS | Linux |
 | --- | --- | --- | --- |

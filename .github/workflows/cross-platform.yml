@@ -12,7 +12,6 @@ on:
 
 jobs:
   check:
-    continue-on-error: true
     permissions:
       contents: write
     strategy:
@@ -70,7 +69,7 @@ jobs:
           echo "code=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
 
       - name: Post the errors as a commit comment
-        if: always()
+        if: failure()
         working-directory: src-tauri
         shell: bash
         env:
