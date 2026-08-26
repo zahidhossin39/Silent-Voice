@@ -5,6 +5,14 @@ name: Cross-platform build
 # cargo-check gate in cross-platform.yml.
 on:
   workflow_dispatch:
+  # Also on changes to the packaging itself — that is exactly when the slow
+  # path is worth paying for, and it needs no manual trigger.
+  push:
+    paths:
+      - "scripts/fetch-sidecars.sh"
+      - "src-tauri/tauri.macos.conf.json"
+      - "src-tauri/tauri.linux.conf.json"
+      - ".github/workflows/cross-platform-build.yml"
 
 jobs:
   build:
