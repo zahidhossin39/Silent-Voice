@@ -1,8 +1,7 @@
 name: Cross-platform build
 
-# Produces an installable .dmg / .AppImage. Manual for now: the sidecar fetch
-# builds whisper.cpp from source on macOS, so this is far slower than the
-# cargo-check gate in cross-platform.yml.
+# Produces an installable .dmg / .AppImage / .deb. Slower than the cargo-check
+# gate in cross-platform.yml, because it builds whisper.cpp from source on macOS.
 on:
   workflow_dispatch:
   # Also on changes to the packaging itself — that is exactly when the slow
@@ -54,10 +53,33 @@ jobs:
       - name: Build the app
         id: build
         shell: bash
+        env:
+          # linuxdeploy strips every binary it deploys and chokes on the
+          # whisper and sherpa libraries shipped alongside the app.
+          NO_STRIP: "true"
         run: |
           set +e
           npx tauri build 2>&1 | tee build.log
           echo "code=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
+
+      # Collect and upload before deciding the job failed: a .deb is still
+      # worth having when only the AppImage bundler falls over.
+      - name: Collect the installers
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p out
+          find src-tauri/target/release/bundle -type f \
+            \( -name '*.dmg' -o -name '*.AppImage' -o -name '*.deb' \) \
+            -exec cp {} out/ \; 2>/dev/null || true
+          ls -la out
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: silent-voice-${{ matrix.label }}
+          path: out/*
+          if-no-files-found: warn
 
       - name: Post the build failure where it can be read
         if: steps.build.outputs.code != '0'
@@ -69,27 +91,9 @@ jobs:
             echo "### ${{ matrix.label }} build failed (exit ${{ steps.build.outputs.code }})"
             echo ""
             echo '```'
-            tail -60 build.log
+            grep -iE 'error|failed|linuxdeploy' build.log | tail -40
             echo '```'
           } > body.md
-          gh api -X POST "repos/${{ github.repository }}/commits/${{ github.sha }}/comments"             -f body="$(cat body.md)"
+          gh api -X POST "repos/${{ github.repository }}/commits/${{ github.sha }}/comments" \
+            -f body="$(cat body.md)"
           exit ${{ steps.build.outputs.code }}
-
-      - name: Collect the installers
-        id: collect
-        shell: bash
-        run: |
-          mkdir -p out
-          find src-tauri/target/release/bundle \
-            \( -name '*.dmg' -o -name '*.AppImage' -o -name '*.deb' \) \
-            -exec cp {} out/ \;
-          ls -la out
-          if [ -z "$(ls -A out)" ]; then
-            echo "tauri build produced no installer for ${{ matrix.label }}"
-            exit 1
-          fi
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: silent-voice-${{ matrix.label }}
-          path: out/*
