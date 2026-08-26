@@ -306,6 +306,24 @@ export async function getAutostart(): Promise<boolean> {
   }
 }
 
+export async function accessibilityGranted(): Promise<boolean> {
+  if (!isTauri()) return true;
+  try {
+    return await invoke<boolean>("accessibility_granted");
+  } catch {
+    return true;
+  }
+}
+
+export async function openAccessibilitySettings(): Promise<void> {
+  if (!isTauri()) return;
+  try {
+    await invoke<void>("open_accessibility_settings");
+  } catch (e) {
+    console.warn("open_accessibility_settings failed", e);
+  }
+}
+
 // ---------------- Read aloud (TTS) ----------------
 
 /** Push the active read-aloud voice + hotkey to Rust (registers the hotkey). */

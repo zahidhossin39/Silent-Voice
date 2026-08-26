@@ -9,7 +9,7 @@ import { useModelStore } from "../../stores/modelStore";
 import { useUiStore } from "../../stores/uiStore";
 import { useHistoryStore } from "../../stores/historyStore";
 import type { HistoryEntry } from "../../types";
-import { isTauri, listenEvent } from "../../services/tauriBridge";
+import { isTauri, listenEvent, accessibilityGranted, openAccessibilitySettings } from "../../services/tauriBridge";
 import { formatGB } from "../../services/format";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -56,6 +56,13 @@ export default function Home() {
     return () => { un.then((f) => f()); };
   }, []);
 
+  // Defaults true so the banner never flashes before the check resolves, and
+  // never appears at all off macOS (where the check always returns true).
+  const [accessibilityOk, setAccessibilityOk] = useState(true);
+  useEffect(() => {
+    accessibilityGranted().then(setAccessibilityOk);
+  }, []);
+
   const sttPass = downloadedStt.size > 0 && Boolean(settings.active_stt_model) && downloadedStt.has(settings.active_stt_model);
   const sttValue = settings.active_stt_model
     ? (STT_MODELS.find((m) => m.id === settings.active_stt_model)?.label ?? settings.active_stt_model)
@@ -79,6 +86,22 @@ export default function Home() {
         <div className="shrink-0 rounded-lg border border-sv-warn/30 bg-sv-warn/10 px-4 py-2 text-xs text-sv-warn">
           Running in browser preview. Audio capture, transcription, and paste
           require the desktop (Tauri) build. Hardware shown below is sample data.
+        </div>
+      )}
+
+      {!accessibilityOk && (
+        <div className="flex shrink-0 flex-row items-start justify-between rounded-lg border border-sv-warn/30 bg-sv-warn/10 px-4 py-2 text-xs text-sv-warn">
+          <div>
+            Silent Voice cannot type for you until macOS grants it Accessibility
+            access. Nothing will paste until this is on.
+          </div>
+          <button
+            aria-label="Open macOS Accessibility settings"
+            onClick={openAccessibilitySettings}
+            className="ml-3 shrink-0 font-semibold underline underline-offset-2 hover:text-sv-warn/80"
+          >
+            Open Settings
+          </button>
         </div>
       )}
 

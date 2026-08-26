@@ -501,6 +501,16 @@ fn get_autostart() -> bool {
 }
 
 #[tauri::command]
+fn accessibility_granted() -> bool {
+    system::accessibility::is_trusted()
+}
+
+#[tauri::command]
+fn open_accessibility_settings() {
+    system::accessibility::open_settings()
+}
+
+#[tauri::command]
 fn set_hotkey(app: AppHandle, state: State<AppState>, accelerator: String) -> Result<(), String> {
     // Unregister the previous shortcut, then register the new one.
     let prev = {
@@ -1223,6 +1233,8 @@ pub fn run() {
             set_app_profiles,
             set_autostart,
             get_autostart,
+            accessibility_granted,
+            open_accessibility_settings,
             set_hotkey,
             set_tts,
             tts_read_selection,

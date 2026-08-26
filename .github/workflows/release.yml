@@ -2,6 +2,9 @@ name: Release
 
 # Build, sign, and publish a new release + updater manifest when a version tag is pushed.
 # Tag format: v0.1.4 (must match tauri.conf.json version). Push with: git tag v0.1.4 && git push origin v0.1.4
+#
+# All three platforms publish into the SAME draft release. The updater key is
+# minisign, which is platform-independent, so one secret signs everything.
 
 on:
   push:
@@ -10,9 +13,23 @@ on:
 
 jobs:
   release:
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            label: Windows
+            bundle: nsis
+          - os: macos-latest
+            label: macOS
+            bundle: macos
+          - os: ubuntu-22.04
+            label: Linux
+            bundle: appimage
+    runs-on: ${{ matrix.os }}
     permissions:
       contents: write
+    name: ${{ matrix.label }}
     steps:
       - uses: actions/checkout@v4
 
@@ -22,8 +39,21 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
+      - name: Install Linux system deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
+            librsvg2-dev patchelf libasound2-dev pkg-config libfuse2 libxdo-dev
+
       - name: Install frontend deps
         run: npm ci
+
+      # Windows sidecars are committed to the repo; the others are fetched.
+      - name: Fetch sidecars
+        if: runner.os != 'Windows'
+        run: bash scripts/fetch-sidecars.sh
 
       - name: Fail if the signing secret is missing
         shell: bash
@@ -41,24 +71,27 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          NO_STRIP: "true"
+          LD_LIBRARY_PATH: ${{ github.workspace }}/src-tauri/sidecars:${{ github.workspace }}/src-tauri/sidecars/piper:${{ github.workspace }}/src-tauri/sidecars/llama:${{ github.workspace }}/src-tauri/sidecars/sherpa
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "Silent Voice ${{ github.ref_name }}"
           releaseBody: "See the assets below to download and install."
           releaseDraft: true
           prerelease: false
-          # Generates latest.json (the updater manifest) alongside the NSIS installer.
+          # Generates/extends latest.json (the updater manifest); each matrix
+          # job adds its own platform entry to the same release.
           includeUpdaterJson: true
 
-      - name: Verify the installer was actually signed
+      - name: Verify this platform's bundle was actually signed
         shell: bash
         run: |
           # tauri build exits 0 even when signing fails, so a missing .sig is
           # otherwise published as a green build that no client can install.
           shopt -s nullglob
-          sigs=(src-tauri/target/release/bundle/nsis/*.sig)
+          sigs=(src-tauri/target/release/bundle/${{ matrix.bundle }}/*.sig)
           if [ ${#sigs[@]} -eq 0 ]; then
-            echo "No .sig file was produced - the release is unsigned. Refusing to publish."
+            echo "No .sig file for ${{ matrix.label }} - refusing to publish an unupdatable release."
             ls -R src-tauri/target/release/bundle || true
             exit 1
           fi

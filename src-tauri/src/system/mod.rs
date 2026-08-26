@@ -1,3 +1,4 @@
+pub mod accessibility;
 pub mod autostart;
 pub mod clipboard_file;
 pub mod foreground;
