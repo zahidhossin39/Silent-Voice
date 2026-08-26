@@ -9,6 +9,7 @@ on:
   push:
     paths:
       - "scripts/fetch-sidecars.sh"
+      - "scripts/smoke-test.sh"
       - "src-tauri/tauri.macos.conf.json"
       - "src-tauri/tauri.linux.conf.json"
       - ".github/workflows/cross-platform-build.yml"
