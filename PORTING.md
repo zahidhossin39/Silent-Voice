@@ -1,14 +1,16 @@
 # Porting to macOS and Linux
 
-Status: **compiles on both; packaging wired up but not yet proven green.**
+Status: **packages cleanly for macOS and Linux; never launched on either.**
 
-`cargo check` passes on both, gated by `.github/workflows/cross-platform.yml`.
-`.github/workflows/cross-platform-build.yml` (manual trigger) fetches the
-platform's sidecars and produces a real `.dmg` / `.AppImage` / `.deb`.
+`.github/workflows/cross-platform-build.yml` is green on both runners and
+produces a `.dmg` (~94 MB), a `.deb`, and an `.AppImage`. `cross-platform.yml`
+stays as the fast `cargo check` gate on every push — but note it did NOT catch
+the missing `libxdo`, because checking does not link. Only the packaging build
+proves the link step.
 
-What that does *not* mean: nobody has launched the result. Every claim below
-about runtime behaviour on macOS or Linux is reasoned from the code, not
-observed. The first person to run it should expect to find things.
+What that does *not* mean: nobody has run the result. Every claim below about
+runtime behaviour on macOS or Linux is reasoned from the code, not observed.
+The first person to launch it should expect to find things.
 
 ## What already works everywhere
 
@@ -103,7 +105,8 @@ feature, and it will not be lifted.
 
 ## What is left
 
-1. Run it. Nothing below is worth doing before someone launches the `.dmg`.
+1. Run it. Nothing below is worth doing before someone launches the `.dmg`
+   or installs the `.deb`. Grab them from the workflow's artifacts.
 2. macOS permission onboarding (see Permissions above).
 3. Code signing + notarization, then re-enable updater artifacts.
 4. Inline proofreading, if ever — `AXUIElement` on macOS, AT-SPI on Linux.
