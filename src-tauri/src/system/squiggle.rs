@@ -45,7 +45,7 @@ const SQUIGGLE_H: i32 = 4;
 // Each squiggle is one layered window AND a per-poll round of cross-process
 // COM (range verify + GetBoundingRectangles), so this trades directly against
 // poll responsiveness — raise it further only with a rect-caching pass.
-pub(crate) const MAX_SQUIGGLES: usize = 64;
+pub(crate) use super::inline_types::MAX_SQUIGGLES;
 const RED: u32 = 0xFFEF4444; // spelling (premultiplied BGRA as 0xAARRGGBB)
 const BLUE: u32 = 0xFF3B82F6; // grammar/style
 
@@ -153,30 +153,10 @@ fn accent_colorref(accent: (u8, u8, u8)) -> u32 {
     ((accent.2 as u32) << 16) | ((accent.1 as u32) << 8) | accent.0 as u32
 }
 
-/// One flagged word occurrence on screen (word rect in physical pixels).
-#[derive(Clone, PartialEq)]
-pub struct SquiggleInfo {
-    pub x: i32,
-    pub y: i32,
-    pub w: i32,
-    pub h: i32,
-    pub spelling: bool,
-    pub message: String,
-    pub suggestions: Vec<String>,
-    /// Char range + exact current text of the flagged span, so the fix can
-    /// verify nothing changed before replacing.
-    pub start: usize,
-    pub end: usize,
-    pub expected: String,
-}
-
-/// Overlay → watcher: actions representing either fixing a word, dismissing,
-/// or adding to the vocabulary.
-pub enum OverlayAction {
-    Fix { start: usize, end: usize, expected: String, replacement: String },
-    Dismiss { word: String },
-    AddToVocab { word: String },
-}
+// SquiggleInfo and OverlayAction moved to inline_types.rs so the macOS
+// renderer can share them; re-exported here since callers import them via
+// this module.
+pub use super::inline_types::{OverlayAction, SquiggleInfo};
 
 /// The wheel hook lives on its own thread with nothing but a message pump.
 /// A low-level hook is dispatched through the installing thread's message

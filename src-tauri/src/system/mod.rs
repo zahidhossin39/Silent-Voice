@@ -1,4 +1,14 @@
 pub mod accessibility;
+// macOS inline proofreading: Accessibility reader, its watcher, and the
+// transparent-window renderer. The Windows equivalents are inline_check +
+// squiggle below.
+#[cfg(target_os = "macos")]
+pub mod ax;
+#[cfg(target_os = "macos")]
+pub mod inline_mac;
+pub mod inline_types;
+#[cfg(target_os = "macos")]
+pub mod squiggle_mac;
 pub mod autostart;
 pub mod clipboard_file;
 pub mod foreground;

@@ -10,6 +10,7 @@ import History from "./components/dashboard/History";
 import Guide from "./components/dashboard/Guide";
 import Theme from "./components/dashboard/Theme";
 import OverlayApp from "./components/overlay/OverlayApp";
+import SquiggleOverlay from "./components/overlay/SquiggleOverlay";
 import Onboarding from "./components/onboarding/Onboarding";
 import { useModelStore } from "./stores/modelStore";
 import { useSettingsStore } from "./stores/settingsStore";
@@ -45,8 +46,8 @@ const NAV = [
 
 export default function App() {
   // The transparent overlay window loads the same bundle with ?view=overlay.
-  const isOverlay =
-    new URLSearchParams(window.location.search).get("view") === "overlay";
+  const view = new URLSearchParams(window.location.search).get("view");
+  const isOverlay = view === "overlay";
 
   const theme = useSettingsStore((s) => s.settings.theme);
   const appTheme = useSettingsStore((s) => s.settings.app_theme);
@@ -71,6 +72,9 @@ export default function App() {
 
   if (isOverlay) {
     return <OverlayApp />;
+  }
+  if (view === "squiggle") {
+    return <SquiggleOverlay />;
   }
 
   return (

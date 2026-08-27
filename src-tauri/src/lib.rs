@@ -1188,6 +1188,8 @@ pub fn run() {
             // Inline proofreading watcher (squiggles in any app's text field).
             #[cfg(windows)]
             system::inline_check::start(app.handle().clone());
+            #[cfg(target_os = "macos")]
+            system::inline_mac::start(app.handle().clone());
 
             system::job::reap_orphans();
 

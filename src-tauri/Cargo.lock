@@ -6634,6 +6634,7 @@ version = "0.1.8"
 dependencies = [
  "arboard",
  "base64 0.22.1",
+ "core-foundation 0.10.1",
  "cpal",
  "dirs 5.0.1",
  "enigo",

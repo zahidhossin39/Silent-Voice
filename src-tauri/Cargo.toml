@@ -49,6 +49,10 @@ tokenizers = { version = "0.21", default-features = false, features = ["onig"] }
 ndarray = "0.16"
 urlencoding = "2"
 
+[target.'cfg(target_os = "macos")'.dependencies]
+# Accessibility FFI (system/ax.rs). Already in the tree via enigo/arboard.
+core-foundation = "0.10"
+
 [target.'cfg(windows)'.dependencies.winreg]
 version = "0.52"
 
