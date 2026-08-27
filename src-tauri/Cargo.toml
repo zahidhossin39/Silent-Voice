@@ -13,7 +13,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon"] }
+tauri = { version = "2", features = ["tray-icon", "macos-private-api"] }
 tauri-plugin-shell = "2"
 
 tauri-plugin-global-shortcut = "2"
@@ -52,11 +52,6 @@ urlencoding = "2"
 [target.'cfg(target_os = "macos")'.dependencies]
 # Accessibility FFI (system/ax.rs). Already in the tree via enigo/arboard.
 core-foundation = "0.10"
-# The squiggle overlay is a transparent window, which macOS only allows behind
-# this feature; tauri.macos.conf.json sets the matching macOSPrivateApi flag and
-# the build script refuses to run unless the two agree. Cargo features are
-# additive, so this just adds to the base `tauri` dependency above.
-tauri = { version = "2", features = ["macos-private-api"] }
 
 [target.'cfg(windows)'.dependencies.winreg]
 version = "0.52"

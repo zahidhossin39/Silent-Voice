@@ -22,8 +22,5 @@
       "sidecars/sherpa/": "sherpa/"
     },
     "createUpdaterArtifacts": true
-  },
-  "app": {
-    "macOSPrivateApi": true
   }
 }

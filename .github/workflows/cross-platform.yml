@@ -60,6 +60,9 @@ jobs:
           chmod +x "src-tauri/sidecars/whisper-cpp-$TRIPLE" src-tauri/sidecars/whisper-server
           # Directory resources must be non-empty to be copied.
           touch src-tauri/sidecars/llama/.keep src-tauri/sidecars/piper/.keep src-tauri/sidecars/sherpa/.keep
+          # Tauri treats a glob that matches nothing as an error, not as empty,
+          # so the shared-library patterns need something to find.
+          touch src-tauri/sidecars/libstub.so src-tauri/sidecars/libstub.dylib
           find src-tauri/sidecars -maxdepth 2
 
       - name: cargo check
