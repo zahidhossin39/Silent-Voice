@@ -47,17 +47,20 @@ jobs:
       - name: Build frontend
         run: npm run build
 
-      - name: Stub the sidecar for this target
+      - name: Stub the sidecars for this target
         shell: bash
         run: |
-          # tauri_build refuses to build unless externalBin has a binary named
-          # for the host triple. We only want to compile-check the Rust, so an
-          # empty placeholder is enough. Never shipped.
+          # tauri_build resolves externalBin AND bundle.resources before the
+          # Rust is even compiled, so every path the platform config names has
+          # to exist or the build script fails with no useful message. These are
+          # empty placeholders for a compile check only, never shipped.
           TRIPLE=$(rustc -vV | sed -n 's/^host: //p')
-          mkdir -p src-tauri/sidecars
-          touch "src-tauri/sidecars/whisper-cpp-$TRIPLE"
-          chmod +x "src-tauri/sidecars/whisper-cpp-$TRIPLE"
-          echo "stubbed whisper-cpp-$TRIPLE"
+          mkdir -p src-tauri/sidecars/llama src-tauri/sidecars/piper src-tauri/sidecars/sherpa
+          touch "src-tauri/sidecars/whisper-cpp-$TRIPLE" src-tauri/sidecars/whisper-server
+          chmod +x "src-tauri/sidecars/whisper-cpp-$TRIPLE" src-tauri/sidecars/whisper-server
+          # Directory resources must be non-empty to be copied.
+          touch src-tauri/sidecars/llama/.keep src-tauri/sidecars/piper/.keep src-tauri/sidecars/sherpa/.keep
+          find src-tauri/sidecars -maxdepth 2
 
       - name: cargo check
         id: check
@@ -85,7 +88,7 @@ jobs:
           {
             echo "### ${{ matrix.label }} - cargo check exit ${{ steps.check.outputs.code }}"
             echo ""
-            grep -E "error" check.log | grep -vE "Compiling|Downloaded|Checking" | sort -u | head -40 || echo "(no error lines)"
+            tail -60 check.log
           } > body.md
           gh api -X POST "repos/${{ github.repository }}/commits/${{ github.sha }}/comments" \
             -f body="$(cat body.md)"
