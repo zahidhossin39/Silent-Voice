@@ -1,10 +1,15 @@
-// macOS underline renderer.
+// Underline renderer for macOS and Linux.
 //
 // Windows draws these with per-word Win32 layered windows because a transparent
 // always-on-top WebView2 window is unreliable there (see the hard rules in
-// CLAUDE.md). None of that applies on macOS: WKWebView handles transparent
-// always-on-top windows fine, so one full-screen click-through window that
-// draws every underline is a fraction of the code and has no z-order fight.
+// CLAUDE.md). That constraint is specific to WebView2 on that hardware: WKWebView
+// and WebKitGTK both handle transparent always-on-top windows, so one full-screen
+// click-through window that draws every underline is a fraction of the code and
+// has no z-order fight.
+//
+// On Linux this needs a compositor for real transparency. Without one the window
+// falls back to an opaque rectangle, which is why the overlay is hidden outright
+// whenever there is nothing to draw rather than left up and empty.
 //
 // The window is click-through (`set_ignore_cursor_events`), so it can never
 // swallow a click meant for the app underneath. That also means it cannot
@@ -58,7 +63,7 @@ fn ensure_window(app: &AppHandle) -> tauri::Result<()> {
 /// stuck overlay can never sit invisibly on top of everything.
 pub fn draw(app: &AppHandle, infos: &[SquiggleInfo]) {
     if let Err(e) = ensure_window(app) {
-        crate::logging::log_error("squiggle_mac", &format!("window create failed: {e}"));
+        crate::logging::log_error("squiggle_overlay", &format!("window create failed: {e}"));
         return;
     }
     let Some(win) = app.get_webview_window(SQUIGGLE_LABEL) else {
@@ -90,7 +95,7 @@ pub fn draw(app: &AppHandle, infos: &[SquiggleInfo]) {
         .collect();
 
     if let Err(e) = win.emit_to(SQUIGGLE_LABEL, "squiggle://set", &local) {
-        crate::logging::log_error("squiggle_mac", &format!("emit failed: {e}"));
+        crate::logging::log_error("squiggle_overlay", &format!("emit failed: {e}"));
         return;
     }
     if !win.is_visible().unwrap_or(false) {
@@ -136,7 +141,7 @@ pub fn show_popup(app: &AppHandle, info: &SquiggleInfo) {
         .visible(false)
         .build();
         if let Err(e) = built {
-            crate::logging::log_error("squiggle_mac", &format!("popup create failed: {e}"));
+            crate::logging::log_error("squiggle_overlay", &format!("popup create failed: {e}"));
             return;
         }
     }
@@ -155,7 +160,7 @@ pub fn show_popup(app: &AppHandle, info: &SquiggleInfo) {
     ));
 
     if let Err(e) = win.emit_to(POPUP_LABEL, "squiggle://popup", info) {
-        crate::logging::log_error("squiggle_mac", &format!("popup emit failed: {e}"));
+        crate::logging::log_error("squiggle_overlay", &format!("popup emit failed: {e}"));
         return;
     }
     if !win.is_visible().unwrap_or(false) {

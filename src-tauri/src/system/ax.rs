@@ -341,7 +341,7 @@ impl ElementRef {
     /// Between the popup opening and the click landing the user may have typed,
     /// scrolled, or undone something. Replacing blind would corrupt whatever
     /// moved into those offsets, so a mismatch refuses the fix instead.
-    pub fn replace_if_matches(
+    fn replace_if_matches(
         &self,
         start: usize,
         end: usize,
@@ -386,6 +386,68 @@ impl ElementRef {
             ) == kAXErrorSuccess
         }
     }
+}
+
+// ---- the contract the shared watcher calls, mirrored by atspi.rs ----
+
+/// macOS gates every AX call behind a permission the user grants at runtime, so
+/// this is re-checked rather than cached.
+pub fn available() -> bool {
+    super::accessibility::is_trusted()
+}
+
+/// No setup needed here; AT-SPI on Linux has to start a bus and subscribe to
+/// focus events, so the shared watcher calls these unconditionally.
+pub fn init() -> bool {
+    true
+}
+pub fn pump() {}
+pub fn install_fix_channel() {}
+pub fn drain_fixes() {}
+
+/// The field the popup is offering to fix, retained so the correction lands in
+/// the original text after the click moves focus to the popup.
+static PENDING: std::sync::Mutex<Option<ElementRef>> = std::sync::Mutex::new(None);
+
+pub fn remember(field: &Field) {
+    if let Ok(mut g) = PENDING.lock() {
+        *g = Some(field.retain());
+    }
+}
+
+pub fn forget() {
+    if let Ok(mut g) = PENDING.lock() {
+        *g = None;
+    }
+}
+
+/// Apply the remembered fix. Safe from any thread: AX calls are not confined to
+/// one, unlike AT-SPI.
+pub fn apply_fix(start: usize, end: usize, expected: &str, replacement: &str) -> bool {
+    PENDING
+        .lock()
+        .ok()
+        .and_then(|g| {
+            g.as_ref()
+                .map(|el| el.replace_if_matches(start, end, expected, replacement))
+        })
+        .unwrap_or(false)
+}
+
+/// Owning app, cached against the pid so the lookup — which shells out to
+/// osascript — runs once per focus change rather than once per poll.
+static APP_NAME: std::sync::Mutex<(i32, String)> = std::sync::Mutex::new((0, String::new()));
+
+pub fn app_name(field: &Field) -> String {
+    let Ok(mut cache) = APP_NAME.lock() else {
+        return String::new();
+    };
+    if cache.0 == field.pid {
+        return cache.1.clone();
+    }
+    let name = super::foreground::foreground_app().unwrap_or_default();
+    *cache = (field.pid, name.clone());
+    name
 }
 
 /// Current mouse position in the same top-left-origin screen points AX reports

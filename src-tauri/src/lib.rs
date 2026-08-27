@@ -504,11 +504,11 @@ fn get_autostart() -> bool {
 /// Returns false when the text moved under us, in which case nothing is written.
 #[tauri::command]
 fn inline_fix(start: usize, end: usize, expected: String, replacement: String) -> bool {
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     {
-        system::inline_mac::apply_pending_fix(start, end, &expected, &replacement)
+        system::inline_unix::apply_pending_fix(start, end, &expected, &replacement)
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(windows)]
     {
         let _ = (start, end, expected, replacement);
         false
@@ -1203,8 +1203,8 @@ pub fn run() {
             // Inline proofreading watcher (squiggles in any app's text field).
             #[cfg(windows)]
             system::inline_check::start(app.handle().clone());
-            #[cfg(target_os = "macos")]
-            system::inline_mac::start(app.handle().clone());
+            #[cfg(any(target_os = "macos", target_os = "linux"))]
+            system::inline_unix::start(app.handle().clone());
 
             system::job::reap_orphans();
 
