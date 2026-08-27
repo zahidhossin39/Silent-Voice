@@ -66,10 +66,15 @@ jobs:
         run: |
           set +e
           cargo check --no-default-features --message-format=short --color=never 2>&1 | tee check.log
-          echo "code=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
+          CODE=${PIPESTATUS[0]}
+          echo "code=$CODE" >> $GITHUB_OUTPUT
+          # Exit with the real code: ending on `echo` made this step report
+          # success no matter what cargo did, so the reporter below never fired
+          # and a broken macOS build looked green.
+          exit $CODE
 
       - name: Post the errors as a commit comment
-        if: failure()
+        if: always() && steps.check.outputs.code != '0'
         working-directory: src-tauri
         shell: bash
         env:

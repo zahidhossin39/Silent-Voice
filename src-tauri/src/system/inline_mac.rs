@@ -339,7 +339,7 @@ fn poll_once(
             .get(idx)
             .and_then(|i| field.bounds_for_range(i.start, i.end))
         {
-            Some((nx, ny)) => (nx - ax_).abs() > 1.0 || (ny - ay).abs() > 1.0,
+            Some((nx, ny, _, _)) => (nx - ax_).abs() > 1.0 || (ny - ay).abs() > 1.0,
             None => true,
         };
         if moved {

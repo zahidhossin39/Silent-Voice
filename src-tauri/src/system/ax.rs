@@ -325,7 +325,7 @@ impl Field {
     /// Retain this field's element so it outlives the current poll.
     pub fn retain(&self) -> ElementRef {
         unsafe {
-            CFRetain(self.el);
+            let _ = CFRetain(self.el);
             ElementRef(self.el)
         }
     }
