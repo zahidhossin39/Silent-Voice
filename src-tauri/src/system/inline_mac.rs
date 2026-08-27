@@ -14,8 +14,49 @@
 use super::inline_types::{SquiggleInfo, MAX_SQUIGGLES};
 use crate::proofread;
 use crate::AppState;
+use std::sync::Mutex;
 use std::time::Duration;
 use tauri::{AppHandle, Manager};
+
+/// The word the popup is currently offering to fix, with its field retained.
+///
+/// Clicking the popup moves focus, so by the time the fix arrives the focused
+/// element is the popup itself. Holding the original element here is what makes
+/// the correction land in the text the user was actually looking at.
+static PENDING: Mutex<Option<PendingFix>> = Mutex::new(None);
+
+struct PendingFix {
+    el: super::ax::ElementRef,
+    info: SquiggleInfo,
+}
+
+/// Apply the fix the popup is offering. Returns false if the text moved under
+/// us, in which case nothing is written.
+pub fn apply_pending_fix(start: usize, end: usize, expected: &str, replacement: &str) -> bool {
+    let guard = match PENDING.lock() {
+        Ok(g) => g,
+        Err(_) => return false,
+    };
+    let Some(p) = guard.as_ref() else {
+        return false;
+    };
+    if p.info.start != start || p.info.end != end || p.info.expected != expected {
+        return false;
+    }
+    p.el.replace_if_matches(start, end, expected, replacement)
+}
+
+/// Cursor inside a flagged word, with a little slack below for the underline
+/// itself — the strip sits under the baseline, so an exact rect test would make
+/// the popup fire only on the text and never on the squiggle the user aimed at.
+fn hovered<'a>(squiggles: &'a [SquiggleInfo], cx: f64, cy: f64) -> Option<&'a SquiggleInfo> {
+    squiggles.iter().find(|s| {
+        cx >= s.x as f64
+            && cx <= (s.x + s.w) as f64
+            && cy >= s.y as f64
+            && cy <= (s.y + s.h) as f64 + 6.0
+    })
+}
 
 /// Underlines on screen: poll fast so they track typing and scrolling.
 const ACTIVE_POLL_MS: u64 = 90;
@@ -126,14 +167,14 @@ fn watcher(app: AppHandle) {
                 &mut issues,
             )
         }));
-        let (squiggles, reason) = match polled {
+        let (squiggles, reason, element) = match polled {
             Ok(v) => v,
             Err(p) => {
                 crate::logging::log_error(
                     "inline_mac",
                     &format!("poll panicked: {}", crate::logging::panic_msg(&*p)),
                 );
-                (Vec::new(), "panic")
+                (Vec::new(), "panic", None)
             }
         };
 
@@ -145,11 +186,48 @@ fn watcher(app: AppHandle) {
         if squiggles.is_empty() {
             if active {
                 super::squiggle_mac::clear(&app);
+                super::squiggle_mac::hide_popup(&app);
+                if let Ok(mut g) = PENDING.lock() {
+                    *g = None;
+                }
                 active = false;
             }
         } else {
             super::squiggle_mac::draw(&app, &squiggles);
             active = true;
+
+            // Hover → popup. The overlay is click-through and cannot receive
+            // pointer events, so the cursor is polled instead.
+            match super::ax::cursor_position().and_then(|(cx, cy)| hovered(&squiggles, cx, cy)) {
+                Some(hit) => {
+                    let changed = PENDING
+                        .lock()
+                        .map(|g| {
+                            g.as_ref().map(|p| p.info != *hit).unwrap_or(true)
+                        })
+                        .unwrap_or(true);
+                    if changed && !hit.suggestions.is_empty() {
+                        if let Some(el) = element {
+                            if let Ok(mut g) = PENDING.lock() {
+                                *g = Some(PendingFix { el, info: hit.clone() });
+                            }
+                            super::squiggle_mac::show_popup(&app, hit);
+                        }
+                    }
+                }
+                None => {
+                    // Leaving the word closes it, but only if the pointer is not
+                    // over the popup itself — otherwise it would vanish the
+                    // instant the user moved toward a suggestion.
+                    let over_popup = super::squiggle_mac::cursor_over_popup(&app);
+                    if !over_popup {
+                        super::squiggle_mac::hide_popup(&app);
+                        if let Ok(mut g) = PENDING.lock() {
+                            *g = None;
+                        }
+                    }
+                }
+            }
         }
 
         std::thread::sleep(Duration::from_millis(if active {
@@ -186,19 +264,19 @@ fn poll_once(
     app_name_cache: &mut (i32, String),
     last_text: &mut String,
     issues: &mut Vec<proofread::ProofIssue>,
-) -> (Vec<SquiggleInfo>, &'static str) {
+) -> (Vec<SquiggleInfo>, &'static str, Option<super::ax::ElementRef>) {
     let field = match super::ax::focused_field() {
         Ok(f) => f,
         Err(reason) => {
             last_text.clear();
             issues.clear();
-            return (Vec::new(), reason);
+            return (Vec::new(), reason, None);
         }
     };
 
     let name = app_name(field.pid, app_name_cache);
     if !name.is_empty() && ignore_apps.iter().any(|a| name.contains(a.as_str())) {
-        return (Vec::new(), "user-ignored app");
+        return (Vec::new(), "user-ignored app", None);
     }
 
     // Re-lint only when the text actually changed; rects are re-read every poll
@@ -265,13 +343,14 @@ fn poll_once(
             None => true,
         };
         if moved {
-            return (Vec::new(), "scroll-move");
+            return (Vec::new(), "scroll-move", None);
         }
     }
 
     if squiggles.is_empty() {
-        (Vec::new(), "no issues")
+        (Vec::new(), "no issues", None)
     } else {
-        (squiggles, "active")
+        let retained = field.retain();
+        (squiggles, "active", Some(retained))
     }
 }

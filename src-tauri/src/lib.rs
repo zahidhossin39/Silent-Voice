@@ -500,6 +500,21 @@ fn get_autostart() -> bool {
     system::autostart::is_enabled()
 }
 
+/// Apply an inline-proofread suggestion the macOS popup is offering.
+/// Returns false when the text moved under us, in which case nothing is written.
+#[tauri::command]
+fn inline_fix(start: usize, end: usize, expected: String, replacement: String) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        system::inline_mac::apply_pending_fix(start, end, &expected, &replacement)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (start, end, expected, replacement);
+        false
+    }
+}
+
 #[tauri::command]
 fn accessibility_granted() -> bool {
     system::accessibility::is_trusted()
@@ -1237,6 +1252,7 @@ pub fn run() {
             get_autostart,
             accessibility_granted,
             open_accessibility_settings,
+            inline_fix,
             set_hotkey,
             set_tts,
             tts_read_selection,

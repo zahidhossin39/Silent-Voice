@@ -11,6 +11,7 @@ import Guide from "./components/dashboard/Guide";
 import Theme from "./components/dashboard/Theme";
 import OverlayApp from "./components/overlay/OverlayApp";
 import SquiggleOverlay from "./components/overlay/SquiggleOverlay";
+import SquigglePopup from "./components/overlay/SquigglePopup";
 import Onboarding from "./components/onboarding/Onboarding";
 import { useModelStore } from "./stores/modelStore";
 import { useSettingsStore } from "./stores/settingsStore";
@@ -75,6 +76,9 @@ export default function App() {
   }
   if (view === "squiggle") {
     return <SquiggleOverlay />;
+  }
+  if (view === "squiggle-popup") {
+    return <SquigglePopup />;
   }
 
   return (

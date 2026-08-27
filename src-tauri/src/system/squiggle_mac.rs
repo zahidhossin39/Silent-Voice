@@ -106,3 +106,93 @@ pub fn clear(app: &AppHandle) {
         let _ = win.hide();
     }
 }
+
+pub const POPUP_LABEL: &str = "squiggle-popup";
+
+const POPUP_W: f64 = 300.0;
+const POPUP_ROW_H: f64 = 34.0;
+const POPUP_CHROME_H: f64 = 46.0;
+
+/// Show the suggestion popup for one flagged word, just below it.
+///
+/// Unlike the underline overlay this window DOES take clicks — that is the
+/// whole point of it — which is why the fix is applied against a retained
+/// element rather than whatever has focus once the click lands.
+pub fn show_popup(app: &AppHandle, info: &SquiggleInfo) {
+    if app.get_webview_window(POPUP_LABEL).is_none() {
+        let built = WebviewWindowBuilder::new(
+            app,
+            POPUP_LABEL,
+            WebviewUrl::App("index.html?view=squiggle-popup".into()),
+        )
+        .title("Silent Voice Suggestions")
+        .decorations(false)
+        .transparent(true)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .shadow(false)
+        .resizable(false)
+        .focused(false)
+        .visible(false)
+        .build();
+        if let Err(e) = built {
+            crate::logging::log_error("squiggle_mac", &format!("popup create failed: {e}"));
+            return;
+        }
+    }
+    let Some(win) = app.get_webview_window(POPUP_LABEL) else {
+        return;
+    };
+
+    let rows = info.suggestions.len().min(4) as f64;
+    let height = POPUP_CHROME_H + rows * POPUP_ROW_H;
+    let _ = win.set_size(LogicalSize::new(POPUP_W, height));
+    // Sit just under the word. ponytail: no screen-edge flipping yet — a word
+    // near the bottom of the display will push the popup off-screen.
+    let _ = win.set_position(LogicalPosition::new(
+        info.x as f64,
+        (info.y + info.h) as f64 + 4.0,
+    ));
+
+    if let Err(e) = win.emit_to(POPUP_LABEL, "squiggle://popup", info) {
+        crate::logging::log_error("squiggle_mac", &format!("popup emit failed: {e}"));
+        return;
+    }
+    if !win.is_visible().unwrap_or(false) {
+        let _ = win.show();
+    }
+}
+
+pub fn hide_popup(app: &AppHandle) {
+    if let Some(win) = app.get_webview_window(POPUP_LABEL) {
+        let _ = win.hide();
+    }
+}
+
+/// Is the pointer over the popup right now? Used to keep it open while the user
+/// travels from the underlined word down to a suggestion.
+pub fn cursor_over_popup(app: &AppHandle) -> bool {
+    let Some(win) = app.get_webview_window(POPUP_LABEL) else {
+        return false;
+    };
+    if !win.is_visible().unwrap_or(false) {
+        return false;
+    }
+    let (Ok(scale), Ok(pos), Ok(size)) = (win.scale_factor(), win.outer_position(), win.outer_size())
+    else {
+        return false;
+    };
+    let p = pos.to_logical::<f64>(scale);
+    let s = size.to_logical::<f64>(scale);
+    // A little slack around the edges so the gap between the word and the popup
+    // does not count as leaving.
+    match super::ax::cursor_position() {
+        Some((cx, cy)) => {
+            cx >= p.x - 8.0
+                && cx <= p.x + s.width + 8.0
+                && cy >= p.y - 10.0
+                && cy <= p.y + s.height + 8.0
+        }
+        None => false,
+    }
+}

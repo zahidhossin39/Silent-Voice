@@ -16,7 +16,7 @@
 
 #![allow(non_upper_case_globals)]
 
-use core_foundation::base::{CFRelease, CFTypeRef, TCFType};
+use core_foundation::base::{CFRelease, CFRetain, CFTypeRef, TCFType};
 use core_foundation::string::{CFString, CFStringRef};
 
 #[repr(C)]
@@ -297,4 +297,113 @@ impl Field {
             ) == kAXErrorSuccess
         }
     }
+}
+
+/// A retained reference to a field, kept alive past the poll that found it.
+///
+/// The suggestion popup is a real window, so clicking it moves focus away and
+/// `focused_field()` would then describe the popup rather than the text the
+/// user is fixing. Holding the element instead means the fix lands where it was
+/// aimed, no matter what has focus by the time the click arrives.
+pub struct ElementRef(AXUIElementRef);
+
+// The element is only ever touched from the watcher thread; this exists so the
+// handle can be parked in shared state between the hover and the click.
+unsafe impl Send for ElementRef {}
+
+impl Drop for ElementRef {
+    fn drop(&mut self) {
+        unsafe {
+            if !self.0.is_null() {
+                CFRelease(self.0);
+            }
+        }
+    }
+}
+
+impl Field {
+    /// Retain this field's element so it outlives the current poll.
+    pub fn retain(&self) -> ElementRef {
+        unsafe {
+            CFRetain(self.el);
+            ElementRef(self.el)
+        }
+    }
+}
+
+impl ElementRef {
+    fn text(&self) -> Option<String> {
+        unsafe { copy_string_attr(self.0, "AXValue") }
+    }
+
+    /// Replace a char range, but only if it still holds exactly `expected`.
+    ///
+    /// Between the popup opening and the click landing the user may have typed,
+    /// scrolled, or undone something. Replacing blind would corrupt whatever
+    /// moved into those offsets, so a mismatch refuses the fix instead.
+    pub fn replace_if_matches(
+        &self,
+        start: usize,
+        end: usize,
+        expected: &str,
+        replacement: &str,
+    ) -> bool {
+        let text = match self.text() {
+            Some(t) => t,
+            None => return false,
+        };
+        let chars: Vec<char> = text.chars().collect();
+        if start > end || end > chars.len() {
+            return false;
+        }
+        let current: String = chars[start..end].iter().collect();
+        if current != expected {
+            return false;
+        }
+        let location: usize = chars[..start].iter().map(|c| c.len_utf16()).sum();
+        let length: usize = chars[start..end].iter().map(|c| c.len_utf16()).sum();
+        let range = CFRange { location: location as isize, length: length as isize };
+
+        unsafe {
+            let val =
+                AXValueCreate(kAXValueCFRangeType, &range as *const _ as *const std::ffi::c_void);
+            if val.is_null() {
+                return false;
+            }
+            let sel_key = CFString::new("AXSelectedTextRange");
+            let err =
+                AXUIElementSetAttributeValue(self.0, sel_key.as_concrete_TypeRef(), val as CFTypeRef);
+            CFRelease(val as CFTypeRef);
+            if err != kAXErrorSuccess {
+                return false;
+            }
+            let text_key = CFString::new("AXSelectedText");
+            let new_text = CFString::new(replacement);
+            AXUIElementSetAttributeValue(
+                self.0,
+                text_key.as_concrete_TypeRef(),
+                new_text.as_concrete_TypeRef() as CFTypeRef,
+            ) == kAXErrorSuccess
+        }
+    }
+}
+
+/// Current mouse position in the same top-left-origin screen points AX reports
+/// rects in, so a hover test is a plain rectangle check.
+pub fn cursor_position() -> Option<(f64, f64)> {
+    unsafe {
+        let event = CGEventCreate(std::ptr::null());
+        if event.is_null() {
+            return None;
+        }
+        let p = CGEventGetLocation(event);
+        CFRelease(event as CFTypeRef);
+        Some((p.x, p.y))
+    }
+}
+
+#[link(name = "CoreGraphics", kind = "framework")]
+extern "C" {
+    fn CGEventCreate(source: *const std::ffi::c_void) -> *const std::ffi::c_void;
+    fn CGEventGetLocation(event: *const std::ffi::c_void) -> CGPoint;
 }

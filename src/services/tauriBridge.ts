@@ -315,6 +315,23 @@ export async function accessibilityGranted(): Promise<boolean> {
   }
 }
 
+/** Apply an inline-proofread suggestion. False means the text moved and
+ *  nothing was written. */
+export async function applyInlineFix(
+  start: number,
+  end: number,
+  expected: string,
+  replacement: string
+): Promise<boolean> {
+  if (!isTauri()) return false;
+  try {
+    return await invoke<boolean>("inline_fix", { start, end, expected, replacement });
+  } catch (e) {
+    console.warn("inline_fix failed", e);
+    return false;
+  }
+}
+
 export async function openAccessibilitySettings(): Promise<void> {
   if (!isTauri()) return;
   try {
