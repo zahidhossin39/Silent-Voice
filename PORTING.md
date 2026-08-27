@@ -9,10 +9,19 @@ launches it (headless under xvfb on Linux), requires the app's own
 clip and requires the right words back. It also fails if no `.sig` is produced,
 so a release that could never be updated cannot pass.
 
-Two things that look like gates but are not: `cargo check` did NOT catch the
-missing `libxdo`, because checking does not link; and a green *step* is not a
-green *test* unless the step exits with the test's code — an earlier version of
-the smoke step ended on `echo` and reported success no matter what happened.
+Things that looked like gates but were not, all found the hard way:
+
+- `cargo check` did not catch the missing `libxdo`, because checking does not
+  link. Only the packaging build proves the link step.
+- A green *step* is not a green *test* unless the step exits with the test's
+  code. Both the smoke step and the `cargo check` step ended on an `echo` and
+  reported success no matter what happened; the check workflow was reporting
+  unconditional success for its entire existence.
+- A reporter gated on `if: failure()` never fires when the step it reports on
+  cannot fail, and grepping a log for "error" drops build-script failures, which
+  print nothing in that shape.
+
+If a check has never been observed failing, it has not been shown to work.
 
 ## What is still unverified
 
@@ -41,6 +50,27 @@ wording in the UI copy.
 | --- | --- | --- |
 | `system/squiggle.rs` | 1,183 | Draws underlines with Win32 layered windows and GDI |
 | `system/inline_check.rs` | 953 | Reads other apps' text via UI Automation |
+
+**macOS has its own implementation of this feature** — `ax.rs` (Accessibility
+reader), `inline_mac.rs` (watcher) and `squiggle_mac.rs` (renderer), sharing
+`proofread::check` and `inline_types.rs` with Windows. It is a separate path
+rather than cfg branches inside the two files above, which are working COM code
+not worth destabilising.
+
+Three things about it differ from Windows and are easy to get wrong:
+
+- AX ranges are UTF-16 code units; Harper spans are char indices. Identical for
+  ASCII, wrong the moment an earlier emoji shifts everything after it.
+- AX reports points, Tauri positions in points, so nothing touches scale factor.
+- The overlay is one transparent click-through window, not per-word layered
+  windows — WKWebView has none of WebView2's problems here. Being click-through
+  means it cannot receive hover, so the cursor is polled instead, and a fix is
+  applied through a retained `AXUIElement` because clicking the popup moves
+  focus away from the text being corrected.
+
+Still missing there: multi-monitor (primary display only) and popup flipping
+near the bottom of the screen. Linux has no equivalent; AT-SPI is X11-only and
+unreliable across toolkits.
 
 Both are `#[cfg(windows)]` at the module declaration, with their four call sites
 in `lib.rs` gated the same way. Together they are the inline-proofreading
