@@ -51,11 +51,12 @@ wording in the UI copy.
 | `system/squiggle.rs` | 1,183 | Draws underlines with Win32 layered windows and GDI |
 | `system/inline_check.rs` | 953 | Reads other apps' text via UI Automation |
 
-**macOS has its own implementation of this feature** — `ax.rs` (Accessibility
-reader), `inline_mac.rs` (watcher) and `squiggle_mac.rs` (renderer), sharing
-`proofread::check` and `inline_types.rs` with Windows. It is a separate path
-rather than cfg branches inside the two files above, which are working COM code
-not worth destabilising.
+**macOS and Linux both have this feature now**, as one watcher over two
+accessibility backends: `ax.rs` (macOS Accessibility), `atspi.rs` (Linux
+AT-SPI2), `inline_unix.rs` (the shared watcher) and `squiggle_overlay.rs` (the
+renderer), sharing `proofread::check` and `inline_types.rs` with Windows. It is
+a separate path rather than cfg branches inside the two files above, which are
+working COM code not worth destabilising.
 
 Three things about it differ from Windows and are easy to get wrong:
 
@@ -68,9 +69,35 @@ Three things about it differ from Windows and are easy to get wrong:
   applied through a retained `AXUIElement` because clicking the popup moves
   focus away from the text being corrected.
 
-Still missing there: multi-monitor (primary display only) and popup flipping
-near the bottom of the screen. Linux has no equivalent; AT-SPI is X11-only and
-unreliable across toolkits.
+AT-SPI differs from both other platforms in four ways that are handled
+explicitly in `atspi.rs`:
+
+- Offsets are **character** offsets, so Harper's spans pass straight through —
+  the opposite of macOS, which needs UTF-16 conversion.
+- Every rect is a **D-Bus round trip**, so the per-frame cap matters far more.
+- Objects and event callbacks are **confined to one thread**, so the watcher
+  pumps the GLib main context itself rather than calling `atspi_event_main()`,
+  and popup fixes are queued onto that thread instead of applied directly.
+- There is **no way to ask for the focused element**; focus is tracked by
+  subscribing to `state-changed:focused`.
+
+`libatspi` is dlopened, not linked. The accessibility bus is not guaranteed to
+be running and the library is not guaranteed installed, so its absence costs one
+feature and a log line rather than stopping the app from launching. Only the
+prefix of `AtspiEvent` before its embedded `GValue` is modelled — reading a
+prefix of a C struct is well defined, while guessing that layout would corrupt
+memory rather than fail visibly.
+
+**Linux users may need to turn accessibility on** for GTK apps to expose text at
+all:
+
+```
+gsettings set org.gnome.desktop.interface toolkit-accessibility true
+```
+
+Still missing on both: multi-monitor (primary display only) and popup flipping
+near the bottom of the screen. Wayland cannot support this at all, for the same
+reason it cannot support the hotkey — see below.
 
 Both are `#[cfg(windows)]` at the module declaration, with their four call sites
 in `lib.rs` gated the same way. Together they are the inline-proofreading

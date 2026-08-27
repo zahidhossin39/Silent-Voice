@@ -10,6 +10,12 @@ on:
     paths:
       - "scripts/fetch-sidecars.sh"
       - "scripts/smoke-test.sh"
+      # Inline proofreading links glib/gobject and creates windows at startup;
+      # only a full build and launch proves either still works.
+      - "src-tauri/src/system/atspi.rs"
+      - "src-tauri/src/system/ax.rs"
+      - "src-tauri/src/system/inline_unix.rs"
+      - "src-tauri/src/system/squiggle_overlay.rs"
       - "src-tauri/tauri.macos.conf.json"
       - "src-tauri/tauri.linux.conf.json"
       - ".github/workflows/cross-platform-build.yml"

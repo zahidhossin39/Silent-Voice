@@ -78,7 +78,8 @@ After `cargo build`, whisper DLLs must be copied from `sidecars/` into
 - macOS and Linux build, install, launch, and transcribe — gated by
   `cross-platform-build.yml` (boot + whisper smoke test + signing check).
   Untested there: hotkey/paste, TTS, per-app profiles, the updater. Inline
-  proofreading (squiggles/UIA) is Windows-only by design. See `PORTING.md`.
+  proofreading now exists on all three: UIA on Windows, Accessibility on macOS,
+  AT-SPI on Linux (`inline_unix.rs` over `ax.rs` / `atspi.rs`). See `PORTING.md`.
 
 **Current state:** v0.1.7 released; 0.1.8 prepared locally and unreleased.
 Home gained a 12-week dictation strip in the Status panel (heatmap + days
