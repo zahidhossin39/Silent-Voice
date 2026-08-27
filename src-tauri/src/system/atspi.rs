@@ -114,7 +114,7 @@ macro_rules! sym {
                 return None;
             }
         };
-        unsafe { *s }
+        *s
     }};
 }
 

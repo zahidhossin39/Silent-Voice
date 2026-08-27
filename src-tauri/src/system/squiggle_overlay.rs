@@ -15,6 +15,14 @@
 // swallow a click meant for the app underneath. That also means it cannot
 // receive hover, which is why the suggestion popup is a separate concern.
 
+// Same backend selection as inline_unix: the pointer has to be read from
+// whichever accessibility API this platform uses, in the same screen space the
+// rects came from.
+#[cfg(target_os = "macos")]
+use super::ax as backend;
+#[cfg(target_os = "linux")]
+use super::atspi as backend;
+
 use super::inline_types::SquiggleInfo;
 use tauri::{
     AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder,
@@ -191,7 +199,7 @@ pub fn cursor_over_popup(app: &AppHandle) -> bool {
     let s = size.to_logical::<f64>(scale);
     // A little slack around the edges so the gap between the word and the popup
     // does not count as leaving.
-    match super::ax::cursor_position() {
+    match backend::cursor_position() {
         Some((cx, cy)) => {
             cx >= p.x - 8.0
                 && cx <= p.x + s.width + 8.0
