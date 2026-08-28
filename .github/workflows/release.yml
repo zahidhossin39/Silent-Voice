@@ -76,14 +76,35 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "Silent Voice ${{ github.ref_name }}"
-          releaseBody: "See the assets below to download and install."
+          releaseBody: |
+            Download the installer for your platform below.
+
+            **Windows** — `.exe`. Existing installs update themselves.
+
+            **macOS** — `.dmg`. The app is not notarised yet, so Gatekeeper
+            will refuse it on first launch: right-click the app and choose
+            **Open**, then confirm. Silent Voice also needs Accessibility
+            permission (System Settings > Privacy & Security > Accessibility)
+            or the hotkey and paste do nothing.
+
+            **Linux** — `.deb` or `.AppImage`. X11 only; Wayland cannot allow
+            an app to type into another app. Inline proofreading additionally
+            needs `gsettings set org.gnome.desktop.interface toolkit-accessibility true`.
+
+            macOS and Linux do not auto-update yet — check back here for builds.
           releaseDraft: true
           prerelease: false
-          # Generates/extends latest.json (the updater manifest); each matrix
-          # job adds its own platform entry to the same release.
-          includeUpdaterJson: true
+          # ONLY Windows writes latest.json. Three matrix jobs updating the
+          # same manifest concurrently is a read-modify-write race whose loser
+          # vanishes from the file, and the cost of losing that race is every
+          # existing Windows user silently never seeing another update.
+          # macOS and Linux have no installed base yet, so they ship installers
+          # to download by hand until they do.
+          includeUpdaterJson: ${{ matrix.label == 'Windows' }}
 
+      # Only the updater needs signatures, and only Windows produces them.
       - name: Verify this platform's bundle was actually signed
+        if: matrix.label == 'Windows'
         shell: bash
         run: |
           # tauri build exits 0 even when signing fails, so a missing .sig is

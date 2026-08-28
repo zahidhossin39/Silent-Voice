@@ -21,6 +21,6 @@
       "sidecars/piper/": "piper/",
       "sidecars/sherpa/": "sherpa/"
     },
-    "createUpdaterArtifacts": true
+    "createUpdaterArtifacts": false
   }
 }
