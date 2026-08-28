@@ -11,6 +11,14 @@ import type {
 import { BUILTIN_MODES } from "../services/modes";
 import { isTauri } from "../services/tauriBridge";
 
+// Inline proofreading drives platform accessibility APIs. The Windows path is
+// long-proven; the macOS and Linux ones have never run against real
+// accessibility data, and a fault in that FFI is a segfault rather than a
+// catchable panic — it would take the whole app down with no message. So it
+// starts off there and the user opts in, which also makes any crash clearly
+// attributable to this one feature. Flip this once those paths are proven.
+const INLINE_PROOFREAD_DEFAULT = navigator.userAgent.includes("Windows");
+
 // Mirrors the Tauri global-shortcut parser's accepted main keys (see
 // HotkeyRecorder.tsx's isSupportedMain). Used to sanitize hotkeys loaded
 // from localStorage that predate that validation — without this, a
@@ -50,7 +58,7 @@ const DEFAULT_SETTINGS: Settings = {
   stt_cloud_provider_id: null,
   toggle_mode: true,
   input_sensitivity: 50,
-  inline_proofread: true,
+  inline_proofread: INLINE_PROOFREAD_DEFAULT,
   coedit_enabled: true,
   chunk_on_silence: false,
   proofread_disabled_rules: [],
