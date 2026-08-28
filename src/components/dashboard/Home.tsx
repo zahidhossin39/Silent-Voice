@@ -331,7 +331,7 @@ export default function Home() {
               </QuickControl>
 
               <QuickControl
-                label="Lang"
+                label="Language"
                 hint={
                   !langIgnored
                     ? undefined
@@ -515,11 +515,13 @@ function QuickControl({
   // control itself owns the only border on the row.
   return (
     <div>
-      <div className="grid grid-cols-[3.1rem_minmax(0,1fr)] items-center gap-2">
+      <div className="grid grid-cols-[4.25rem_minmax(0,1fr)] items-center gap-2">
         <span className="text-xs font-medium text-sv-muted">{label}</span>
         {children}
       </div>
-      {hint && <div className="mt-1 pl-[3.6rem] text-[11px] leading-snug text-sv-muted">{hint}</div>}
+      {hint && (
+        <div className="mt-1.5 pl-[4.75rem] text-[11px] leading-snug text-sv-muted">{hint}</div>
+      )}
     </div>
   );
 }

@@ -20,6 +20,7 @@ export default function Select({
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
 
   const options = Children.toArray(children)
     .filter(isValidElement)
@@ -39,6 +40,9 @@ export default function Select({
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") setOpen(false);
     }
+    listRef.current
+      ?.querySelector('[aria-selected="true"]')
+      ?.scrollIntoView({ block: "nearest" });
     window.addEventListener("mousedown", onDocDown);
     window.addEventListener("keydown", onKey);
     return () => {
@@ -56,7 +60,9 @@ export default function Select({
         aria-expanded={open}
         disabled={disabled}
         className={`flex items-center gap-2 rounded-lg border bg-sv-bg px-3 py-1.5 text-sm text-sv-text transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${
-          open ? "border-sv-accent" : "border-sv-border"
+          open
+            ? "border-sv-accent"
+            : "border-sv-border enabled:hover:border-sv-muted/60"
         } ${className}`}
       >
         <span className="min-w-0 flex-1 truncate text-left">{selected?.label ?? value}</span>
@@ -69,7 +75,7 @@ export default function Select({
           strokeWidth="2"
           strokeLinecap="round"
           strokeLinejoin="round"
-          className={`shrink-0 transition-transform ${open ? "rotate-180" : ""}`}
+          className={`shrink-0 text-sv-muted transition-transform ${open ? "rotate-180" : ""}`}
         >
           <path d="m6 9 6 6 6-6" />
         </svg>
@@ -77,6 +83,7 @@ export default function Select({
 
       {open && !disabled && (
         <div
+          ref={listRef}
           role="listbox"
           className="absolute left-0 top-[calc(100%+4px)] z-50 max-h-64 min-w-full overflow-y-auto rounded-lg border border-sv-border bg-sv-surface p-1 shadow-xl"
         >
