@@ -18,7 +18,7 @@ import type {
 import { hfPiperVoices, ttsSpeakText } from "../../services/tauriBridge";
 import HfBrowser, { MetricBar } from "./hf/HfBrowser";
 import ProviderLogo from "../shared/ProviderLogo";
-import { ttsNaturalnessScore, ttsNaturalnessLabel, ttsSpeedScore, ttsSpeedLabel } from "../../services/modelMetrics";
+import { ttsNaturalnessScore, ttsSpeedScore } from "../../services/modelMetrics";
 
 type Tab = "stt" | "llm" | "tts";
 
@@ -318,14 +318,9 @@ function TtsCard({
       ? Math.round((progress.downloaded_bytes / progress.total_bytes) * 100)
       : 0;
   const chip = TTS_QUALITY_CHIP[voice.quality];
-  // Up to 3 action buttons can show at once (Preview + Select + Remove) — wider
-  // than STT/LLM rows (max 2), so this column reserves more fixed width.
-  const [expanded, setExpanded] = useState(false);
 
   return (
     <div
-      onMouseEnter={() => setExpanded(true)}
-      onMouseLeave={() => setExpanded(false)}
       className={`rounded-xl border ${
         active ? "border-sv-accent/40" : "border-sv-border"
       } bg-sv-surface transition-colors duration-75 hover:bg-sv-surface-2/40 px-4 py-3`}
@@ -446,18 +441,6 @@ function TtsCard({
         <button onClick={onTogglePin} title={pinned ? "Unpin" : "Pin to top"} className={`transition-colors duration-75 ${pinned ? "text-sv-accent" : "text-sv-muted/70 hover:text-sv-accent"}`}>
           <svg viewBox="0 0 24 24" width="16" height="16" fill={pinned ? "currentColor" : "none"} stroke={pinned ? "none" : "currentColor"} strokeWidth={pinned ? undefined : "1.75"} strokeLinecap="round" strokeLinejoin="round"><path d="M12 2.5l2.9 6.2 6.6.6-5 4.6 1.4 6.6L12 17l-5.9 3.5L7.5 14l-5-4.6 6.6-.6L12 2.5z" /></svg>
         </button>
-      </div>
-
-      <div
-        className="grid transition-[grid-template-rows] duration-200 ease-out"
-        style={{ gridTemplateRows: expanded ? "1fr" : "0fr" }}
-      >
-        <div className="overflow-hidden">
-          <div className="flex items-center gap-6 border-t border-sv-border pt-2 mt-2 text-[11px] text-sv-muted tabular-nums">
-            <div><span className="mr-1.5 text-sv-muted">naturalness</span>{ttsNaturalnessLabel(voice.quality)}</div>
-            <div><span className="mr-1.5 text-sv-muted">speed</span>{ttsSpeedLabel(voice.quality)}</div>
-          </div>
-        </div>
       </div>
 
       <ConfirmDialog

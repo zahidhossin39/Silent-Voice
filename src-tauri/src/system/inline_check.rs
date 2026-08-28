@@ -43,18 +43,6 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SPIF_SENDCHANGE,
 };
 
-// Squiggling a terminal's scrollback is noise, and password managers are none
-// of our business. Everything else is fair game.
-const IGNORE_EXES: &[&str] = &[
-    "windowsterminal.exe",
-    "conhost.exe",
-    "cmd.exe",
-    "powershell.exe",
-    "pwsh.exe",
-    "keepass.exe",
-    "1password.exe",
-    "bitwarden.exe",
-];
 const MAX_TEXT: i32 = 6000;
 const POLL_MS: u64 = 250;
 // While squiggles are on screen, poll fast so they track typing/scrolling and
@@ -497,8 +485,8 @@ fn poll_once(
             return (Vec::new(), "password field");
         }
         let exe = process_name(pid);
-        if IGNORE_EXES.contains(&exe.as_str()) {
-            return (Vec::new(), "ignored exe");
+        if super::inline_types::is_ignored_app(&exe) {
+            return (Vec::new(), "ignored app");
         }
         // User's own "don't check in these apps" list (lowercase substrings).
         if ignore_apps.iter().any(|a| exe.contains(a.as_str())) {

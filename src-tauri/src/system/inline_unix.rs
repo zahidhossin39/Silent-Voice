@@ -245,6 +245,9 @@ fn poll_once(
     };
 
     let name = backend::app_name(&field);
+    if super::inline_types::is_ignored_app(&name) {
+        return (Vec::new(), "ignored app");
+    }
     if !name.is_empty() && ignore_apps.iter().any(|a| name.contains(a.as_str())) {
         return (Vec::new(), "user-ignored app");
     }
