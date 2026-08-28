@@ -137,6 +137,9 @@ pub async fn transcribe(
     }
 
     let lang = if language.is_empty() { "auto" } else { language };
+    // Both the server and CLI paths below take the vocabulary from here, so the
+    // script guard belongs here rather than at each of them.
+    let vocabulary = prompt_for(lang, vocabulary);
 
     // Fast path: persistent whisper-server keeps the model loaded between
     // dictations. Any failure falls through to the one-shot CLI below.
@@ -200,6 +203,32 @@ pub async fn transcribe(
 
     let text = String::from_utf8_lossy(&output.stdout);
     Ok(clean_output(&text))
+}
+
+/// Whisper takes the custom vocabulary as an initial prompt, and the prompt's
+/// script drags the decoder along with it. A Latin-script prompt against Bangla
+/// speech returns romanised text — "pami bang lati kotaboli" instead of Bengali
+/// — and once greedy decoding compounds that, pure noise. Measured, not
+/// theorised: the same clip and model transcribe correctly the moment the
+/// prompt is dropped.
+///
+/// So the prompt is only passed when it could plausibly belong to the target
+/// language's script. An all-ASCII vocabulary is useless to a non-Latin
+/// language anyway, which makes dropping it free.
+fn prompt_for<'a>(language: &str, vocabulary: &'a str) -> &'a str {
+    // Of the languages this app offers, the ones not written in Latin script.
+    const NON_LATIN: [&str; 10] =
+        ["zh", "hi", "ar", "bn", "ru", "ja", "ko", "th", "uk", "he"];
+    let vocab = vocabulary.trim();
+    if vocab.is_empty() {
+        return "";
+    }
+    // `auto` is left alone: without a resolved language there is nothing to
+    // compare against, and the prompt is what makes English dictation accurate.
+    if NON_LATIN.contains(&language) && vocab.is_ascii() {
+        return "";
+    }
+    vocab
 }
 
 /// Ensure the persistent whisper-server is running with the current settings
@@ -318,6 +347,22 @@ fn strip_pause_ellipsis(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // The bug this guards: an ASCII vocabulary romanised Bangla dictation.
+    #[test]
+    fn ascii_prompt_is_dropped_for_non_latin_languages() {
+        assert_eq!(prompt_for("bn", "claude,"), "");
+        assert_eq!(prompt_for("hi", "Zaid, Tauri"), "");
+        // English and other Latin-script languages still get their vocabulary.
+        assert_eq!(prompt_for("en", "claude,"), "claude,");
+        assert_eq!(prompt_for("de", "claude,"), "claude,");
+        // Unresolved language: nothing to compare against, so keep it.
+        assert_eq!(prompt_for("auto", "claude,"), "claude,");
+        // A vocabulary actually written in the target script is what the prompt
+        // is for, so it survives.
+        assert_eq!(prompt_for("bn", "কথা"), "কথা");
+        assert_eq!(prompt_for("bn", "   "), "");
+    }
 
     #[test]
     fn strips_leading_dialogue_dashes() {
