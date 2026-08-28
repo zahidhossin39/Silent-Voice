@@ -43,6 +43,7 @@ export default function ModelStore() {
 
   // TTS search + language filter.
   const [ttsSearch, setTtsSearch] = useState("");
+  const [ttsFiltersOpen, setTtsFiltersOpen] = useState(false);
   const [ttsLanguage, setTtsLanguage] = useState<string>("all");
   const [piperVoices, setPiperVoices] = useState<PiperVoice[]>([]);
 
@@ -84,9 +85,18 @@ export default function ModelStore() {
     return merged;
   }, [piperVoices]);
 
+  const TTS_PRIORITY_LANGUAGES = ["English", "Bangla", "Bengali", "Arabic"];
   const ttsLanguages = useMemo(() => {
     const set = new Set(allTtsModels.map((v) => v.language));
-    return ["all", ...Array.from(set).sort()];
+    const priorityOf = (l: string) =>
+      TTS_PRIORITY_LANGUAGES.findIndex((p) => l.startsWith(p));
+    const rest = Array.from(set)
+      .filter((l) => priorityOf(l) === -1)
+      .sort();
+    const priority = Array.from(set)
+      .filter((l) => priorityOf(l) !== -1)
+      .sort((a, b) => priorityOf(a) - priorityOf(b));
+    return ["all", ...priority, ...rest];
   }, [allTtsModels]);
 
   // Voices: ACTIVE voice first, then downloaded, then fast → natural (fast
@@ -164,7 +174,7 @@ export default function ModelStore() {
             <strong>Tip:</strong> a voice can only pronounce its own language —
             pick an English voice for English text, a Bangla voice for Bangla.
           </p>
-          <div className="mb-4 flex flex-wrap items-center gap-2">
+          <div className="mb-2 flex flex-wrap items-center gap-2">
             <input
               type="text"
               value={ttsSearch}
@@ -172,19 +182,32 @@ export default function ModelStore() {
               placeholder="Search voices…"
               className="w-52 rounded-lg border border-sv-border bg-sv-bg px-3 py-1.5 text-sm text-sv-text placeholder:text-sv-muted focus:border-sv-accent focus:outline-none"
             />
-            <Select value={ttsLanguage} onChange={setTtsLanguage}>
-              {ttsLanguages.map((l) => (
-                <option key={l} value={l}>
-                  {l === "all" ? "All languages" : l}
-                </option>
-              ))}
-            </Select>
+            <button
+              type="button"
+              onClick={() => setTtsFiltersOpen((o) => !o)}
+              className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition-colors ${ttsFiltersOpen ? "border-sv-accent text-sv-accent" : "border-sv-border text-sv-text hover:border-sv-accent"}`}
+            >
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M4 5h16M7 12h10M10 19h4"/></svg>
+              Filters
+              {ttsLanguage !== "all" && <span className="rounded-full bg-sv-accent px-1.5 text-[10px] font-semibold text-sv-on-accent">1</span>}
+            </button>
             {(ttsSearch || ttsLanguage !== "all") && (
               <span className="text-[11px] text-sv-muted">
                 {sortedTts.length} voice{sortedTts.length === 1 ? "" : "s"}
               </span>
             )}
           </div>
+          {ttsFiltersOpen && (
+            <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-sv-border bg-sv-surface p-3">
+              <Select value={ttsLanguage} onChange={setTtsLanguage}>
+                {ttsLanguages.map((l) => (
+                  <option key={l} value={l}>
+                    {l === "all" ? "All languages" : l}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          )}
           <div className="flex flex-col gap-2 max-w-[1180px]">
             {sortedTts.map((v) => (
               <div key={v.id} className="sv-virtual-row">
@@ -328,16 +351,21 @@ function TtsCard({
           )}
         </div>
 
-        <div className="hidden md:flex w-[172px] shrink-0 flex-col gap-1">
-          <MetricBar label="naturalness" value={ttsNaturalnessScore(voice.quality)} />
-          <MetricBar label="speed" value={ttsSpeedScore(voice.quality)} />
-        </div>
+        {/* metrics + size + actions stay ONE non-wrapping flex group — they
+            used to be three top-level flex-wrap items, and at in-between
+            window widths the action buttons could land crammed right against
+            the size figure once the row ran out of slack for ml-auto. */}
+        <div className="ml-auto flex shrink-0 flex-nowrap items-center gap-4">
+          <div className="hidden md:flex w-[172px] shrink-0 flex-col gap-1">
+            <MetricBar label="naturalness" value={ttsNaturalnessScore(voice.quality)} />
+            <MetricBar label="speed" value={ttsSpeedScore(voice.quality)} />
+          </div>
 
-        <div className="hidden sm:block w-[86px] shrink-0 text-right tabular-nums">
-          <div className="text-[12.5px] font-semibold text-sv-text">{formatMB(voice.size_mb)}</div>
-        </div>
+          <div className="hidden sm:block w-[86px] shrink-0 text-right tabular-nums">
+            <div className="text-[12.5px] font-semibold text-sv-text">{formatMB(voice.size_mb)}</div>
+          </div>
 
-        <div className="ml-auto flex w-[270px] shrink-0 items-center justify-end gap-2">
+          <div className="flex w-[300px] shrink-0 items-center justify-end gap-2">
           <div className="flex shrink-0 items-center gap-2">
             {downloaded && !active && (
               <button
@@ -412,11 +440,12 @@ function TtsCard({
               </button>
             )}
           </div>
-
-          <button onClick={onTogglePin} title={pinned ? "Unpin" : "Pin to top"} className={`transition-colors duration-75 ${pinned ? "text-sv-accent" : "text-sv-muted/70 hover:text-sv-accent"}`}>
-            <svg viewBox="0 0 24 24" width="16" height="16" fill={pinned ? "currentColor" : "none"} stroke={pinned ? "none" : "currentColor"} strokeWidth={pinned ? undefined : "1.75"} strokeLinecap="round" strokeLinejoin="round"><path d="M12 2.5l2.9 6.2 6.6.6-5 4.6 1.4 6.6L12 17l-5.9 3.5L7.5 14l-5-4.6 6.6-.6L12 2.5z" /></svg>
-          </button>
+          </div>
         </div>
+
+        <button onClick={onTogglePin} title={pinned ? "Unpin" : "Pin to top"} className={`transition-colors duration-75 ${pinned ? "text-sv-accent" : "text-sv-muted/70 hover:text-sv-accent"}`}>
+          <svg viewBox="0 0 24 24" width="16" height="16" fill={pinned ? "currentColor" : "none"} stroke={pinned ? "none" : "currentColor"} strokeWidth={pinned ? undefined : "1.75"} strokeLinecap="round" strokeLinejoin="round"><path d="M12 2.5l2.9 6.2 6.6.6-5 4.6 1.4 6.6L12 17l-5.9 3.5L7.5 14l-5-4.6 6.6-.6L12 2.5z" /></svg>
+        </button>
       </div>
 
       <div
