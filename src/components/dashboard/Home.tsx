@@ -4,6 +4,7 @@ import WaveformVisualizer from "../shared/WaveformVisualizer";
 import { buildAccelerator } from "../shared/HotkeyRecorder";
 import { STT_MODELS, LANGUAGES, honorsLanguage } from "../../services/catalog";
 import Select from "../shared/Select";
+import InfoPopover from "../shared/InfoPopover";
 import { useHardwareInfo } from "../../hooks/useHardwareInfo";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useModelStore } from "../../stores/modelStore";
@@ -332,26 +333,30 @@ export default function Home() {
 
               <QuickControl
                 label="Language"
-                hint={
-                  !langIgnored
-                    ? undefined
-                    : langSelfDetects
-                      ? `${activeModel?.label ?? "This model"} detects the language itself, so this setting does not apply.`
-                      : `${activeModel?.label ?? "This model"} only transcribes English — switch to a multilingual model to dictate in another language.`
-                }
               >
-                <Select
-                  value={langSelfDetects ? "auto" : langIgnored ? "en" : settings.language}
-                  onChange={(v) => setSettings({ language: v })}
-                  className="w-full"
-                  disabled={langIgnored}
-                >
-                  {LANGUAGES.map((l) => (
-                    <option key={l.code} value={l.code}>
-                      {l.name}
-                    </option>
-                  ))}
-                </Select>
+                {langIgnored ? (
+                  <InfoPopover
+                    label={langSelfDetects ? "Auto-detect" : "English"}
+                    message={
+                      langSelfDetects
+                        ? "This model figures out the language on its own — there's nothing to pick."
+                        : `${activeModel?.label ?? "This model"} only understands English. Pick a different model to dictate in another language.`
+                    }
+                    className="w-full"
+                  />
+                ) : (
+                  <Select
+                    value={settings.language}
+                    onChange={(v) => setSettings({ language: v })}
+                    className="w-full"
+                  >
+                    {LANGUAGES.map((l) => (
+                      <option key={l.code} value={l.code}>
+                        {l.name}
+                      </option>
+                    ))}
+                  </Select>
+                )}
               </QuickControl>
             </div>
           </div>

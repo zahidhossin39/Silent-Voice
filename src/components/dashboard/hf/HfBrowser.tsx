@@ -147,9 +147,16 @@ export default function HfBrowser({ track }: { track: "llm" | "stt" }) {
   const [language, setLanguage] = useState<string>("all");
   const [filtersOpen, setFiltersOpen] = useState(false);
 
+  // English, Bangla, Arabic lead the list — the app's biggest audiences —
+  // then everything else alphabetically.
+  const PRIORITY_LANGUAGES = ["English", "Bengali", "Arabic"];
   const languages = useMemo(() => {
     const set = new Set(STT_MODELS.map(sttLanguage));
-    return ["all", ...Array.from(set).sort()];
+    const rest = Array.from(set)
+      .filter((l) => !PRIORITY_LANGUAGES.includes(l))
+      .sort();
+    const priority = PRIORITY_LANGUAGES.filter((l) => set.has(l));
+    return ["all", ...priority, ...rest];
   }, []);
 
   // Search state
