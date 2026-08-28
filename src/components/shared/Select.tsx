@@ -9,11 +9,13 @@ export default function Select({
   value,
   onChange,
   className = "",
+  disabled = false,
   children,
 }: {
   value: string;
   onChange: (v: string) => void;
   className?: string;
+  disabled?: boolean;
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -52,11 +54,12 @@ export default function Select({
         onClick={() => setOpen((o) => !o)}
         aria-haspopup="listbox"
         aria-expanded={open}
-        className={`flex items-center gap-2 rounded-lg border bg-sv-bg px-3 py-1.5 text-sm text-sv-text transition-colors ${
+        disabled={disabled}
+        className={`flex items-center gap-2 rounded-lg border bg-sv-bg px-3 py-1.5 text-sm text-sv-text transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${
           open ? "border-sv-accent" : "border-sv-border"
         } ${className}`}
       >
-        <span className="flex-1 text-left">{selected?.label ?? value}</span>
+        <span className="min-w-0 flex-1 truncate text-left">{selected?.label ?? value}</span>
         <svg
           viewBox="0 0 24 24"
           width="12"
@@ -72,7 +75,7 @@ export default function Select({
         </svg>
       </button>
 
-      {open && (
+      {open && !disabled && (
         <div
           role="listbox"
           className="absolute left-0 top-[calc(100%+4px)] z-50 max-h-64 min-w-full overflow-y-auto rounded-lg border border-sv-border bg-sv-surface p-1 shadow-xl"

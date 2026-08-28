@@ -16,6 +16,16 @@ export function isSherpaEngine(engine: SttModel["engine"]): boolean {
   );
 }
 
+// Whether a model actually uses the Language setting. Sherpa engines
+// (Moonshine, SenseVoice, Parakeet) ignore it outright — the transcribe path
+// never passes it — and Whisper's .en models only ever emit English. Picking a
+// language for any of these is a silent no-op, which is exactly how dictating
+// Bangla comes back as fluent English: the setting looked applied and was not.
+export function honorsLanguage(model?: SttModel): boolean {
+  if (!model) return true;
+  return !isSherpaEngine(model.engine) && model.multilingual;
+}
+
 export const STT_MODELS: SttModel[] = [
   // ── Tiny ──────────────────────────────────────────────────
   {
@@ -198,6 +208,44 @@ export const STT_MODELS: SttModel[] = [
     multilingual: true,
     preset: "multilingual",
     best_for: "Good accuracy multilingual",
+  },
+
+  // ── Bangla (community fine-tunes) ─────────────────────────
+  // Whisper fine-tuned on Bengali audio. Generic multilingual Whisper already
+  // handles Bangla as one of 99 languages; these trade that breadth for depth,
+  // so pick them only when dictating Bangla. Quantised (q5_0 / q4_0), which is
+  // why they are far smaller than the OpenAI models of the same architecture.
+  // Both are community uploads, not first-party — verified as real whisper.cpp
+  // ggml with the multilingual vocab, but their accuracy is unmeasured here.
+  {
+    id: "bangla-small",
+    file: "ggml-bangla-small.bin",
+    url: "https://huggingface.co/afridee/banglaasr-ggml/resolve/main/ggml-whisper-small-bangla-q5_0.bin",
+    family: "Whisper",
+    provider: "Bangla Speech Processing",
+    label: "Bangla Small (Bengali)",
+    size_mb: 167,
+    ram_mb: 1024,
+    speed_label: "~3x realtime",
+    wer: "unmeasured",
+    multilingual: true,
+    preset: "multilingual",
+    best_for: "Bengali dictation, small download",
+  },
+  {
+    id: "bangla-medium",
+    file: "ggml-bangla-medium.bin",
+    url: "https://huggingface.co/SayedShaun/bengali-whisper-medium-ggml/resolve/main/ggml-model-q4_0.bin",
+    family: "Whisper",
+    provider: "SayedShaun",
+    label: "Bangla Medium (Bengali)",
+    size_mb: 424,
+    ram_mb: 2662,
+    speed_label: "~1x realtime",
+    wer: "unmeasured",
+    multilingual: true,
+    preset: "multilingual",
+    best_for: "Bengali dictation, best accuracy",
   },
 
   // ── Medium ────────────────────────────────────────────────

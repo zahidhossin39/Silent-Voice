@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import WaveformVisualizer from "../shared/WaveformVisualizer";
 import { buildAccelerator } from "../shared/HotkeyRecorder";
-import { STT_MODELS, LANGUAGES } from "../../services/catalog";
+import { STT_MODELS, LANGUAGES, honorsLanguage } from "../../services/catalog";
+import Select from "../shared/Select";
 import { useHardwareInfo } from "../../hooks/useHardwareInfo";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useModelStore } from "../../stores/modelStore";
@@ -62,6 +63,12 @@ export default function Home() {
   useEffect(() => {
     accessibilityGranted().then(setAccessibilityOk);
   }, []);
+
+  // A model that ignores the Language setting must not present a live language
+  // control — that silent mismatch is what made Bangla come back as English.
+  const activeModel = STT_MODELS.find((m) => m.id === settings.active_stt_model);
+  const langIgnored = !honorsLanguage(activeModel);
+  const langSelfDetects = langIgnored && Boolean(activeModel?.multilingual);
 
   const sttPass = downloadedStt.size > 0 && Boolean(settings.active_stt_model) && downloadedStt.has(settings.active_stt_model);
   const sttValue = settings.active_stt_model
@@ -303,16 +310,12 @@ export default function Home() {
                     : undefined
                 }
               >
-                <select
+                <Select
                   value={settings.active_stt_model}
-                  onChange={(e) =>
-                    setSettings({
-                      active_stt_model: e.target.value,
-                      stt_cloud_provider_id: null,
-                    })
+                  onChange={(v) =>
+                    setSettings({ active_stt_model: v, stt_cloud_provider_id: null })
                   }
-                  disabled={downloadedModels.length === 0}
-                  className="min-w-0 flex-1 truncate bg-transparent py-2 pr-2 text-sm font-medium focus:outline-none disabled:opacity-50"
+                  className="w-full"
                 >
                   {!downloadedModels.some((m) => m.id === settings.active_stt_model) && (
                     <option value={settings.active_stt_model}>
@@ -324,21 +327,31 @@ export default function Home() {
                       {m.label}
                     </option>
                   ))}
-                </select>
+                </Select>
               </QuickControl>
 
-              <QuickControl label="Lang">
-                <select
-                  value={settings.language}
-                  onChange={(e) => setSettings({ language: e.target.value })}
-                  className="min-w-0 flex-1 truncate bg-transparent py-2 pr-2 text-sm font-medium focus:outline-none"
+              <QuickControl
+                label="Lang"
+                hint={
+                  !langIgnored
+                    ? undefined
+                    : langSelfDetects
+                      ? `${activeModel?.label ?? "This model"} detects the language itself, so this setting does not apply.`
+                      : `${activeModel?.label ?? "This model"} only transcribes English — switch to a multilingual model to dictate in another language.`
+                }
+              >
+                <Select
+                  value={langSelfDetects ? "auto" : langIgnored ? "en" : settings.language}
+                  onChange={(v) => setSettings({ language: v })}
+                  className="w-full"
+                  disabled={langIgnored}
                 >
                   {LANGUAGES.map((l) => (
                     <option key={l.code} value={l.code}>
                       {l.name}
                     </option>
                   ))}
-                </select>
+                </Select>
               </QuickControl>
             </div>
           </div>
@@ -498,14 +511,15 @@ function QuickControl({
   hint?: string;
   children: React.ReactNode;
 }) {
-  // Label sits inside the control so each row costs one line, not two.
+  // Label beside the control, on a fixed column so both rows line up and the
+  // control itself owns the only border on the row.
   return (
     <div>
-      <div className="flex items-center gap-2 rounded-lg border border-sv-border bg-sv-bg pl-3 focus-within:ring-1 focus-within:ring-sv-accent">
-        <span className="shrink-0 text-xs font-medium text-sv-muted">{label}</span>
+      <div className="grid grid-cols-[3.1rem_minmax(0,1fr)] items-center gap-2">
+        <span className="text-xs font-medium text-sv-muted">{label}</span>
         {children}
       </div>
-      {hint && <div className="mt-1 text-[11px] text-sv-muted">{hint}</div>}
+      {hint && <div className="mt-1 pl-[3.6rem] text-[11px] leading-snug text-sv-muted">{hint}</div>}
     </div>
   );
 }

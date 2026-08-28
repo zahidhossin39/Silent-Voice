@@ -104,6 +104,16 @@ pub async fn transcribe(
         if !registry::sherpa_stt_installed(model_id) {
             return Err(format!("model '{model_id}' is not downloaded"));
         }
+        // Say so out loud: this engine drops the language, so "I picked Bangla
+        // and got English" has an answer in the log instead of being a mystery.
+        if !language.is_empty() && language != "auto" && language != "en" {
+            crate::logging::log_info(
+                "stt",
+                &format!(
+                    "model '{model_id}' runs on sherpa-onnx, which ignores the language setting —                      '{language}' not applied"
+                ),
+            );
+        }
         let app = app.clone();
         let audio_path = audio_path.to_string();
         let model_id = model_id.to_string();
@@ -114,6 +124,10 @@ pub async fn transcribe(
         .map_err(|e| e.to_string())?;
     }
 
+    crate::logging::log_info(
+        "stt",
+        &format!("whisper: model '{model_id}', language '{language}'"),
+    );
     let model_path = registry::model_path(model_id);
     if !model_path.exists() {
         return Err(format!(
