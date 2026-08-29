@@ -188,6 +188,9 @@ pub struct AppState {
     pub sherpa_stt: Mutex<Option<(String, Arc<system::sherpa_stt::SherpaSttEngine>)>>,
     pub segmenter: Arc<audio::segmenter::Segmenter>,
     pub last_stt_use: Mutex<Option<std::time::Instant>>,
+    /// Set once the frontend has pushed the real settings. Preload waits for it,
+    /// otherwise it races startup and warms the default model instead of yours.
+    pub config_pushed: AtomicBool,
     /// True only when the user explicitly hid the overlay (menu/tray). The
     /// keep-alive loop respects this and won't force it back.
     pub overlay_hidden: AtomicBool,
@@ -400,6 +403,9 @@ fn update_runtime_config(
     cfg.stt_api_key = stt_api_key;
     cfg.stt_cloud_model = stt_cloud_model;
     cfg.use_gpu = use_gpu;
+    state
+        .config_pushed
+        .store(true, std::sync::atomic::Ordering::Relaxed);
     Ok(())
 }
 
@@ -1249,7 +1255,19 @@ pub fn run() {
 
             let handle_stt = app.handle().clone();
             tauri::async_runtime::spawn(async move {
-                tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                // Give the frontend up to 30s to push the real settings, then
+                // warm whatever model it named. Falls through on timeout so a
+                // frontend that never reports still gets the default warmed.
+                for _ in 0..120 {
+                    tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+                    if handle_stt
+                        .state::<AppState>()
+                        .config_pushed
+                        .load(std::sync::atomic::Ordering::Relaxed)
+                    {
+                        break;
+                    }
+                }
                 let _ = transcription::whisper::preload(&handle_stt).await;
                 loop {
                     tokio::time::sleep(std::time::Duration::from_secs(30)).await;

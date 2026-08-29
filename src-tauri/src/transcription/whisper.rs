@@ -368,6 +368,10 @@ pub async fn preload(app: &AppHandle) -> Result<(), String> {
             cfg.stt_source.clone(),
         )
     };
+    crate::logging::log_info(
+        "stt",
+        &format!("preload starting: model '{model_id}', source '{stt_source}'"),
+    );
     if stt_source != "local" {
         return Ok(());
     }
@@ -405,11 +409,13 @@ pub async fn preload(app: &AppHandle) -> Result<(), String> {
             return Ok(());
         }
         let app_clone = app.clone();
+        let id = model_id.clone();
         let _ = tokio::task::spawn_blocking(move || {
-            let _ = crate::system::sherpa_stt::ensure_engine(&app_clone, &model_id, threads);
+            let _ = crate::system::sherpa_stt::ensure_engine(&app_clone, &id, threads);
         })
         .await;
     }
+    crate::logging::log_info("stt", &format!("preloaded model '{model_id}'"));
     Ok(())
 }
 
