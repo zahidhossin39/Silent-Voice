@@ -91,6 +91,16 @@ pub struct RuntimeConfig {
     pub append_trailing_space: bool,
     pub save_audio: bool,
     pub audio_clip_limit: usize,
+    pub model_unload_minutes: u32,
+}
+
+/// Whether the idle reaper should free the STT model now. `minutes == 0` is the
+/// "Never" setting, and a dictation in progress always wins over the timer.
+fn should_unload(idle_secs: Option<u64>, minutes: u32, recording: bool) -> bool {
+    if minutes == 0 || recording {
+        return false;
+    }
+    idle_secs.is_some_and(|s| s >= minutes as u64 * 60)
 }
 
 /// One per-app profile rule, fully resolved by the frontend.
@@ -142,6 +152,7 @@ impl Default for RuntimeConfig {
             append_trailing_space: false,
             save_audio: true,
             audio_clip_limit: 20,
+            model_unload_minutes: 0,
         }
     }
 }
@@ -176,6 +187,7 @@ pub struct AppState {
     /// or thread count changes.
     pub sherpa_stt: Mutex<Option<(String, Arc<system::sherpa_stt::SherpaSttEngine>)>>,
     pub segmenter: Arc<audio::segmenter::Segmenter>,
+    pub last_stt_use: Mutex<Option<std::time::Instant>>,
     /// True only when the user explicitly hid the overlay (menu/tray). The
     /// keep-alive loop respects this and won't force it back.
     pub overlay_hidden: AtomicBool,
@@ -418,6 +430,7 @@ fn set_behavior(
     chunk_on_silence: bool,
     save_audio: bool,
     audio_clip_limit: usize,
+    model_unload_minutes: u32,
 ) -> Result<(), String> {
     let mut cfg = state.config.lock().map_err(|e| e.to_string())?;
     cfg.toggle_mode = toggle_mode;
@@ -425,6 +438,7 @@ fn set_behavior(
     cfg.inline_proofread = inline_proofread;
     cfg.high_performance = high_performance;
     cfg.performance_threads = performance_threads;
+    cfg.model_unload_minutes = model_unload_minutes;
     cfg.proofread_disabled_rules = proofread_disabled_rules;
     cfg.gector_sensitivity = gector_sensitivity;
     cfg.proofread_ignore_apps = proofread_ignore_apps
@@ -1232,6 +1246,44 @@ pub fn run() {
                     coedit::unload_if_idle(std::time::Duration::from_secs(180));
                 }
             });
+
+            let handle_stt = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                let _ = transcription::whisper::preload(&handle_stt).await;
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+                    let state = handle_stt.state::<AppState>();
+                    let minutes = match state.config.lock() {
+                        Ok(c) => c.model_unload_minutes,
+                        Err(_) => continue,
+                    };
+                    let recording = match state.recorder.lock() {
+                        Ok(r) => r.is_some(),
+                        Err(_) => continue,
+                    };
+                    let mut last_use = match state.last_stt_use.lock() {
+                        Ok(l) => l,
+                        Err(_) => continue,
+                    };
+                    let idle_secs = last_use.map(|t| t.elapsed().as_secs());
+                    if !should_unload(idle_secs, minutes, recording) {
+                        continue;
+                    }
+                    // Cleared so the next tick can't fire again before a dictation
+                    // reloads the model and stamps a fresh timestamp.
+                    *last_use = None;
+                    drop(last_use);
+                    if let Ok(mut server) = state.whisper_server.lock() {
+                        server.stop();
+                    }
+                    if let Ok(mut sherpa) = state.sherpa_stt.lock() {
+                        *sherpa = None;
+                    }
+                    crate::logging::log_info("stt", "idle timeout reached, unloaded STT model");
+                }
+            });
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -1323,4 +1375,24 @@ pub fn run() {
                 system::inline_check::reset_screen_reader();
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_unload;
+
+    #[test]
+    fn never_setting_and_active_dictation_keep_the_model() {
+        // 0 = "Never", regardless of how long it has been idle.
+        assert!(!should_unload(Some(86_400), 0, false));
+        // Recording in progress outranks an expired timer.
+        assert!(!should_unload(Some(86_400), 5, true));
+        // Nothing transcribed yet, so nothing to free.
+        assert!(!should_unload(None, 5, false));
+        // Not idle long enough.
+        assert!(!should_unload(Some(299), 5, false));
+        // Exactly at, and past, the threshold.
+        assert!(should_unload(Some(300), 5, false));
+        assert!(should_unload(Some(7_200), 60, false));
+    }
 }

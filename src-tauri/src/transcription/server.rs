@@ -24,9 +24,18 @@ pub struct WhisperServer {
     child: Option<Child>,
     /// model|language|vocab|gpu|threads — any change requires a restart.
     key: Option<String>,
+    ready: bool,
 }
 
 impl WhisperServer {
+    pub fn is_ready(&self) -> bool {
+        self.ready
+    }
+
+    pub fn mark_ready(&mut self) {
+        self.ready = true;
+    }
+
     pub fn is_running(&mut self, key: &str) -> bool {
         if self.key.as_deref() != Some(key) {
             return false;
@@ -108,6 +117,7 @@ impl WhisperServer {
         }
         self.child = Some(child);
         self.key = Some(key.to_string());
+        self.ready = false;
         Ok(())
     }
 
@@ -117,6 +127,7 @@ impl WhisperServer {
             let _ = child.wait();
         }
         self.key = None;
+        self.ready = false;
     }
 }
 

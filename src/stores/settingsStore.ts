@@ -81,6 +81,7 @@ const DEFAULT_SETTINGS: Settings = {
   history_retention_custom_unit: "days",
   save_audio: true,
   audio_clip_limit: 20,
+  model_unload_minutes: 0,
   popup_theme: "violet",
 
   popup_surface: "dark",

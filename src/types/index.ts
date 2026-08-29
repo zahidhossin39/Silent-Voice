@@ -233,6 +233,7 @@ export interface Settings {
   history_retention_custom_unit: "hours" | "days" | "weeks" | "months";
   save_audio: boolean;      // keep a copy of the audio for each dictation
   audio_clip_limit: number; // how many recordings to keep
+  model_unload_minutes: number; // idle minutes before the STT model is freed; 0 = never
   popup_theme: PopupTheme;  // accent palette for the inline-proofread suggestion popup
 
   popup_surface: PopupSurface;  // card background for the inline-proofread popup

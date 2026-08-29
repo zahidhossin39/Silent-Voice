@@ -512,6 +512,33 @@ const SHERPA_TARGET_SEG_SECS: usize = 12;
 /// ~2 s model load happens only once. Synchronous/CPU-bound — callers should
 /// run it on a blocking thread. `threads` is baked into the recognizer, so a
 /// change re-loads it; switching model_id also reloads.
+pub fn ensure_engine(app: &tauri::AppHandle, model_id: &str, threads: u32) -> Result<std::sync::Arc<SherpaSttEngine>, String> {
+    use tauri::Manager;
+    let state = app.state::<crate::AppState>();
+    let mut slot = state.sherpa_stt.lock().map_err(|e| e.to_string())?;
+    let key = format!("{model_id}|{threads}");
+    let hit = slot.as_ref().is_some_and(|(k, _)| *k == key);
+    if !hit {
+        let dir = crate::models::registry::stt_model_dir(model_id);
+        let eng = std::sync::Arc::new(
+            match crate::models::registry::stt_engine(model_id) {
+                crate::models::registry::SttEngine::SenseVoice => {
+                    SherpaSttEngine::load_sense_voice(&dir, threads as i32, "auto")?
+                }
+                crate::models::registry::SttEngine::Transducer => {
+                    SherpaSttEngine::load_transducer(&dir, threads as i32)?
+                }
+                crate::models::registry::SttEngine::Moonshine => {
+                    SherpaSttEngine::load_moonshine(&dir, threads as i32)?
+                }
+                crate::models::registry::SttEngine::Whisper => unreachable!(),
+            },
+        );
+        *slot = Some((key, eng));
+    }
+    Ok(slot.as_ref().unwrap().1.clone())
+}
+
 pub fn transcribe_file(
     app: &tauri::AppHandle,
     audio_path: &str,
@@ -521,36 +548,13 @@ pub fn transcribe_file(
     use tauri::Manager;
     let samples = read_wav_mono_f32(Path::new(audio_path))?;
 
-    let (engine, sensitivity) = {
-        let state = app.state::<crate::AppState>();
-        let sensitivity = state
-            .config
-            .lock()
-            .map(|c| c.input_sensitivity)
-            .unwrap_or(50);
-        let mut slot = state.sherpa_stt.lock().map_err(|e| e.to_string())?;
-        let key = format!("{model_id}|{threads}");
-        let hit = slot.as_ref().is_some_and(|(k, _)| *k == key);
-        if !hit {
-            let dir = crate::models::registry::stt_model_dir(model_id);
-            let eng = std::sync::Arc::new(
-                match crate::models::registry::stt_engine(model_id) {
-                    crate::models::registry::SttEngine::SenseVoice => {
-                        SherpaSttEngine::load_sense_voice(&dir, threads as i32, "auto")?
-                    }
-                    crate::models::registry::SttEngine::Transducer => {
-                        SherpaSttEngine::load_transducer(&dir, threads as i32)?
-                    }
-                    crate::models::registry::SttEngine::Moonshine => {
-                        SherpaSttEngine::load_moonshine(&dir, threads as i32)?
-                    }
-                    crate::models::registry::SttEngine::Whisper => unreachable!(),
-                },
-            );
-            *slot = Some((key, eng));
-        }
-        (slot.as_ref().unwrap().1.clone(), sensitivity)
-    };
+    let engine = ensure_engine(app, model_id, threads)?;
+    let sensitivity = app
+        .state::<crate::AppState>()
+        .config
+        .lock()
+        .map(|c| c.input_sensitivity)
+        .unwrap_or(50);
 
     let sr = crate::audio::capture::WHISPER_SAMPLE_RATE as usize;
     if samples.len() <= SHERPA_MAX_WHOLE_SECS * sr {

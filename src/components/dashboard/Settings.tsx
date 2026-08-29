@@ -28,10 +28,18 @@ import type { DeviceRecommendation } from "../../types";
 import HotkeyRecorder from "../shared/HotkeyRecorder";
 import { checkForUpdatesManual } from "../../services/updater";
 import type { Settings } from "../../types";
+import Select from "../shared/Select";
 
 export default function Settings() {
   const settings = useSettingsStore((s) => s.settings);
   const setSettings = useSettingsStore((s) => s.setSettings);
+
+  const PREDEFINED_UNLOADS = [0, 5, 15, 30, 60, 120];
+  const [isCustomUnload, setIsCustomUnload] = useState(!PREDEFINED_UNLOADS.includes(settings.model_unload_minutes));
+  const [customUnloadVal, setCustomUnloadVal] = useState(
+    PREDEFINED_UNLOADS.includes(settings.model_unload_minutes) ? "" : settings.model_unload_minutes.toString()
+  );
+  const [customUnloadUnit, setCustomUnloadUnit] = useState("Minutes");
 
   // Toggle ON = rule active = NOT in the disabled list.
   const toggleProofreadRule = (rule: string, enabled: boolean) => {
@@ -930,6 +938,68 @@ export default function Settings() {
                 </div>
               );
             })()}
+          <Row
+            label="Unload model when idle"
+            info="Keeping the model loaded makes dictation instant, but uses system memory. Unloading it frees memory, but your next dictation will take a few seconds to start while the model reloads."
+          >
+            <div className="flex flex-col items-end gap-2">
+              <Select
+                value={isCustomUnload ? "custom" : String(settings.model_unload_minutes)}
+                onChange={(v) => {
+                  if (v === "custom") {
+                    setIsCustomUnload(true);
+                  } else {
+                    setIsCustomUnload(false);
+                    setSettings({ model_unload_minutes: Number(v) });
+                  }
+                }}
+                className="w-40"
+              >
+                <option value="0">Never</option>
+                <option value="5">5 minutes</option>
+                <option value="15">15 minutes</option>
+                <option value="30">30 minutes</option>
+                <option value="60">1 hour</option>
+                <option value="120">2 hours</option>
+                <option value="custom">Custom</option>
+              </Select>
+              {isCustomUnload && (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min="1"
+                    value={customUnloadVal}
+                    onChange={(e) => {
+                      setCustomUnloadVal(e.target.value);
+                      const n = parseInt(e.target.value, 10);
+                      if (!isNaN(n)) {
+                        setSettings({
+                          model_unload_minutes: customUnloadUnit === "Hours" ? n * 60 : n,
+                        });
+                      }
+                    }}
+                    className="w-20 rounded-lg border border-sv-border bg-sv-bg px-3 py-1.5 text-sm transition-colors focus:border-sv-accent focus:outline-none"
+                  />
+                  <Select
+                    value={customUnloadUnit}
+                    onChange={(v) => {
+                      setCustomUnloadUnit(v);
+                      const n = parseInt(customUnloadVal, 10);
+                      if (!isNaN(n)) {
+                        setSettings({
+                          model_unload_minutes: v === "Hours" ? n * 60 : n,
+                        });
+                      }
+                    }}
+                    className="w-[104px]"
+                  >
+                    <option value="Minutes">Minutes</option>
+                    <option value="Hours">Hours</option>
+                  </Select>
+                </div>
+              )}
+            </div>
+          </Row>
         </Section>
         </Cat>
 

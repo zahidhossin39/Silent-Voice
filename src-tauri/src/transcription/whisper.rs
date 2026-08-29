@@ -95,6 +95,10 @@ pub async fn transcribe(
     vocabulary: &str,
     use_gpu: bool,
 ) -> Result<String, String> {
+    if let Ok(mut lock) = app.state::<crate::AppState>().last_stt_use.lock() {
+        *lock = Some(std::time::Instant::now());
+    }
+
     // Sherpa-onnx models (Moonshine, SenseVoice) are directories, not ggml .bin
     // files, and run through a different engine. Route them before the whisper
     // path. `vocabulary`/`use_gpu` don't apply (CPU, no prompt-biasing hook);
@@ -246,23 +250,27 @@ async fn transcribe_via_server(
 ) -> Result<String, String> {
     use tauri::Manager;
     let key = format!("{model_id}|{lang}|{}|{use_gpu}|{threads}", vocabulary.trim());
-    let started = {
+    let ready = {
         let state = app.state::<crate::AppState>();
         let mut server = state.whisper_server.lock().map_err(|e| e.to_string())?;
-        if server.is_running(&key) {
-            false
-        } else {
+        if !server.is_running(&key) {
             server.start(model_path, &key, threads, lang, vocabulary, use_gpu)?;
-            true
         }
+        server.is_ready()
     };
     // First load of a big model takes a while; a warm server answers instantly.
-    let timeout = if started {
+    // A preloaded server might be running but still loading its model.
+    let timeout = if !ready {
         std::time::Duration::from_secs(120)
     } else {
         std::time::Duration::from_secs(5)
     };
     super::server::wait_ready(timeout).await?;
+    if !ready {
+        if let Ok(mut server) = app.state::<crate::AppState>().whisper_server.lock() {
+            server.mark_ready();
+        }
+    }
     super::server::transcribe(std::path::Path::new(audio_path)).await
 }
 
@@ -342,6 +350,67 @@ fn strip_pause_ellipsis(text: &str) -> String {
         prev_space = false;
     }
     result
+}
+
+pub async fn preload(app: &AppHandle) -> Result<(), String> {
+    let (model_id, language, vocabulary, use_gpu, high_performance, performance_threads, stt_source) = {
+        let state = app.state::<crate::AppState>();
+        let Ok(cfg) = state.config.lock() else {
+            return Ok(());
+        };
+        (
+            cfg.model_id.clone(),
+            cfg.language.clone(),
+            cfg.vocabulary.clone(),
+            cfg.use_gpu,
+            cfg.high_performance,
+            cfg.performance_threads,
+            cfg.stt_source.clone(),
+        )
+    };
+    if stt_source != "local" {
+        return Ok(());
+    }
+
+    let threads = crate::system::hotkey::resolve_thread_count(high_performance, performance_threads);
+    let lang = if language.is_empty() { "auto" } else { &language };
+
+    if registry::stt_engine(&model_id) == registry::SttEngine::Whisper {
+        let model_path = registry::model_path(&model_id);
+        if !model_path.exists() {
+            return Ok(());
+        }
+        let key = format!("{model_id}|{lang}|{}|{use_gpu}|{threads}", vocabulary.trim());
+        let ready = {
+            let state = app.state::<crate::AppState>();
+            let Ok(mut server) = state.whisper_server.lock() else {
+                return Ok(());
+            };
+            if !server.is_running(&key) {
+                let _ = server.start(&model_path, &key, threads, lang, &vocabulary, use_gpu);
+            }
+            server.is_ready()
+        };
+        if !ready
+            && super::server::wait_ready(std::time::Duration::from_secs(120))
+                .await
+                .is_ok()
+        {
+            if let Ok(mut server) = app.state::<crate::AppState>().whisper_server.lock() {
+                server.mark_ready();
+            }
+        }
+    } else {
+        if !registry::sherpa_stt_installed(&model_id) {
+            return Ok(());
+        }
+        let app_clone = app.clone();
+        let _ = tokio::task::spawn_blocking(move || {
+            let _ = crate::system::sherpa_stt::ensure_engine(&app_clone, &model_id, threads);
+        })
+        .await;
+    }
+    Ok(())
 }
 
 #[cfg(test)]

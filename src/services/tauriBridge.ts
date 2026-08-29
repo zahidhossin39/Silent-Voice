@@ -235,7 +235,8 @@ export async function setBehavior(
   coeditEnabled: boolean,
   chunkOnSilence: boolean,
   saveAudio: boolean,
-  audioClipLimit: number
+  audioClipLimit: number,
+  modelUnloadMinutes: number
 ): Promise<void> {
   if (!isTauri()) return;
   try {
@@ -254,6 +255,7 @@ export async function setBehavior(
       chunkOnSilence,
       saveAudio,
       audioClipLimit,
+      modelUnloadMinutes,
     });
   } catch (e) {
     console.warn("set_behavior failed", e);
