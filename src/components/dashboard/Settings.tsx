@@ -425,7 +425,7 @@ export default function Settings() {
             </Row>
           )}
           <Row
-            label="Inline proofreading"
+            label="Proofread as you type"
             info="Underlines spelling and grammar mistakes right where you type — in almost any Windows app, not just this one — the way a word processor does. Click an underline to see fixes. Runs entirely on your device and is English-only for now."
             hint="Red/blue underlines beneath spelling & grammar mistakes as you type in any app (English only)"
           >

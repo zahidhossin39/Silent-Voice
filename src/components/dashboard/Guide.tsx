@@ -79,7 +79,7 @@ export default function Guide() {
           <hr className="border-sv-border/50" />
 
           <section>
-            <SectionTitle title="Inline proofreading" accent="var(--color-sv-sec-vocab)" icon={<BookIcon />} />
+            <SectionTitle title="Proofread as you type" accent="var(--color-sv-sec-vocab)" icon={<BookIcon />} />
             <div className="flex flex-col md:flex-row md:items-start gap-8">
               <div className="flex-1">
                 <p className="text-base text-sv-muted max-w-[65ch] mb-8 leading-relaxed">
@@ -90,7 +90,7 @@ export default function Guide() {
                   <div className="pt-2 space-y-2.5">
                     <p className="text-xs text-sv-muted flex items-center gap-2">
                       <span className="shrink-0 text-sv-muted"><CogIcon /></span>
-                      <span>Can be turned off in <strong className="text-sv-text font-medium">Settings → Grammar → 'Inline proofreading'</strong>.</span>
+                      <span>Can be turned off in <strong className="text-sv-text font-medium">Settings → Grammar → 'Proofread as you type'</strong>.</span>
                     </p>
                     <p className="text-xs text-sv-muted flex items-center gap-2">
                       <span className="shrink-0 text-sv-muted"><BookIcon /></span>

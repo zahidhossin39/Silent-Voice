@@ -11,13 +11,13 @@ import type {
 import { BUILTIN_MODES } from "../services/modes";
 import { isTauri } from "../services/tauriBridge";
 
-// Inline proofreading drives platform accessibility APIs. The Windows path is
-// long-proven; the macOS and Linux ones have never run against real
-// accessibility data, and a fault in that FFI is a segfault rather than a
-// catchable panic — it would take the whole app down with no message. So it
-// starts off there and the user opts in, which also makes any crash clearly
-// attributable to this one feature. Flip this once those paths are proven.
-const INLINE_PROOFREAD_DEFAULT = navigator.userAgent.includes("Windows");
+// Proofread-as-you-type puts underlines in OTHER apps' text fields, which is
+// too invasive to switch on for someone who never asked for it — dictation is
+// what they installed this for. It also drives platform accessibility APIs
+// whose macOS/Linux paths have never run against real accessibility data, and
+// a fault in that FFI is a segfault rather than a catchable panic. Opt-in on
+// every platform keeps both problems the user's choice.
+const INLINE_PROOFREAD_DEFAULT = false;
 
 // Mirrors the Tauri global-shortcut parser's accepted main keys (see
 // HotkeyRecorder.tsx's isSupportedMain). Used to sanitize hotkeys loaded

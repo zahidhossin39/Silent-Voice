@@ -19,6 +19,9 @@ export default function Select({
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
+  // A row near the bottom of the page has no room for a downward popup, and the
+  // window clips it — the list looks like it only holds the selected option.
+  const [dropUp, setDropUp] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -39,6 +42,12 @@ export default function Select({
     }
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") setOpen(false);
+    }
+    const rect = rootRef.current?.getBoundingClientRect();
+    if (rect) {
+      // 264 = max-h-64 popup + the 4px gap.
+      const below = window.innerHeight - rect.bottom;
+      setDropUp(below < 264 && rect.top > below);
     }
     listRef.current
       ?.querySelector('[aria-selected="true"]')
@@ -85,7 +94,9 @@ export default function Select({
         <div
           ref={listRef}
           role="listbox"
-          className="absolute left-0 top-[calc(100%+4px)] z-50 max-h-64 min-w-full overflow-y-auto rounded-lg border border-sv-border bg-sv-surface p-1 shadow-xl"
+          className={`absolute left-0 z-50 max-h-64 min-w-full overflow-y-auto rounded-lg border border-sv-border bg-sv-surface p-1 shadow-xl ${
+            dropUp ? "bottom-[calc(100%+4px)]" : "top-[calc(100%+4px)]"
+          }`}
         >
           {options.map((o) => (
             <button

@@ -136,7 +136,7 @@ impl Default for RuntimeConfig {
             mode_api_key: String::new(),
             toggle_mode: true,
             input_sensitivity: 50,
-            inline_proofread: true,
+            inline_proofread: false,
             coedit_enabled: true,
             chunk_on_silence: false,
             high_performance: false,
