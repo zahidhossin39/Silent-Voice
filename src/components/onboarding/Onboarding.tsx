@@ -21,6 +21,7 @@ import type { DeviceRecommendation, HardwareInfo, SttPreset } from "../../types"
 const CHOICES: { id: string; tagline: string; preset: SttPreset }[] = [
   { id: "tiny.en", tagline: "Fastest — best for older PCs and laptops", preset: "speed" },
   { id: "base.en", tagline: "Good balance of speed and accuracy", preset: "balanced" },
+  { id: "parakeet-tdt-0.6b-v2", tagline: "Fast and highly accurate English", preset: "accuracy" },
   { id: "distil-small.en", tagline: "Fast + accurate English — runs fast even on CPU", preset: "accuracy" },
   { id: "distil-large-v3.5", tagline: "Most accurate English — wants a GPU", preset: "accuracy" },
   { id: "small", tagline: "For dictating in other languages", preset: "multilingual" },
@@ -30,12 +31,12 @@ const CHOICES: { id: string; tagline: string; preset: SttPreset }[] = [
 // CPU power) — NOT how much RAM the machine has. Most laptops/PCs have no
 // dedicated GPU, so the default lean is toward the fast small models.
 function recommendId(hw: HardwareInfo | null): string {
-  if (!hw) return "base.en";
+  if (!hw) return "parakeet-tdt-0.6b-v2";
   const vram = hw.gpu_vram_gb ?? 0;
   if (vram >= 4) return "distil-large-v3.5"; // real dedicated GPU
-  if (vram >= 2) return "distil-small.en";
-  // CPU-only (integrated/shared graphics): speed comes from the CPU alone.
-  if (hw.logical_cores >= 12) return "base.en";
+  // Parakeet is light (640MB, ~1.4GB RAM) and fast even on CPU alone, so it's
+  // the default reach for anything past a bare-minimum machine.
+  if (vram >= 2 || hw.logical_cores >= 4) return "parakeet-tdt-0.6b-v2";
   return "tiny.en";
 }
 
