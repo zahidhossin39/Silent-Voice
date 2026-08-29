@@ -483,8 +483,56 @@ export default function Settings() {
                   const pct = gectorProgress && gectorProgress.total_bytes > 0
                     ? Math.round((gectorProgress.downloaded_bytes / gectorProgress.total_bytes) * 100)
                     : 0;
-                  if (downloading) {
-                    return <span className="text-xs text-sv-muted">Downloading… {pct}%</span>;
+                  const gectorPaused = gectorProgress?.status === "paused";
+                  if (downloading || gectorPaused) {
+                    return (
+                      <div className="flex items-center gap-1.5">
+                        <div className="flex w-28 items-center gap-2">
+                          <div className="h-1.5 flex-1 overflow-hidden rounded-full border border-sv-border bg-sv-surface-2">
+                            {!gectorProgress || gectorProgress.total_bytes === 0 ? (
+                              <div className="h-full w-1/3 rounded-full bg-sv-accent animate-[sv-indeterminate_1.1s_ease-in-out_infinite]" />
+                            ) : (
+                              <div className={`h-full rounded-full transition-all duration-75 ${gectorPaused ? "bg-sv-muted" : "bg-sv-accent"}`} style={{ width: `${pct}%` }} />
+                            )}
+                          </div>
+                          <span className="w-9 shrink-0 text-right tabular-nums text-[11px] text-sv-muted">
+                            {gectorPaused ? "Paused" : !gectorProgress || gectorProgress.total_bytes === 0 ? "…" : `${pct}%`}
+                          </span>
+                        </div>
+                        {gectorPaused ? (
+                          <button
+                            onClick={async () => {
+                              setGectorFetching(true);
+                              try {
+                                const ok = await downloadGectorModel(gectorVariant);
+                                if (ok) setGectorReady(await gectorInstalled());
+                              } finally {
+                                setGectorFetching(false);
+                              }
+                            }}
+                            title="Resume download" aria-label="Resume download"
+                            className="p-1 text-sv-muted transition-colors duration-75 hover:text-sv-text"
+                          >
+                            <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => pauseDownload("gector")}
+                            title="Pause download" aria-label="Pause download"
+                            className="p-1 text-sv-muted transition-colors duration-75 hover:text-sv-text"
+                          >
+                            <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1" /><rect x="14" y="4" width="4" height="16" rx="1" /></svg>
+                          </button>
+                        )}
+                        <button
+                          onClick={() => cancelDownload("gector")}
+                          title="Cancel download" aria-label="Cancel download"
+                          className="p-1 text-sv-muted transition-colors duration-75 hover:text-sv-bad"
+                        >
+                          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
+                        </button>
+                      </div>
+                    );
                   }
                   return (
                     <div className="flex items-center gap-2">

@@ -1,5 +1,23 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Silent Voice",
+        "width": 980,
+        "height": 700,
+        "minWidth": 820,
+        "minHeight": 560,
+        "resizable": true,
+        "visible": true,
+        "center": true,
+        "decorations": true,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true
+      }
+    ]
+  },
   "bundle": {
     "targets": [
       "app",

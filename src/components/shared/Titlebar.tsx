@@ -4,6 +4,11 @@ import { isTauri } from "../../services/tauriBridge";
 
 const appWindow = isTauri() ? getCurrentWindow() : null;
 
+// macOS gets its own native traffic-light buttons (titleBarStyle "Overlay" in
+// tauri.macos.conf.json) drawn over the top-left of this bar, so our own
+// minimize/maximize/close row would just be a second, wrong-looking set.
+const isMac = navigator.userAgent.includes("Mac") && !navigator.userAgent.includes("Mobile");
+
 export function Titlebar() {
   const [maximized, setMaximized] = useState(false);
 
@@ -17,6 +22,15 @@ export function Titlebar() {
       unlisten.then((f) => f());
     };
   }, []);
+
+  if (isMac) {
+    return (
+      <div
+        data-tauri-drag-region
+        className="h-10 w-full shrink-0 select-none bg-sv-surface transition-colors"
+      />
+    );
+  }
 
   return (
     <div
