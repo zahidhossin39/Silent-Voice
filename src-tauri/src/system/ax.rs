@@ -60,6 +60,7 @@ const kAXValueCFRangeType: u32 = 4;
 #[link(name = "ApplicationServices", kind = "framework")]
 extern "C" {
     fn AXUIElementCreateSystemWide() -> AXUIElementRef;
+    fn AXUIElementCreateApplication(pid: i32) -> AXUIElementRef;
     fn AXUIElementCopyAttributeValue(
         element: AXUIElementRef,
         attribute: CFStringRef,
@@ -127,7 +128,7 @@ unsafe fn element_rect(el: AXUIElementRef) -> Option<(f64, f64, f64, f64)> {
 
 /// Roles that are unambiguously editable text. Anything else has to prove it.
 fn role_is_editable(role: &str) -> bool {
-    matches!(role, "AXTextField" | "AXTextArea" | "AXComboBox")
+    matches!(role, "AXTextField" | "AXTextArea" | "AXComboBox" | "AXSearchField")
 }
 
 /// The focused editable field, borrowed for the duration of one poll.
@@ -150,12 +151,78 @@ impl Drop for Field {
     }
 }
 
+/// Pids already asked to expose their accessibility tree.
+static ENABLED_APPS: std::sync::Mutex<Option<std::collections::HashSet<i32>>> =
+    std::sync::Mutex::new(None);
+
+/// Chromium and Electron (Discord, Slack, WhatsApp, VS Code, Chrome, Brave) build no
+/// accessibility tree until an assistive app asks for one, so their text fields are
+/// invisible until this runs. Electron documents AXManualAccessibility for exactly this;
+/// Chromium also honours AXEnhancedUserInterface. Harmless on apps that support neither -
+/// they just return an unsupported-attribute error.
+///
+/// The tree is built asynchronously, so the poll that enables an app usually still sees
+/// nothing; the next one succeeds.
+unsafe fn enable_app_accessibility(app: AXUIElementRef) {
+    let mut pid: i32 = 0;
+    if AXUIElementGetPid(app, &mut pid) != kAXErrorSuccess {
+        return;
+    }
+
+    {
+        // A poisoned lock must not permanently disable the feature, so a failed
+        // lock just means this app is asked again on the next poll.
+        let Ok(mut apps) = ENABLED_APPS.lock() else {
+            return;
+        };
+        if apps
+            .get_or_insert_with(std::collections::HashSet::new)
+            .contains(&pid)
+        {
+            return;
+        }
+    }
+
+    let app_el = AXUIElementCreateApplication(pid);
+    if app_el.is_null() {
+        return;
+    }
+    // Recorded only once the element exists, so a failed create is retried
+    // rather than marking the app done forever.
+    if let Ok(mut apps) = ENABLED_APPS.lock() {
+        apps.get_or_insert_with(std::collections::HashSet::new).insert(pid);
+    }
+
+    let ax_manual = CFString::new("AXManualAccessibility");
+    let ax_enhanced = CFString::new("AXEnhancedUserInterface");
+    let true_val = core_foundation::boolean::CFBoolean::true_value();
+
+    AXUIElementSetAttributeValue(
+        app_el,
+        ax_manual.as_concrete_TypeRef(),
+        true_val.as_concrete_TypeRef() as CFTypeRef,
+    );
+    AXUIElementSetAttributeValue(
+        app_el,
+        ax_enhanced.as_concrete_TypeRef(),
+        true_val.as_concrete_TypeRef() as CFTypeRef,
+    );
+
+    CFRelease(app_el);
+}
+
 pub fn focused_field() -> Result<Field, &'static str> {
     unsafe {
         let sys = AXUIElementCreateSystemWide();
         if sys.is_null() {
             return Err("no system-wide element");
         }
+
+        if let Some(app) = copy_attr(sys, "AXFocusedApplication") {
+            enable_app_accessibility(app as AXUIElementRef);
+            CFRelease(app);
+        }
+
         let focused = copy_attr(sys, "AXFocusedUIElement");
         CFRelease(sys);
         let el = focused.ok_or("no focused element")? as AXUIElementRef;
