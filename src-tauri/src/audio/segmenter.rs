@@ -244,7 +244,8 @@ async fn transcribe_chunk(
     capture::write_wav(&path, &trimmed)?;
     // Always local: the caller only starts this worker for local STT, since
     // chunking a paid cloud endpoint would multiply the request count.
-    whisper::transcribe_dispatch(
+    let t = std::time::Instant::now();
+    let res = whisper::transcribe_dispatch(
         app,
         &path,
         &cfg.model_id,
@@ -257,7 +258,19 @@ async fn transcribe_chunk(
         "",
         "",
     )
-    .await
+    .await;
+    let audio_secs = trimmed.len() as f64 / 16000.0;
+    let ms = t.elapsed().as_millis();
+    let ratio = if audio_secs > 0.0 {
+        ms as f64 / (audio_secs * 1000.0)
+    } else {
+        0.0
+    };
+    crate::logging::log_info(
+        "stt",
+        &format!("chunk: {audio_secs:.2}s audio, {ms}ms decode, ratio {ratio:.2}"),
+    );
+    res
 }
 
 #[cfg(test)]

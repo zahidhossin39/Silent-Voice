@@ -650,6 +650,7 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
     // Sentences already transcribed in the background while the key was held,
     // and how much of the clip they cover. Empty unless chunking actually fired.
     let (prefix, tail_start) = seg.prefix();
+    let t_pipeline = std::time::Instant::now();
     let chunked = !prefix.trim().is_empty();
 
     // Only the audio nobody has transcribed yet. Without chunking that is the
@@ -689,6 +690,7 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
             // the resident whisper-server (in case IT wedged) and recover to idle.
             let clip_secs = clip.len() / crate::audio::capture::WHISPER_SAMPLE_RATE as usize;
             let budget = std::time::Duration::from_secs(180 + clip_secs as u64 * 3);
+            let t_tail = std::time::Instant::now();
             let dispatch = whisper::transcribe_dispatch(
                 &app,
                 &wav_path,
@@ -703,7 +705,20 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
                 &stt_cloud_model,
             );
             match tokio::time::timeout(budget, dispatch).await {
-                Ok(Ok(t)) => t,
+                Ok(Ok(t)) => {
+                    let audio_secs = clip_secs as f64;
+                    let ms = t_tail.elapsed().as_millis();
+                    let ratio = if audio_secs > 0.0 {
+                        ms as f64 / (audio_secs * 1000.0)
+                    } else {
+                        0.0
+                    };
+                    crate::logging::log_info(
+                        "stt",
+                        &format!("tail: {audio_secs:.2}s audio, {ms}ms decode, ratio {ratio:.2}"),
+                    );
+                    t
+                }
                 Ok(Err(e)) => {
                     report_error(&app, "stt", &e);
                     // pill stays visible; just return to idle state
@@ -792,6 +807,11 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
     // Paste the processed (or raw) text at the cursor. When the trailing-space
     // toggle is on, append one space just for the paste (history keeps the
     // clean text) so the next dictation has a gap before it.
+    let ms = t_pipeline.elapsed().as_millis();
+    crate::logging::log_info(
+        "stt",
+        &format!("pipeline total: {ms}ms from release to paste (chunked: {chunked})"),
+    );
     let mut pasted_ok = false;
     if !processed_text.is_empty() {
         let append_space = app
