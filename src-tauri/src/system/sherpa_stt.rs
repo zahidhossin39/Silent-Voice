@@ -581,8 +581,19 @@ pub fn transcribe_file(
     }
 
     let mut parts: Vec<String> = Vec::new();
-    for (start, end) in segs {
+    for (seg_idx, (start, end)) in segs.into_iter().enumerate() {
+        let t0 = std::time::Instant::now();
         let mut text = engine.transcribe(&samples[start..end])?;
+        let elapsed = t0.elapsed();
+        let audio_seconds = (end - start) as f64 / sr as f64;
+        let decode_ms = elapsed.as_millis();
+        let ratio = decode_ms as f64 / (audio_seconds * 1000.0);
+        crate::logging::log_info(
+            "sherpa_stt",
+            &format!(
+                "segment {seg_idx}: {audio_seconds:.2}s audio, {decode_ms}ms decode, ratio {ratio:.2}"
+            ),
+        );
         // 2) Never drop silently. A non-trivial span that comes back empty was
         // almost certainly clipped mid-word — retry with ~1 s of lead-in so the
         // model has a running start. Any duplicated words at the join are

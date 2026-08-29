@@ -769,10 +769,6 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
         raw_text.clone()
     };
 
-    // Apply user text-replacement snippets (spoken trigger → inserted text)
-    // to the final transcript, right before pasting.
-    let processed_text = apply_replacements(&processed_text, &replacements);
-
     // Deterministic structure pass — turns spoken commands ("new line",
     // "new paragraph", "bullet point", "number one"…) into real breaks and
     // list markers, and cleans capitalization. Runs for EVERY mode, so Raw
@@ -780,14 +776,18 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
     let processed_text = textfmt::structure_text(&processed_text);
 
     // Smart number formatting ("twenty five percent" → "25%") — always on.
-    // Runs after replacements so digits inside replacement output are
-    // untouched, and PER LINE because format_numbers joins on spaces and would
-    // otherwise flatten the line breaks structure_text just added.
+    // PER LINE because format_numbers joins on spaces and would otherwise
+    // flatten the line breaks structure_text just added.
     let processed_text = processed_text
         .split('\n')
         .map(textfmt::format_numbers)
         .collect::<Vec<_>>()
         .join("\n");
+
+    // Apply user text-replacement snippets (spoken trigger → inserted text)
+    // LAST, after every formatting pass — the replacement text is pasted
+    // exactly as the user typed it, never capitalized or renumbered.
+    let processed_text = apply_replacements(&processed_text, &replacements);
 
     // Paste the processed (or raw) text at the cursor. When the trailing-space
     // toggle is on, append one space just for the paste (history keeps the
