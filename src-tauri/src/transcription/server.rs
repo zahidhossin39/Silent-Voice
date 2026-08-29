@@ -9,13 +9,10 @@ use std::time::{Duration, Instant};
 
 pub const WHISPER_PORT: u16 = 8090;
 
-/// whisper-server sits next to the app executable, beside the whisper
-/// DLLs (bundle.resources maps sidecars/whisper-server → app root).
+/// whisper-server sits in the bundled-resource root beside the whisper DLLs —
+/// next to the executable on Windows/Linux, Contents/Resources on macOS.
 fn server_exe() -> PathBuf {
-    std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|d| d.to_path_buf()))
-        .unwrap_or_default()
+    crate::system::paths::bundled_dir()
         .join(if cfg!(windows) { "whisper-server.exe" } else { "whisper-server" })
 }
 

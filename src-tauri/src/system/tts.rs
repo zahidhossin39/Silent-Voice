@@ -45,10 +45,7 @@ pub struct TtsState {
 }
 
 fn exe_dir() -> PathBuf {
-    std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|d| d.to_path_buf()))
-        .unwrap_or_default()
+    crate::system::paths::bundled_dir()
 }
 
 fn piper_exe() -> PathBuf {

@@ -1,3 +1,4 @@
+pub mod paths;
 pub mod accessibility;
 // Inline proofreading off Windows: one watcher (inline_unix) over two
 // accessibility backends, drawing into a transparent Tauri window. The Windows

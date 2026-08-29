@@ -8,9 +8,7 @@ use ort::init_from;
 /// Note that ort's environment is a process-wide OnceLock, so calling this from several modules
 /// is harmless — only the first call actually initialises it.
 pub fn ensure_runtime() -> Option<()> {
-    let exe_dir = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|d| d.to_path_buf()))?;
+    let exe_dir = crate::system::paths::bundled_dir();
     let dll_path = [Some(exe_dir.as_path()), exe_dir.parent()]
         .into_iter()
         .flatten()

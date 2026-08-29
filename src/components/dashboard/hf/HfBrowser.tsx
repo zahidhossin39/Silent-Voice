@@ -45,11 +45,18 @@ function parseQuant(filename: string): string {
   return match ? match[1].toUpperCase() : "GGUF";
 }
 
+// macOS and Linux report most RAM as "used" because page cache counts as used,
+// even though the OS hands it back on demand. Judging fit on available memory
+// alone therefore marks every model too heavy on those platforms.
+function usableRamGb(hw: HardwareInfo): number {
+  return Math.max(hw.available_ram_gb, hw.total_ram_gb * 0.5);
+}
+
 function getFit(sizeBytes: number, hw: HardwareInfo | null) {
   if (!hw) return null;
   const estRamGb = (sizeBytes / (1024 * 1024 * 1024)) * 1.2;
-  if (estRamGb < hw.available_ram_gb * 0.8) return "good";
-  if (estRamGb < hw.available_ram_gb) return "warn";
+  if (estRamGb < usableRamGb(hw) * 0.8) return "good";
+  if (estRamGb < usableRamGb(hw)) return "warn";
   return "bad";
 }
 
@@ -62,8 +69,8 @@ function estimateFitFromParams(params_b: number | null, hw: HardwareInfo | null,
   }
   if (p === null) return null;
   const estRamGb = p * 0.6 * 1.2;
-  if (estRamGb < hw.available_ram_gb * 0.8) return "good";
-  if (estRamGb < hw.available_ram_gb) return "warn";
+  if (estRamGb < usableRamGb(hw) * 0.8) return "good";
+  if (estRamGb < usableRamGb(hw)) return "warn";
   return "bad";
 }
 
@@ -498,8 +505,8 @@ function SttRow({
   const estRamGb = model.ram_mb / 1024;
   let level = "good";
   if (hardware) {
-    if (estRamGb > hardware.available_ram_gb) level = "bad";
-    else if (estRamGb > hardware.available_ram_gb * 0.8) level = "warn";
+    if (estRamGb > usableRamGb(hardware)) level = "bad";
+    else if (estRamGb > usableRamGb(hardware) * 0.8) level = "warn";
   }
 
   const isDownloading = progress?.status === "downloading";

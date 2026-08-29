@@ -12,13 +12,9 @@ use std::time::{Duration, Instant};
 
 pub const LLAMA_PORT: u16 = 8088;
 
-/// Directory holding llama-server.exe + its DLLs (next to the app executable).
+/// Directory holding llama-server.exe + its DLLs, inside the bundled-resource root.
 fn engine_dir() -> PathBuf {
-    std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|d| d.to_path_buf()))
-        .unwrap_or_default()
-        .join("llama")
+    crate::system::paths::bundled_dir().join("llama")
 }
 
 fn server_exe() -> PathBuf {

@@ -148,10 +148,7 @@ static LIB: OnceLock<Result<Library, String>> = OnceLock::new();
 
 pub(crate) fn lib() -> Result<&'static Library, String> {
     LIB.get_or_init(|| {
-        let dir = std::env::current_exe()
-            .ok()
-            .and_then(|p| p.parent().map(|d| d.join("sherpa")))
-            .ok_or("cannot locate exe dir")?;
+        let dir = crate::system::paths::bundled_dir().join("sherpa");
         // Pre-load OUR onnxruntime.dll by absolute path FIRST. Without this,
         // Windows resolves the c-api DLL's `onnxruntime.dll` import through
         // the normal search order and can pick up an incompatible copy (e.g.

@@ -23,7 +23,7 @@ pub fn create_overlay(app: &AppHandle) -> tauri::Result<()> {
     if app.get_webview_window(OVERLAY_LABEL).is_some() {
         return Ok(());
     }
-    let win = WebviewWindowBuilder::new(
+    let builder = WebviewWindowBuilder::new(
         app,
         OVERLAY_LABEL,
         WebviewUrl::App("index.html?view=overlay".into()),
@@ -36,8 +36,16 @@ pub fn create_overlay(app: &AppHandle) -> tauri::Result<()> {
     .shadow(false)
     .resizable(false)
     .focused(false)
-    .visible(false)
-    .build()?;
+    .visible(false);
+
+    // Windows stays opaque on purpose: a transparent always-on-top WebView2 window
+    // goes invisible on some hardware (see CLAUDE.md hard rule 1). macOS and Linux
+    // use WKWebView/WebKitGTK, where transparency works and is the only way to get
+    // the pill's rounded corners - round_corners() is Windows-only.
+    #[cfg(not(windows))]
+    let builder = builder.transparent(true);
+
+    let win = builder.build()?;
 
     let saved_pos: Option<(i32, i32)> = (|| {
         let path = dirs::config_dir()?.join("SilentVoice").join("overlay-pos.json");
