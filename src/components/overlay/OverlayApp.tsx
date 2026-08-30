@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import RecordingOverlay from "./RecordingOverlay";
 import {
   listenEvent,
@@ -165,7 +165,6 @@ function Notepad({
   level: number;
   startedAt: number;
 }) {
-  const bodyRef = useRef<HTMLDivElement>(null);
   const [elapsed, setElapsed] = useState(0);
 
   useEffect(() => {
@@ -174,12 +173,6 @@ function Notepad({
     return () => clearInterval(id);
   }, [startedAt]);
 
-  // Keep the newest line in view as text accumulates.
-  useEffect(() => {
-    const el = bodyRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [lines]);
-
   const words = lines.reduce((n, l) => n + l.split(/\s+/).filter(Boolean).length, 0);
   const mins = Math.floor(elapsed / 60);
   const secs = (elapsed % 60).toString().padStart(2, "0");
@@ -187,8 +180,7 @@ function Notepad({
   return (
     <div className="flex h-full w-full flex-col px-3 pt-2">
       <div
-        ref={bodyRef}
-        className="min-h-0 flex-1 overflow-y-auto text-[11.5px] leading-[1.5] text-[#e9ebee] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        className="flex min-h-0 flex-1 flex-col justify-end overflow-hidden text-[11.5px] leading-[1.5] text-[#e9ebee]"
         style={{
           WebkitMaskImage: "linear-gradient(180deg, transparent 0, #000 18px, #000 100%)",
           maskImage: "linear-gradient(180deg, transparent 0, #000 18px, #000 100%)",
@@ -197,7 +189,7 @@ function Notepad({
         {lines.map((line, i) => (
           <p
             key={i}
-            className={`m-0 mb-0.5 ${i === lines.length - 1 ? "text-[#e9ebee]" : "text-[#7b8496]"}`}
+            className={`m-0 mb-0.5 flex-none ${i === lines.length - 1 ? "text-[#e9ebee]" : "text-[#7b8496]"}`}
           >
             {line}
           </p>
