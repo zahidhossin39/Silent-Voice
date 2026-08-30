@@ -1,5 +1,6 @@
 import { useState } from "react";
 import Page from "../shared/Page";
+import ThemeSwitch from "../shared/ThemeSwitch";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { APP_THEMES } from "../../services/appThemes";
 import type { PopupTheme, PopupSurface } from "../../types";
@@ -88,6 +89,7 @@ export default function Theme() {
   const popupTheme = useSettingsStore((s) => s.settings.popup_theme);
   const popupSurface = useSettingsStore((s) => s.settings.popup_surface);
   const appTheme = useSettingsStore((s) => s.settings.app_theme);
+  const theme = useSettingsStore((s) => s.settings.theme);
   const setSettings = useSettingsStore((s) => s.setSettings);
   const accent = PALETTES.find((p) => p.id === popupTheme) ?? PALETTES[0];
   const surfaceTokens = SURFACES[popupSurface] ?? SURFACES.dark;
@@ -97,6 +99,30 @@ export default function Theme() {
       title="Theme"
       subtitle="Give Silent Voice its color. The app accent recolors the whole window and the dictation pill live; below it you can style the grammar-suggestion popup separately."
     >
+      {/* Appearance leads the page: it is the setting people come to Theme
+          looking for, and it used to live in Settings → System where nobody
+          found it. The sidebar footer carries the same switch for quick access. */}
+      <section className="mb-10">
+        <h2 className="mb-1 text-sm font-medium text-sv-text">Appearance</h2>
+        <p className="mb-4 text-xs text-sv-muted">
+          Light or dark for the whole window. Also available any time from the
+          bottom of the sidebar.
+        </p>
+        <div className="flex items-center gap-4 rounded-xl border border-sv-border bg-sv-surface px-4 py-3.5">
+          <ThemeSwitch />
+          <div className="min-w-0">
+            <div className="text-sm font-medium text-sv-text">
+              {theme === "light" ? "Light" : "Dark"}
+            </div>
+            <div className="text-xs text-sv-muted">
+              {theme === "light"
+                ? "Bright surfaces — best in a well-lit room."
+                : "Dim surfaces — easier at night and on long sessions."}
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* App accent — selecting one applies instantly across the app, so this
           page itself is the live preview. */}
       <section className="mb-10">

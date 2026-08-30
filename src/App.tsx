@@ -33,6 +33,7 @@ import {
   ThemeIcon,
 } from "./components/shared/NavIcons";
 import { Titlebar } from "./components/shared/Titlebar";
+import ThemeSwitch from "./components/shared/ThemeSwitch";
 
 const NAV = [
   { to: "/home", label: "Home", Icon: HomeIcon },
@@ -184,8 +185,13 @@ function Dashboard() {
             {installing ? "Updating…" : `Update available${updateVersion ? ` (v${updateVersion})` : ""}`}
           </button>
         )}
-        <div className="px-5 py-4 text-[11px] text-sv-muted">
-          {version ? `v${version}` : "Silent Voice"} · offline-ready
+        {/* The footer row was a version string nobody acts on. The theme
+            switch earns that space; the version keeps its place beside it. */}
+        <div className="flex items-center justify-between gap-3 border-t border-sv-border px-4 py-3">
+          <ThemeSwitch />
+          <span className="truncate text-[11px] text-sv-muted">
+            {version ? `v${version}` : "Silent Voice"}
+          </span>
         </div>
       </aside>
 

@@ -303,3 +303,107 @@ body {
     transform: none;
   }
 }
+
+/* ── Theme switch (sidebar footer + Theme page) ────────────────────────────
+   The moon CONTRACTS into the sun's core rather than swapping icons, so the
+   whole transition happens inside one 22px slot and nothing can clip against
+   the track. Rays live inside that slot too — drawn outward from the centre
+   at a radius that stops exactly at the slot edge.
+
+   Colours describe the STATE (night vs day), not the app theme, so the pill
+   reads the same in both. Only the two track fills lighten for light mode,
+   where the sidebar behind them is white. */
+.sv-theme-sw {
+  --sv-sw-night: #0c1017;
+  --sv-sw-day: #2e2416;
+  position: relative;
+  width: 56px;
+  height: 28px;
+  flex: none;
+  padding: 0;
+  cursor: pointer;
+  overflow: hidden;
+  border-radius: 999px;
+  border: 1px solid #2f3644;
+  background: var(--sv-sw-night);
+  -webkit-tap-highlight-color: transparent;
+  transition: background 520ms cubic-bezier(.22, 1, .28, 1),
+              border-color 520ms cubic-bezier(.22, 1, .28, 1);
+}
+html.theme-light .sv-theme-sw {
+  --sv-sw-night: #1c2331;
+  --sv-sw-day: #5a4520;
+  border-color: #3d4658;
+}
+.sv-theme-sw[data-on="light"] { background: var(--sv-sw-day); border-color: #57431f; }
+html.theme-light .sv-theme-sw[data-on="light"] { border-color: #8a6a2e; }
+
+.sv-theme-sw .sv-sw-stars { position: absolute; inset: 0; pointer-events: none; }
+.sv-theme-sw .sv-sw-stars b {
+  position: absolute; border-radius: 50%; background: #c6d1e6; width: 2px; height: 2px;
+  transition: opacity 340ms ease, transform 480ms cubic-bezier(.22, 1, .28, 1);
+}
+.sv-theme-sw .sv-sw-stars b:nth-child(1) { left: 32px; top: 8px; }
+.sv-theme-sw .sv-sw-stars b:nth-child(2) { left: 41px; top: 15px; width: 1.5px; height: 1.5px; }
+.sv-theme-sw .sv-sw-stars b:nth-child(3) { left: 37px; top: 5px; width: 1.5px; height: 1.5px; }
+.sv-theme-sw .sv-sw-stars b:nth-child(4) { left: 45px; top: 9px; width: 1.5px; height: 1.5px; opacity: .7; }
+.sv-theme-sw[data-on="light"] .sv-sw-stars b { opacity: 0; transform: translateY(-3px) scale(.3); }
+
+.sv-theme-sw .sv-sw-slot {
+  position: absolute; top: 2px; left: 2px; width: 22px; height: 22px;
+  transition: transform 560ms cubic-bezier(.34, 1.4, .4, 1);
+}
+.sv-theme-sw[data-on="light"] .sv-sw-slot { transform: translateX(28px); }
+
+.sv-theme-sw .sv-sw-body {
+  position: absolute; inset: 0; border-radius: 50%; overflow: hidden;
+  background: radial-gradient(circle at 34% 30%, #ffffff, #d3dcec 62%, #aab6cb);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .55), inset 0 0 0 .5px rgba(255, 255, 255, .35);
+  transition: transform 520ms cubic-bezier(.22, 1, .28, 1), background 520ms ease, box-shadow 520ms ease;
+}
+.sv-theme-sw[data-on="light"] .sv-sw-body {
+  background: radial-gradient(circle at 36% 30%, #ffe7b0, #ffc25c 58%, #f59f2b);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .45), 0 0 12px 2px rgba(255, 183, 77, .32),
+              inset 0 0 0 .5px rgba(255, 255, 255, .4);
+  transform: scale(.545);
+}
+.sv-theme-sw:active .sv-sw-body { transform: scaleX(.86) scaleY(1.04); }
+.sv-theme-sw[data-on="light"]:active .sv-sw-body { transform: scale(.545) scaleX(.86); }
+
+/* Clipped by the body's own circle — that is what makes the crescent. */
+.sv-theme-sw .sv-sw-shade {
+  position: absolute; width: 22px; height: 22px; border-radius: 50%; top: -7px; left: 7px;
+  background: var(--sv-sw-night);
+  transition: transform 520ms cubic-bezier(.22, 1, .28, 1), background 520ms;
+}
+.sv-theme-sw[data-on="light"] .sv-sw-shade {
+  transform: translate(15px, -15px) scale(.35);
+  background: var(--sv-sw-day);
+}
+
+.sv-theme-sw .sv-sw-rays { position: absolute; inset: 0; pointer-events: none; }
+.sv-theme-sw .sv-sw-rays i {
+  position: absolute; left: 50%; top: 0; width: 1.7px; height: 4px; margin-left: -.85px;
+  border-radius: 1px; background: #ffca6e;
+  transform-origin: 50% 11px;
+  transform: rotate(var(--a)) scaleY(0);
+  opacity: 0;
+  transition: transform 420ms cubic-bezier(.22, 1.5, .35, 1) calc(var(--i) * 26ms),
+              opacity 260ms ease calc(var(--i) * 26ms);
+}
+.sv-theme-sw[data-on="light"] .sv-sw-rays i { transform: rotate(var(--a)) scaleY(1); opacity: 1; }
+
+.sv-theme-sw .sv-sw-bloom {
+  position: absolute; inset: 0; border-radius: 999px; pointer-events: none; opacity: 0;
+  background: radial-gradient(circle at 76% 50%, rgba(255, 190, 90, .5), transparent 62%);
+}
+.sv-theme-sw.sv-sw-pulse .sv-sw-bloom { animation: sv-sw-bloom 620ms cubic-bezier(.22, 1, .28, 1); }
+@keyframes sv-sw-bloom {
+  0% { opacity: 0; transform: scale(.5); }
+  40% { opacity: 1; }
+  100% { opacity: 0; transform: scale(1.25); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sv-theme-sw, .sv-theme-sw * { transition-duration: 1ms !important; animation-duration: 1ms !important; }
+}
