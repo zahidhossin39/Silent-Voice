@@ -12,7 +12,7 @@
 
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
 
 use crate::audio::{capture, vad};
 use crate::models::registry;
@@ -205,7 +205,6 @@ pub fn spawn(app: AppHandle, seg: Arc<Segmenter>, cfg: ChunkCfg, generation: usi
                         return;
                     }
                     seg.commit(generation, text.trim(), cut);
-                    let _ = app.emit("pipeline://transcript", text.trim().to_string());
                     pending.drain(..cut);
                     mask.drain(..cut_frame);
                     analyzed -= cut;
