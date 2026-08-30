@@ -40,10 +40,10 @@ export default function OverlayApp() {
   const [startedAt, setStartedAt] = useState(0);
 
   const ttsControls = (tts === "speaking" || tts === "paused") && state === "idle";
-  // The notepad is earned, not announced: it opens on the first committed chunk
-  // and closes the moment recording ends, so it never covers the user's work
-  // while they are reading the result.
-  const notepad = state === "recording" && lines.length > 0 && !menuOpen && !ttsControls;
+  // Opens the instant recording starts, not on the first committed chunk: the
+  // panel is the feedback that dictation is live, and waiting for a chunk means
+  // several silent seconds where the user cannot tell it is working at all.
+  const notepad = state === "recording" && !menuOpen && !ttsControls;
 
   // Opaque dark fill (this window is the pill; DWM rounds its corners).
   useEffect(() => {
@@ -186,14 +186,18 @@ function Notepad({
           maskImage: "linear-gradient(180deg, transparent 0, #000 18px, #000 100%)",
         }}
       >
-        {lines.map((line, i) => (
-          <p
-            key={i}
-            className={`m-0 mb-0.5 flex-none ${i === lines.length - 1 ? "text-[#e9ebee]" : "text-[#7b8496]"}`}
-          >
-            {line}
-          </p>
-        ))}
+        {lines.length === 0 ? (
+          <p className="m-0 flex-none text-[#5c6474]">Listening — speak, then pause…</p>
+        ) : (
+          lines.map((line, i) => (
+            <p
+              key={i}
+              className={`m-0 mb-0.5 flex-none ${i === lines.length - 1 ? "text-[#e9ebee]" : "text-[#7b8496]"}`}
+            >
+              {line}
+            </p>
+          ))
+        )}
       </div>
 
       <div className="flex h-[22px] flex-none items-center gap-2 border-t border-[#262c3d]/80 text-[10px] tabular-nums text-[#7b8496]">
