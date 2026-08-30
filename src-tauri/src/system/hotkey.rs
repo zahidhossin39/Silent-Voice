@@ -359,6 +359,7 @@ pub fn start_capture(app: &AppHandle) {
             *slot = Some(rec);
             overlay::show_overlay(app);
             overlay::mark_active(app); // cancel any pending auto-hide from before
+            let _ = app.emit("pipeline://transcript-reset", ());
             emit_state(app, "recording");
 
             // Stream live mic loudness to the pill/waveform (~60ms cadence) so

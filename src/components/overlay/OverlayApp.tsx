@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import RecordingOverlay from "./RecordingOverlay";
 import {
   listenEvent,
@@ -22,6 +22,10 @@ export type TtsState = "idle" | "synthesizing" | "speaking" | "paused";
 const PILL = { w: 58, h: 22 };
 const MENU = { w: 190, h: 152 };
 const TTS_BAR = { w: 132, h: 30 };
+// Live transcript preview ("Transcribe while you speak"). Same one-shot resize
+// the menu uses — never a tween, and only when a chunk has actually landed, so
+// a dictation that never chunks keeps the plain pill it always had.
+const NOTEPAD = { w: 360, h: 104 };
 
 // Near-black pill fill (darker than the app surface) — matches the reference
 // look: compact dark capsule + subtle outline + orange waveform.
@@ -32,8 +36,14 @@ export default function OverlayApp() {
   const [tts, setTts] = useState<TtsState>("idle");
   const [level, setLevel] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [lines, setLines] = useState<string[]>([]);
+  const [startedAt, setStartedAt] = useState(0);
 
   const ttsControls = (tts === "speaking" || tts === "paused") && state === "idle";
+  // The notepad is earned, not announced: it opens on the first committed chunk
+  // and closes the moment recording ends, so it never covers the user's work
+  // while they are reading the result.
+  const notepad = state === "recording" && lines.length > 0 && !menuOpen && !ttsControls;
 
   // Opaque dark fill (this window is the pill; DWM rounds its corners).
   useEffect(() => {
@@ -81,12 +91,36 @@ export default function OverlayApp() {
     };
   }, []);
 
-  // Window resize only when the menu opens/closes — never for state changes.
+  // Live transcript: each committed chunk arrives as its own line, and every
+  // fresh recording clears the last one.
+  useEffect(() => {
+    const un = listenEvent<string>("pipeline://transcript", (t) => {
+      const line = (t ?? "").trim();
+      if (line) setLines((prev) => [...prev, line]);
+    });
+    return () => {
+      un.then((f) => f());
+    };
+  }, []);
+
+  useEffect(() => {
+    const un = listenEvent<void>("pipeline://transcript-reset", () => {
+      setLines([]);
+      setStartedAt(Date.now());
+    });
+    return () => {
+      un.then((f) => f());
+    };
+  }, []);
+
+  // Window resize only when the menu opens/closes or the notepad appears —
+  // never for state changes.
   useEffect(() => {
     if (menuOpen) setOverlaySize(MENU.w, MENU.h);
+    else if (notepad) setOverlaySize(NOTEPAD.w, NOTEPAD.h);
     else if (ttsControls) setOverlaySize(TTS_BAR.w, TTS_BAR.h);
     else setOverlaySize(PILL.w, PILL.h);
-  }, [menuOpen, ttsControls]);
+  }, [menuOpen, notepad, ttsControls]);
 
   return (
     <div
@@ -95,7 +129,7 @@ export default function OverlayApp() {
         e.preventDefault();
         setMenuOpen(true);
       }}
-      className={`flex h-full w-full items-center justify-center overflow-hidden ${menuOpen ? "" : "rounded-full border border-[#262c3d]"
+      className={`flex h-full w-full items-center justify-center overflow-hidden ${menuOpen ? "" : notepad ? "rounded-xl border border-[#262c3d]" : "rounded-full border border-[#262c3d]"
         }`}
       style={{ background: PILL_BG }}
     >
@@ -108,12 +142,93 @@ export default function OverlayApp() {
           onQuit={quitApp}
           onClose={() => setMenuOpen(false)}
         />
+      ) : notepad ? (
+        <Notepad lines={lines} level={level} startedAt={startedAt} />
       ) : ttsControls ? (
         <TtsControlBar tts={tts} />
       ) : (
         <RecordingOverlay state={state} tts={tts} level={level} />
       )}
     </div>
+  );
+}
+
+/// The live transcript panel. Newest line sits at the bottom where the eye
+/// already is; older lines dim and slide up under a soft mask rather than
+/// scrolling, so nothing ever appears half-clipped at the top edge.
+function Notepad({
+  lines,
+  level,
+  startedAt,
+}: {
+  lines: string[];
+  level: number;
+  startedAt: number;
+}) {
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const [elapsed, setElapsed] = useState(0);
+
+  useEffect(() => {
+    if (!startedAt) return;
+    const id = setInterval(() => setElapsed(Math.floor((Date.now() - startedAt) / 1000)), 500);
+    return () => clearInterval(id);
+  }, [startedAt]);
+
+  // Keep the newest line in view as text accumulates.
+  useEffect(() => {
+    const el = bodyRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [lines]);
+
+  const words = lines.reduce((n, l) => n + l.split(/\s+/).filter(Boolean).length, 0);
+  const mins = Math.floor(elapsed / 60);
+  const secs = (elapsed % 60).toString().padStart(2, "0");
+
+  return (
+    <div className="flex h-full w-full flex-col px-3 pt-2">
+      <div
+        ref={bodyRef}
+        className="min-h-0 flex-1 overflow-y-auto text-[11.5px] leading-[1.5] text-[#e9ebee] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        style={{
+          WebkitMaskImage: "linear-gradient(180deg, transparent 0, #000 18px, #000 100%)",
+          maskImage: "linear-gradient(180deg, transparent 0, #000 18px, #000 100%)",
+        }}
+      >
+        {lines.map((line, i) => (
+          <p
+            key={i}
+            className={`m-0 mb-0.5 ${i === lines.length - 1 ? "text-[#e9ebee]" : "text-[#7b8496]"}`}
+          >
+            {line}
+          </p>
+        ))}
+      </div>
+
+      <div className="flex h-[22px] flex-none items-center gap-2 border-t border-[#262c3d]/80 text-[10px] tabular-nums text-[#7b8496]">
+        <Bars level={level} />
+        <span className="flex-1" />
+        <span>{words} {words === 1 ? "word" : "words"}</span>
+        <span aria-hidden="true">·</span>
+        <span>{mins}:{secs}</span>
+      </div>
+    </div>
+  );
+}
+
+/// The same five-bar mic meter the pill shows, shrunk to sit in the footer so
+/// the notepad still says "I am listening" without a second visual language.
+function Bars({ level }: { level: number }) {
+  const heights = [0.45, 0.75, 1, 0.7, 0.4];
+  return (
+    <span className="flex flex-none items-end gap-[2px]" aria-hidden="true">
+      {heights.map((h, i) => (
+        <span
+          key={i}
+          className="w-[2px] rounded-[1px] bg-sv-accent transition-[height] duration-100"
+          style={{ height: `${Math.max(2, Math.round(3 + (level / 100) * 9 * h))}px` }}
+        />
+      ))}
+    </span>
   );
 }
 
