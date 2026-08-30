@@ -28,12 +28,20 @@ function newWordsFromCorrection(original: string, corrected: string): string[] {
 }
 
 // ---- Icons: one consistent stroke set (Lucide geometry, 16px) ----
-function Icon({ children, className }: { children: React.ReactNode; className?: string }) {
+function Icon({
+  children,
+  className,
+  size = 16,
+}: {
+  children: React.ReactNode;
+  className?: string;
+  size?: number;
+}) {
   return (
     <svg
       viewBox="0 0 24 24"
-      width={16}
-      height={16}
+      width={size}
+      height={size}
       fill="none"
       stroke="currentColor"
       strokeWidth={2}
@@ -79,6 +87,32 @@ const TrashIcon = () => (
     <path d="M10 11v6M14 11v6" />
   </Icon>
 );
+
+const ZapIcon = () => (
+  <Icon size={11}>
+    <path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z" />
+  </Icon>
+);
+
+// Compact enough to sit in an 11px metadata row without wrapping.
+function formatMs(ms: number) {
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+  const mins = Math.floor(ms / 60_000);
+  const secs = Math.round((ms % 60_000) / 1000);
+  return `${mins}m ${secs}s`;
+}
+
+/// How the wait felt, not how long it was: a number only means something next
+/// to the length of speech that produced it. Silent below half the clip length,
+/// because a fast dictation should not decorate itself.
+function speedTone(durationMs: number, audioMs?: number) {
+  if (!audioMs || audioMs <= 0) return "text-sv-muted";
+  const ratio = durationMs / audioMs;
+  if (ratio > 1) return "text-sv-bad";
+  if (ratio > 0.5) return "text-sv-warn";
+  return "text-sv-muted";
+}
 
 type Tone = "default" | "danger";
 
@@ -337,11 +371,25 @@ export default function TranscriptCard({
           <div className="text-[13px] font-medium text-sv-text/90">
             {dateLabel} <span className="text-sv-muted">· {timeLabel}</span>
           </div>
-          <div className="mt-1 inline-flex items-center gap-1.5 text-[11px] text-sv-muted">
-            <span className="h-1.5 w-1.5 rounded-full bg-sv-accent/70" />
+          <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-sv-muted">
+            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-sv-accent/70" />
             <span className="truncate">{entry.model_id || "unknown model"}</span>
             {entry.mode_id && entry.mode_id !== "none" && (
               <span className="text-sv-muted/60">· {entry.mode_id.replace(/[_-]/g, " ").replace(/^\w/, (c) => c.toUpperCase())}</span>
+            )}
+            {entry.duration_ms > 0 && (
+              <span
+                title={
+                  entry.audio_ms && entry.audio_ms > 0
+                    ? `Processed in ${formatMs(entry.duration_ms)} after you released the key — for ${formatMs(entry.audio_ms)} of speech (${(entry.duration_ms / entry.audio_ms).toFixed(2)}× its length)`
+                    : `Processed in ${formatMs(entry.duration_ms)} after you released the key`
+                }
+                className={`inline-flex shrink-0 items-center gap-1 tabular-nums ${speedTone(entry.duration_ms, entry.audio_ms)}`}
+              >
+                <span className="text-sv-muted/40" aria-hidden="true">·</span>
+                <ZapIcon />
+                {formatMs(entry.duration_ms)}
+              </span>
             )}
           </div>
         </div>
