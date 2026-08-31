@@ -1280,18 +1280,37 @@ pub fn run() {
                         Ok(r) => r.is_some(),
                         Err(_) => continue,
                     };
-                    let mut last_use = match state.last_stt_use.lock() {
-                        Ok(l) => l,
+                    let idle_secs = match state.last_stt_use.lock() {
+                        Ok(l) => l.map(|t| t.elapsed().as_secs()),
                         Err(_) => continue,
                     };
-                    let idle_secs = last_use.map(|t| t.elapsed().as_secs());
                     if !should_unload(idle_secs, minutes, recording) {
+                        // Keep the resident sherpa engine hot. The engine object
+                        // stays in RAM, but Windows trims an idle process's working
+                        // set and pages the model weights out, so the first decode
+                        // after a long idle pays a 5-6x cold penalty. A tiny silent
+                        // decode each tick keeps its pages and ORT session warm.
+                        // Bypasses last_stt_use (no stamp) so finite unload still fires.
+                        if !recording {
+                            let engine = state
+                                .sherpa_stt
+                                .lock()
+                                .ok()
+                                .and_then(|s| s.as_ref().map(|(_, e)| e.clone()));
+                            if let Some(engine) = engine {
+                                let _ = tokio::task::spawn_blocking(move || {
+                                    let _ = engine.transcribe(&[0.0f32; 1600]);
+                                })
+                                .await;
+                            }
+                        }
                         continue;
                     }
                     // Cleared so the next tick can't fire again before a dictation
                     // reloads the model and stamps a fresh timestamp.
-                    *last_use = None;
-                    drop(last_use);
+                    if let Ok(mut last_use) = state.last_stt_use.lock() {
+                        *last_use = None;
+                    }
                     if let Ok(mut server) = state.whisper_server.lock() {
                         server.stop();
                     }
