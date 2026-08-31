@@ -59,7 +59,7 @@ const DEFAULT_SETTINGS: Settings = {
   toggle_mode: true,
   input_sensitivity: 50,
   inline_proofread: INLINE_PROOFREAD_DEFAULT,
-  coedit_enabled: true,
+  coedit_enabled: false,
   chunk_on_silence: false,
   proofread_disabled_rules: [],
   gector_sensitivity: "balanced",

@@ -137,7 +137,7 @@ impl Default for RuntimeConfig {
             toggle_mode: true,
             input_sensitivity: 50,
             inline_proofread: false,
-            coedit_enabled: true,
+            coedit_enabled: false,
             chunk_on_silence: false,
             high_performance: false,
             performance_threads: 0,
