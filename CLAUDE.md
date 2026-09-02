@@ -81,7 +81,7 @@ After `cargo build`, whisper DLLs must be copied from `sidecars/` into
   proofreading now exists on all three: UIA on Windows, Accessibility on macOS,
   AT-SPI on Linux (`inline_unix.rs` over `ax.rs` / `atspi.rs`). See `PORTING.md`.
 
-**Current state:** v0.1.7 released; 0.1.8 prepared locally and unreleased.
+**Current state:** v0.1.8 released; v0.1.9 prepared locally.
 Home gained a 12-week dictation strip in the Status panel (heatmap + days
 active / busiest day / words per dictation), the onboarding was rebuilt as a
 left-rail flow that downloads the model in the background, and spoken fillers

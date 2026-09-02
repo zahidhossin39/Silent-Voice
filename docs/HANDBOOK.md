@@ -5,8 +5,8 @@ and the full rationale behind every "must never change" rule. `CLAUDE.md` at
 the repo root is the short always-loaded summary; read the relevant section
 HERE before modifying any subsystem it points to.
 
-**Current state:** `v0.1.7` is released (tagged, built by CI, published).
-`0.1.8` is prepared locally and not yet tagged.
+**Current state:** `v0.1.8` is released (tagged, built by CI, published).
+`0.1.9` is prepared locally and ready for release.
 Post-0.1.6 work in progress: hyphenated-word duplication fix in
 `format_numbers`, Windows 10 rounded-corner fallback for the overlay pill
 (`SetWindowRgn`), CLAUDE.md split into short summary + this handbook, and a

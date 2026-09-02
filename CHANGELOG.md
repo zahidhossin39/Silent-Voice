@@ -3,7 +3,27 @@
 All notable changes to Silent Voice are recorded here.
 This project follows [Semantic Versioning](https://semver.org/).
 
-## [0.1.8] — unreleased
+## [0.1.9] — 2026-09-03
+
+### Added
+- **Configurable idle STT model unload.** Free system RAM after a set duration of inactivity (Never, 5m, 15m, 30m, 1h, 2h, Custom). Active dictations always outrank the timer.
+- **STT idle warm-keeping.** Resident Sherpa and Whisper engines run a tiny silent decode tick during idle so the first dictation after being idle is instant (no cold-start penalty).
+- **Preload settings handshake.** Backend preloading waits for frontend settings before warming the model, avoiding startup races.
+- **Parakeet v2 in onboarding.** Recommended by default on capable machines (GPUs and 4+ core CPUs).
+- **Bangla fine-tuned models.** Added `bangla-small` and `bangla-medium` community fine-tunes to the catalog with verified URLs.
+- **Animated celestial theme switcher.** Sun and moon drawn as distinct bodies with craters, corona, and smooth cross-fade animation.
+- **Dedicated Theme & Appearance page.** Moved appearance switch to Theme page with live app accent customization and suggestion popup preview.
+- **Custom `<Select>` dropdown component.** Native `<select>` replaced with custom accessible dropdowns that avoid WebView2 border clipping and auto-flip upward near window edges.
+- **Decode speed badges on history cards.** Processing duration is displayed alongside speech length, color-coded by speed ratio.
+- **GECToR download controls.** Pause, resume, and cancel buttons for grammar model downloads.
+
+### Changed
+- **Snippet replacement order.** Spoken text replacements are applied last (after structure pass and number formatting), preserving exact replacement casing and content.
+- **Code editors ignored by proofreading.** Proofread-as-you-type automatically ignores IDEs, code editors, terminals, and password managers to prevent noisy squiggles.
+- **Language selection clarity.** Models that ignore language configuration (Sherpa engines or English-only Whisper) display an explanatory info popover instead of a non-functional dropdown.
+- **Language list prioritization.** English, Bangla, and Arabic are prioritized at the top of language selectors.
+
+## [0.1.8] — 2026-08-28
 
 ### Added
 - **Dictation activity strip on Home.** The Status panel now ends with a
