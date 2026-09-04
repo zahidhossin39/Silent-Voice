@@ -3,6 +3,11 @@
 All notable changes to Silent Voice are recorded here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [0.1.10] — 2026-09-05
+
+### Fixed
+- **Native .tar.bz2 model extraction.** Extracted Sherpa-ONNX STT and TTS models (Parakeet TDT, Moonshine, SenseVoice, Kokoro) using native Rust decompressors (`bzip2` + `tar`) instead of spawning external OS `tar`, eliminating download extraction failures on Windows machines lacking `bzip2.exe`.
+
 ## [0.1.9] — 2026-09-03
 
 ### Added

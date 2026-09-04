@@ -1,6 +1,6 @@
 [package]
 name = "silent-voice"
-version = "0.1.9"
+version = "0.1.10"
 description = "Free, local-first voice-to-text dictation"
 authors = ["Silent Voice"]
 edition = "2021"
@@ -39,6 +39,8 @@ sysinfo = "0.32"
 reqwest = { version = "0.12", features = ["stream", "json", "multipart", "rustls-tls"], default-features = false }
 futures-util = "0.3"
 tokio = { version = "1", features = ["full"] }
+tar = "0.4"
+bzip2 = "0.4"
 
 # Storage — history is a plain JSON file in %APPDATA%/SilentVoice (no database).
 dirs = "5"

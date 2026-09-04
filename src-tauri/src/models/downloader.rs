@@ -72,8 +72,7 @@ pub fn delete_llm_model(model_id: &str) -> Result<(), String> {
 ///
 /// Sherpa voice (url_json EMPTY): url_onnx is a .tar.bz2 archive whose top-level
 /// folder name equals `voice_id` (that's how k2-fsa distributes them). We
-/// download it, extract into the tts dir with the system `tar` (bsdtar ships
-/// with Windows 10+ and auto-detects bzip2), and delete the archive.
+/// download it, extract into the tts dir with native bzip2+tar, and delete the archive.
 pub async fn download_tts_model(
     app: AppHandle,
     voice_id: String,
@@ -156,50 +155,66 @@ pub fn delete_tts_model(voice_id: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Extract a `.tar.bz2` into `dest` on a blocking thread (bsdtar on Windows 10+
-/// auto-detects bzip2), then delete the archive. `strip_top_folder` drops the
-/// archive's own top-level directory so files land directly in `dest`. Shared
-/// by the sherpa TTS-voice and STT-model download paths.
+/// Extract a `.tar.bz2` into `dest` on a blocking thread using native Rust
+/// decompressors (bzip2 + tar), then delete the archive. `strip_top_folder` drops
+/// the archive's own top-level directory so files land directly in `dest`.
+/// Shared by the sherpa TTS-voice and STT-model download paths.
 async fn extract_tar_bz2(
     archive: std::path::PathBuf,
     dest: std::path::PathBuf,
     strip_top_folder: bool,
 ) -> Result<(), String> {
-    let out = tokio::task::spawn_blocking({
-        let archive = archive.clone();
-        move || {
-            let mut cmd = std::process::Command::new("tar");
-            cmd.arg("-xf").arg(&archive);
-            if strip_top_folder {
-                cmd.arg("--strip-components=1");
+    let archive_path = archive.clone();
+    let dest_path = dest.clone();
+    let res = tokio::task::spawn_blocking(move || -> Result<(), String> {
+        let file = std::fs::File::open(&archive_path)
+            .map_err(|e| format!("cannot open archive: {e}"))?;
+        let decompressor = bzip2::read::BzDecoder::new(std::io::BufReader::new(file));
+        let mut tar_archive = tar::Archive::new(decompressor);
+
+        for entry_res in tar_archive.entries().map_err(|e| format!("invalid tar archive: {e}"))? {
+            let mut entry = entry_res.map_err(|e| format!("corrupted tar entry: {e}"))?;
+            let path = entry.path().map_err(|e| format!("invalid entry path: {e}"))?.into_owned();
+
+            let target_path = if strip_top_folder {
+                let mut components = path.components();
+                components.next();
+                let subpath = components.as_path();
+                if subpath.as_os_str().is_empty() {
+                    continue;
+                }
+                dest_path.join(subpath)
+            } else {
+                dest_path.join(&path)
+            };
+
+            // Prevent Zip Slip directory traversal
+            if !target_path.starts_with(&dest_path) {
+                continue;
             }
-            cmd.arg("-C").arg(&dest);
-            #[cfg(windows)]
-            {
-                use std::os::windows::process::CommandExt;
-                const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-                cmd.creation_flags(CREATE_NO_WINDOW);
+
+            if entry.header().entry_type().is_dir() {
+                std::fs::create_dir_all(&target_path).map_err(|e| e.to_string())?;
+            } else {
+                if let Some(parent) = target_path.parent() {
+                    std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+                }
+                entry.unpack(&target_path).map_err(|e| format!("failed unpacking {}: {e}", target_path.display()))?;
             }
-            cmd.output()
         }
+        Ok(())
     })
     .await
-    .map_err(|e| e.to_string())?
-    .map_err(|e| format!("could not run tar: {e}"))?;
+    .map_err(|e| e.to_string())?;
+
     let _ = std::fs::remove_file(&archive);
-    if !out.status.success() {
-        return Err(format!(
-            "archive extraction failed: {}",
-            String::from_utf8_lossy(&out.stderr)
-        ));
-    }
-    Ok(())
+
+    res
 }
 
-/// Download a sherpa STT model (Moonshine): a `.tar.bz2` whose top-level folder
-/// is the k2-fsa release name. We fetch it, extract with the system `tar`
-/// (bsdtar on Windows 10+ auto-detects bzip2), and strip the archive's own
-/// top folder so the files land directly in models_dir()/<model_id>/.
+/// Download a sherpa STT model (Moonshine / Parakeet): a `.tar.bz2` whose top-level
+/// folder is the k2-fsa release name. We fetch it, extract with native bzip2+tar,
+/// and strip the archive's own top folder so the files land directly in models_dir()/<model_id>/.
 pub async fn download_stt_archive(
     app: AppHandle,
     model_id: String,
@@ -780,5 +795,42 @@ mod tests {
 
         assert_eq!(std::fs::read(&dest).unwrap(), body());
         let _ = std::fs::remove_file(&dest);
+    }
+
+    #[tokio::test]
+    async fn extract_tar_bz2_unpacks_and_strips_top_folder() {
+        use bzip2::write::BzEncoder;
+        use bzip2::Compression;
+        use std::io::Write;
+
+        let tmp = std::env::temp_dir().join(format!("sv-test-extract-{}", std::process::id()));
+        let dest = tmp.join("dest");
+        let archive_path = tmp.join("test.tar.bz2");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&dest).unwrap();
+
+        // Create a small .tar.bz2 in memory with a top folder
+        let mut tar_builder = tar::Builder::new(Vec::new());
+        let data = b"parakeet model weights test content";
+        let mut header = tar::Header::new_gnu();
+        header.set_size(data.len() as u64);
+        header.set_mode(0o644);
+        header.set_cksum();
+        tar_builder.append_data(&mut header, "top_folder/model.txt", &data[..]).unwrap();
+        let tar_bytes = tar_builder.into_inner().unwrap();
+
+        let mut encoder = BzEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(&tar_bytes).unwrap();
+        let bz2_bytes = encoder.finish().unwrap();
+        std::fs::write(&archive_path, &bz2_bytes).unwrap();
+
+        // Extract with strip_top_folder = true
+        extract_tar_bz2(archive_path.clone(), dest.clone(), true).await.unwrap();
+
+        // Verify model.txt extracted directly to dest and archive was deleted
+        assert_eq!(std::fs::read(dest.join("model.txt")).unwrap(), data);
+        assert!(!archive_path.exists(), "archive should be deleted after extraction");
+
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }
