@@ -10,7 +10,7 @@ import { useSettingsStore } from "../../stores/settingsStore";
 import { useModelStore } from "../../stores/modelStore";
 import { useUiStore } from "../../stores/uiStore";
 import { useHistoryStore } from "../../stores/historyStore";
-import type { HistoryEntry } from "../../types";
+import { useStatsStore, type DayStat } from "../../stores/statsStore";
 import { isTauri, listenEvent, accessibilityGranted, openAccessibilitySettings } from "../../services/tauriBridge";
 import { formatGB } from "../../services/format";
 
@@ -40,8 +40,9 @@ export default function Home() {
   const downloadedStt = useModelStore((s) => s.downloaded);
   const recordingState = useUiStore((s) => s.recordingState);
   const entries = useHistoryStore((s) => s.entries);
-  const today = useTodayStats(entries);
-  const strip = useStripStats(entries);
+  const daily = useStatsStore((s) => s.daily);
+  const today = useTodayStats(daily);
+  const strip = useStripStats(daily);
   const lastError = useUiStore((s) => s.lastError);
   const setError = useUiStore((s) => s.setError);
 
@@ -564,39 +565,28 @@ function StatusCheck({
   );
 }
 
-function countWords(text: string): number {
-  const t = text.trim();
-  return t ? t.split(/\s+/).length : 0;
-}
-
-// Aggregate today's dictations. "Time saved" = how long those words would take
-// to type minus the time actually spent speaking them.
+// Both stat blocks read the durable per-day aggregate (statsStore.daily), NOT
+// history — so the calendar and totals stay correct after old history entries
+// are pruned or the history is cleared. Keys are local day-start ms.
+// "Time saved" = how long those words would take to type minus the time spent
+// speaking them.
 // ponytail: 40 wpm is a fixed average-typing baseline; make it a setting only if
 // someone actually asks to tune it.
 const TYPING_WPM = 40;
 
-function useTodayStats(entries: HistoryEntry[]) {
+function useTodayStats(daily: Record<number, DayStat>) {
   return useMemo(() => {
     const start = new Date();
     start.setHours(0, 0, 0, 0);
-    const startMs = start.getTime();
+    const d = daily[start.getTime()] ?? { words: 0, dictations: 0, speakMs: 0 };
 
-    let words = 0;
-    let count = 0;
-    let speakMs = 0;
-    for (const e of entries) {
-      if (e.timestamp < startMs) continue;
-      count++;
-      words += countWords(e.processed_text || e.raw_text);
-      speakMs += e.duration_ms;
-    }
-    const typeMs = (words / TYPING_WPM) * 60_000;
-    const savedMin = Math.max(0, Math.round((typeMs - speakMs) / 60_000));
-    return { words, count, savedMin: String(savedMin) };
-  }, [entries]);
+    const typeMs = (d.words / TYPING_WPM) * 60_000;
+    const savedMin = Math.max(0, Math.round((typeMs - d.speakMs) / 60_000));
+    return { words: d.words, count: d.dictations, savedMin: String(savedMin) };
+  }, [daily]);
 }
 
-function useStripStats(entries: HistoryEntry[]) {
+function useStripStats(daily: Record<number, DayStat>) {
   return useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -607,23 +597,9 @@ function useStripStats(entries: HistoryEntry[]) {
     const startMs = start.getTime();
     const todayMs = today.getTime();
 
-    const buckets = new Map<number, number>();
-    let windowDictations = 0;
-    for (const e of entries) {
-      if (e.timestamp < startMs) continue;
-      windowDictations++;
-      const d = new Date(e.timestamp);
-      d.setHours(0, 0, 0, 0);
-      const dayMs = d.getTime();
-
-      buckets.set(
-        dayMs,
-        (buckets.get(dayMs) ?? 0) + countWords(e.processed_text || e.raw_text)
-      );
-    }
-
     const cells = [];
     let windowWords = 0;
+    let windowDictations = 0;
     let activeDays = 0;
 
     for (let i = 0; i < 84; i++) {
@@ -631,9 +607,12 @@ function useStripStats(entries: HistoryEntry[]) {
       d.setDate(d.getDate() + i);
       const ms = d.getTime();
 
-      const words = buckets.get(ms) ?? 0;
+      const stat = daily[ms];
+      const words = stat?.words ?? 0;
 
       if (words > 0) activeDays++;
+      windowWords += words;
+      windowDictations += stat?.dictations ?? 0;
 
       let level = 0;
       if (words > 0) {
@@ -649,8 +628,6 @@ function useStripStats(entries: HistoryEntry[]) {
         future: ms > todayMs,
         level,
       });
-
-      windowWords += words;
     }
 
     let bestWords = 0;
@@ -664,7 +641,7 @@ function useStripStats(entries: HistoryEntry[]) {
     const avgPerDictation = windowDictations > 0 ? Math.round(windowWords / windowDictations) : 0;
 
     return { cells, activeDays, bestWords, bestMs, avgPerDictation };
-  }, [entries]);
+  }, [daily]);
 }
 
 function TodayStat({

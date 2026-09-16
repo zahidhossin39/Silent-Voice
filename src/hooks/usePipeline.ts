@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { listenEvent } from "../services/tauriBridge";
 import { useHistoryStore } from "../stores/historyStore";
+import { useStatsStore } from "../stores/statsStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useUiStore } from "../stores/uiStore";
 import { useAnnounceStore } from "../stores/announceStore";
@@ -27,6 +28,7 @@ interface PipelineResult {
  */
 export function usePipeline() {
   const addFull = useHistoryStore((s) => s.addFull);
+  const recordStat = useStatsStore((s) => s.record);
   const activeModeId = useSettingsStore((s) => s.settings.active_mode_id);
   const setRecordingState = useUiStore((s) => s.setRecordingState);
   const setError = useUiStore((s) => s.setError);
@@ -51,6 +53,8 @@ export function usePipeline() {
           audio_file: r.audio_file,
         });
         const words = r.processed_text.trim().split(/\s+/).filter(Boolean).length;
+        // Durable per-day tally so the Home calendar/stats outlive history pruning.
+        recordStat(words, r.duration_ms, r.id);
         announce(`Dictation done — ${words} ${words === 1 ? "word" : "words"} ready at the cursor.`);
       }),
       listenEvent<string>("pipeline://error", (e) => {
@@ -64,5 +68,5 @@ export function usePipeline() {
     return () => {
       unsubs.forEach((u) => u.then((fn) => fn()));
     };
-  }, [addFull, activeModeId, setRecordingState, setError, announce]);
+  }, [addFull, recordStat, activeModeId, setRecordingState, setError, announce]);
 }

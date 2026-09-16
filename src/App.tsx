@@ -16,6 +16,7 @@ import Onboarding from "./components/onboarding/Onboarding";
 import { useModelStore } from "./stores/modelStore";
 import { useSettingsStore } from "./stores/settingsStore";
 import { useHistoryStore } from "./stores/historyStore";
+import { useStatsStore } from "./stores/statsStore";
 import { useAnnounceStore } from "./stores/announceStore";
 import { usePipeline } from "./hooks/usePipeline";
 import { useRuntimeSync } from "./hooks/useRuntimeSync";
@@ -108,11 +109,16 @@ function Announcer() {
 function Dashboard() {
   const refresh = useModelStore((s) => s.refresh);
   const hydrate = useHistoryStore((s) => s.hydrate);
+  const seedStats = useStatsStore((s) => s.seedFromEntries);
   const checkSilently = useUpdateStore((s) => s.checkSilently);
   const updateAvailable = useUpdateStore((s) => s.available);
   const updateVersion = useUpdateStore((s) => s.version);
   const installing = useUpdateStore((s) => s.installing);
+  const updateProgress = useUpdateStore((s) => s.progress);
+  const updateDismissed = useUpdateStore((s) => s.dismissed);
   const installNow = useUpdateStore((s) => s.installNow);
+  const cancelUpdate = useUpdateStore((s) => s.cancel);
+  const dismissUpdate = useUpdateStore((s) => s.dismiss);
   const [version, setVersion] = useState("");
   const mainRef = useRef<HTMLElement>(null);
   const { pathname } = useLocation();
@@ -123,11 +129,19 @@ function Dashboard() {
 
   useEffect(() => {
     refresh();
-    hydrate();
+    // Seed the durable stats aggregate once from whatever history survives, so
+    // upgrading users keep today's numbers. Wait for the stats store to finish
+    // its own (async) hydration first, else its persisted `seeded` flag would
+    // load in after we seed and clobber it.
+    hydrate().then(() => {
+      const runSeed = () => seedStats(useHistoryStore.getState().entries);
+      if (useStatsStore.persist.hasHydrated()) runSeed();
+      else useStatsStore.persist.onFinishHydration(runSeed);
+    });
     if (isTauri()) getVersion().then(setVersion);
     const t = setTimeout(() => checkSilently(), 5000);
     return () => clearTimeout(t);
-  }, [refresh, hydrate, checkSilently]);
+  }, [refresh, hydrate, seedStats, checkSilently]);
 
   // <main> is a single persistent scroll container across routes (Routes
   // swaps only its children) — without this, switching pages keeps whatever
@@ -176,15 +190,58 @@ function Dashboard() {
           ))}
         </nav>
 
-        {updateAvailable && (
-          <button
-            onClick={installNow}
-            disabled={installing}
-            className="mx-3 mb-2 flex items-center justify-center gap-1.5 rounded-lg bg-sv-accent px-3 py-2 text-xs font-medium text-sv-on-accent transition hover:bg-sv-accent/90 disabled:opacity-60"
-          >
-            {installing ? "Updating…" : `Update available${updateVersion ? ` (v${updateVersion})` : ""}`}
-          </button>
-        )}
+        {installing ? (
+          // Live progress + cancel. Determinate bar when the download size is
+          // known; a pulsing bar + spinner while it's still indeterminate.
+          <div className="mx-3 mb-2 rounded-lg border border-sv-accent/40 bg-sv-accent/10 px-3 py-2">
+            <div className="flex items-center justify-between gap-2">
+              <span className="flex items-center gap-2 text-xs font-medium text-sv-text">
+                <span className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-sv-accent/30 border-t-sv-accent" />
+                Updating…
+                {updateProgress >= 0 && (
+                  <span className="tabular-nums text-sv-muted">
+                    {Math.round(updateProgress * 100)}%
+                  </span>
+                )}
+              </span>
+              <button
+                onClick={cancelUpdate}
+                aria-label="Cancel update"
+                title="Cancel update"
+                className="shrink-0 rounded p-0.5 text-sv-muted transition hover:text-sv-text"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-sv-border/60">
+              {updateProgress >= 0 ? (
+                <div
+                  className="h-full rounded-full bg-sv-accent transition-[width] duration-200"
+                  style={{ width: `${Math.round(updateProgress * 100)}%` }}
+                />
+              ) : (
+                <div className="h-full w-full animate-pulse rounded-full bg-sv-accent" />
+              )}
+            </div>
+          </div>
+        ) : updateAvailable && !updateDismissed ? (
+          <div className="mx-3 mb-2 flex items-stretch gap-1">
+            <button
+              onClick={installNow}
+              className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-sv-accent px-3 py-2 text-xs font-medium text-sv-on-accent transition hover:bg-sv-accent/90"
+            >
+              {`Update available${updateVersion ? ` (v${updateVersion})` : ""}`}
+            </button>
+            <button
+              onClick={dismissUpdate}
+              aria-label="Dismiss update for now"
+              title="Not now"
+              className="shrink-0 rounded-lg border border-sv-border px-2 text-sm text-sv-muted transition hover:text-sv-text"
+            >
+              ✕
+            </button>
+          </div>
+        ) : null}
         {/* The footer row was a version string nobody acts on. The theme
             switch earns that space; the version keeps its place beside it. */}
         <div className="flex items-center justify-between gap-3 border-t border-sv-border px-4 py-3">
