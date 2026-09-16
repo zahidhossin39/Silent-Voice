@@ -15,6 +15,7 @@ pub async fn transcribe_dispatch(
     threads: u32,
     language: &str,
     vocabulary: &str,
+    use_vocabulary: bool,
     use_gpu: bool,
     stt_source: &str,
     stt_base_url: &str,
@@ -59,6 +60,7 @@ pub async fn transcribe_dispatch(
                         threads,
                         language,
                         vocabulary,
+                        use_vocabulary,
                         use_gpu,
                     )
                     .await
@@ -75,6 +77,7 @@ pub async fn transcribe_dispatch(
             threads,
             language,
             vocabulary,
+            use_vocabulary,
             use_gpu,
         )
         .await
@@ -93,6 +96,7 @@ pub async fn transcribe(
     threads: u32,
     language: &str,
     vocabulary: &str,
+    use_vocabulary: bool,
     use_gpu: bool,
 ) -> Result<String, String> {
     if let Ok(mut lock) = app.state::<crate::AppState>().last_stt_use.lock() {
@@ -121,8 +125,9 @@ pub async fn transcribe(
         let app = app.clone();
         let audio_path = audio_path.to_string();
         let model_id = model_id.to_string();
+        let vocab = if use_vocabulary { vocabulary.to_string() } else { String::new() };
         return tokio::task::spawn_blocking(move || {
-            crate::system::sherpa_stt::transcribe_file(&app, &audio_path, &model_id, threads)
+            crate::system::sherpa_stt::transcribe_file(&app, &audio_path, &model_id, threads, &vocab)
         })
         .await
         .map_err(|e| e.to_string())?;
@@ -142,8 +147,10 @@ pub async fn transcribe(
 
     let lang = if language.is_empty() { "auto" } else { language };
     // Both the server and CLI paths below take the vocabulary from here, so the
-    // script guard belongs here rather than at each of them.
-    let vocabulary = prompt_for(lang, vocabulary);
+    // script guard belongs here rather than at each of them. The toggle gates
+    // it: off = no prompt, so the decoder runs unbiased (and the server key
+    // below stays stable → no reload just to drop the prompt).
+    let vocabulary = if use_vocabulary { prompt_for(lang, vocabulary) } else { "" };
 
     // Fast path: persistent whisper-server keeps the model loaded between
     // dictations. Any failure falls through to the one-shot CLI below.
@@ -361,7 +368,9 @@ pub async fn preload(app: &AppHandle) -> Result<(), String> {
         (
             cfg.model_id.clone(),
             cfg.language.clone(),
-            cfg.vocabulary.clone(),
+            // Warm with the effective vocabulary so the cache key matches what
+            // dictation will use — otherwise the first real dictation reloads.
+            if cfg.use_vocabulary { cfg.vocabulary.clone() } else { String::new() },
             cfg.use_gpu,
             cfg.high_performance,
             cfg.performance_threads,
@@ -410,8 +419,9 @@ pub async fn preload(app: &AppHandle) -> Result<(), String> {
         }
         let app_clone = app.clone();
         let id = model_id.clone();
+        let vocab = vocabulary.clone();
         let _ = tokio::task::spawn_blocking(move || {
-            let _ = crate::system::sherpa_stt::ensure_engine(&app_clone, &id, threads);
+            let _ = crate::system::sherpa_stt::ensure_engine(&app_clone, &id, threads, &vocab);
         })
         .await;
     }

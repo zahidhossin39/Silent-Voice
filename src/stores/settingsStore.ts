@@ -54,6 +54,7 @@ const DEFAULT_SETTINGS: Settings = {
   auto_start: false,
   theme: "dark",
   custom_vocabulary: "",
+  use_custom_vocabulary: true,
   stt_cloud_provider_id: null,
   toggle_mode: true,
   input_sensitivity: 50,

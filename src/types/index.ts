@@ -207,6 +207,7 @@ export interface Settings {
   auto_start: boolean;
   theme: "dark" | "light";
   custom_vocabulary: string; // comma/newline-separated words fed to whisper.cpp as a priming prompt
+  use_custom_vocabulary: boolean; // apply the vocabulary as a bias (Whisper prompt / Parakeet hotwords); off = fastest, no biasing
   stt_cloud_provider_id: string | null; // null = use local active_stt_model; else an ApiProvider.id with uses including "stt"
   toggle_mode: boolean; // double-tap the hotkey to lock recording on; single press stops
   input_sensitivity: number; // 0-100 (Discord-style): how loud a sound must be to count as speech

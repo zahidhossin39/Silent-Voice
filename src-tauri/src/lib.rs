@@ -35,6 +35,9 @@ pub struct RuntimeConfig {
     // Comma/newline-separated custom words (names, jargon) fed to whisper.cpp
     // as a priming prompt so it recognizes them more reliably.
     pub vocabulary: String,
+    // Whether to actually apply `vocabulary` as a decode-time bias (Whisper
+    // initial prompt / Parakeet hotwords). Off = fastest path, no biasing.
+    pub use_vocabulary: bool,
     // Cloud STT (optional): when stt_source is "cloud", transcription goes to
     // a cloud provider's OpenAI-shaped Whisper endpoint instead of the local
     // whisper.cpp sidecar. See llm::openai::transcribe_audio.
@@ -123,6 +126,7 @@ impl Default for RuntimeConfig {
             hotkey: "Ctrl+Shift+Space".into(),
             use_gpu: false,
             vocabulary: String::new(),
+            use_vocabulary: true,
             stt_source: "local".into(),
             stt_base_url: String::new(),
             stt_api_key: String::new(),
@@ -387,6 +391,7 @@ fn update_runtime_config(
     language: String,
     audio_device: Option<String>,
     vocabulary: String,
+    use_vocabulary: bool,
     stt_source: String,
     stt_base_url: String,
     stt_api_key: String,
@@ -398,6 +403,7 @@ fn update_runtime_config(
     cfg.language = language;
     cfg.audio_device = audio_device;
     cfg.vocabulary = vocabulary;
+    cfg.use_vocabulary = use_vocabulary;
     cfg.stt_source = stt_source;
     cfg.stt_base_url = stt_base_url;
     cfg.stt_api_key = stt_api_key;
@@ -892,6 +898,7 @@ async fn retranscribe_clip(
         model_id,
         language,
         vocabulary,
+        use_vocabulary,
         use_gpu,
         high_performance,
         performance_threads,
@@ -906,6 +913,7 @@ async fn retranscribe_clip(
             cfg.model_id.clone(),
             cfg.language.clone(),
             cfg.vocabulary.clone(),
+            cfg.use_vocabulary,
             cfg.use_gpu,
             cfg.high_performance,
             cfg.performance_threads,
@@ -928,6 +936,7 @@ async fn retranscribe_clip(
         threads,
         &language,
         &vocabulary,
+        use_vocabulary,
         use_gpu,
         &stt_source,
         &stt_base_url,
@@ -1004,11 +1013,12 @@ async fn stop_and_transcribe(
     registry::ensure_dirs().map_err(|e| e.to_string())?;
     let wav_path = registry::audio_dir().join("last.wav");
     capture::write_wav(&wav_path, &samples)?;
-    let (vocabulary, stt_source, stt_base_url, stt_api_key, stt_cloud_model, use_gpu, threads) = {
+    let (vocabulary, use_vocabulary, stt_source, stt_base_url, stt_api_key, stt_cloud_model, use_gpu, threads) = {
         let cfg = state.config.lock().map_err(|e| e.to_string())?;
         let threads = hotkey::resolve_thread_count(cfg.high_performance, cfg.performance_threads);
         (
             cfg.vocabulary.clone(),
+            cfg.use_vocabulary,
             cfg.stt_source.clone(),
             cfg.stt_base_url.clone(),
             cfg.stt_api_key.clone(),
@@ -1024,6 +1034,7 @@ async fn stop_and_transcribe(
         threads,
         &language,
         &vocabulary,
+        use_vocabulary,
         use_gpu,
         &stt_source,
         &stt_base_url,

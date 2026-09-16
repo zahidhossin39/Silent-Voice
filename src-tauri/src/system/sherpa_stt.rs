@@ -358,7 +358,20 @@ impl SherpaSttEngine {
         })
     }
 
-    pub fn load_transducer(dir: &Path, num_threads: i32) -> Result<Self, String> {
+    /// Load a Parakeet transducer. When `hotwords` is Some, the recognizer is
+    /// built with contextual biasing — this needs modified_beam_search and a
+    /// BPE vocab to tokenize the hotwords (greedy search has no alternative
+    /// paths to boost). When None, it runs the fast greedy path unchanged.
+    ///
+    /// SAFETY: sherpa's EncodeHotwords has no null check — modeling_unit="bpe"
+    /// with a missing bpe_vocab segfaults. So bpe_vocab and the "bpe" modeling
+    /// unit are set together, only inside the Some branch, and the caller only
+    /// passes Some when it has verified a real bpe.vocab file exists.
+    pub fn load_transducer(
+        dir: &Path,
+        num_threads: i32,
+        hotwords: Option<&HotwordsCfg>,
+    ) -> Result<Self, String> {
         let lib = super::sherpa::lib()?;
         let c = |s: String| CString::new(s).map_err(|e| e.to_string());
 
@@ -378,7 +391,7 @@ impl SherpaSttEngine {
         let provider = c("cpu".into())?;
         let provider_ptr = provider.as_ptr();
         keep.push(provider);
-        let method = c("greedy_search".into())?;
+        let method = c(if hotwords.is_some() { "modified_beam_search" } else { "greedy_search" }.into())?;
         let method_ptr = method.as_ptr();
         keep.push(method);
 
@@ -392,6 +405,20 @@ impl SherpaSttEngine {
         cfg.model_config.num_threads = num_threads;
         cfg.model_config.provider = provider_ptr;
         cfg.decoding_method = method_ptr;
+
+        if let Some(h) = hotwords {
+            let unit = c("bpe".into())?;
+            cfg.model_config.modeling_unit = unit.as_ptr();
+            keep.push(unit);
+            let bpe = c(h.bpe_vocab.to_string_lossy().into_owned())?;
+            cfg.model_config.bpe_vocab = bpe.as_ptr();
+            keep.push(bpe);
+            let hw = c(h.hotwords_file.to_string_lossy().into_owned())?;
+            cfg.hotwords_file = hw.as_ptr();
+            keep.push(hw);
+            cfg.hotwords_score = HOTWORDS_SCORE;
+            cfg.max_active_paths = 4;
+        }
 
         let recognizer = unsafe {
             let create: Symbol<CreateRecognizerFn> = lib
@@ -507,26 +534,110 @@ const SHERPA_MAX_WHOLE_SECS: usize = 18;
 /// When segmenting, aim for pieces around this long, always cutting at a pause.
 const SHERPA_TARGET_SEG_SECS: usize = 12;
 
+/// Boost added to hotword paths during beam search. ~2.0 biases firmly toward
+/// the user's words without drowning normal decoding.
+// ponytail: fixed score; expose in Settings if users want a strength slider.
+const HOTWORDS_SCORE: f32 = 2.0;
+
+/// Parakeet's SentencePiece BPE vocab (`piece\tscore` per line), required to
+/// tokenize hotwords. k2-fsa's archive omits it, so it's generated once from
+/// NVIDIA's NeMo tokenizer (scripts/generate_parakeet_bpe_vocab.py) and
+/// embedded here — always present, no bundling or download step.
+const PARAKEET_V2_BPE_VOCAB: &[u8] =
+    include_bytes!("../../resources/parakeet-tdt-0.6b-v2.bpe.vocab");
+
+/// Paths sherpa needs to enable hotword biasing on a transducer.
+pub struct HotwordsCfg {
+    bpe_vocab: std::path::PathBuf,
+    hotwords_file: std::path::PathBuf,
+}
+
+/// Write the embedded bpe.vocab into the model dir if absent. None for models
+/// we have no vocab for — they simply get no biasing, never a crash.
+fn ensure_bpe_vocab(model_id: &str, dir: &Path) -> Option<std::path::PathBuf> {
+    let bytes: &[u8] = match model_id {
+        "parakeet-tdt-0.6b-v2" => PARAKEET_V2_BPE_VOCAB,
+        _ => return None,
+    };
+    let p = dir.join("bpe.vocab");
+    if !p.exists() {
+        if let Err(e) = std::fs::write(&p, bytes) {
+            crate::logging::log_error("sherpa_stt", &format!("could not write bpe.vocab: {e}"));
+            return None;
+        }
+    }
+    Some(p)
+}
+
+/// Write the user's vocabulary (comma/newline separated) as a hotwords file,
+/// one phrase per line. None when empty.
+fn write_hotwords_file(dir: &Path, vocabulary: &str) -> Option<std::path::PathBuf> {
+    let phrases: Vec<&str> = vocabulary
+        .split([',', '\n'])
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .collect();
+    if phrases.is_empty() {
+        return None;
+    }
+    let p = dir.join("hotwords.txt");
+    if let Err(e) = std::fs::write(&p, phrases.join("\n") + "\n") {
+        crate::logging::log_error("sherpa_stt", &format!("could not write hotwords file: {e}"));
+        return None;
+    }
+    Some(p)
+}
+
+/// Build a hotwords config for a transducer model + vocabulary, or None when
+/// biasing can't/shouldn't apply (non-transducer, empty vocab, or no bpe.vocab
+/// for this model). None means "run unbiased" — never a crash.
+fn build_hotwords(model_id: &str, dir: &Path, vocabulary: &str) -> Option<HotwordsCfg> {
+    if crate::models::registry::stt_engine(model_id)
+        != crate::models::registry::SttEngine::Transducer
+    {
+        return None;
+    }
+    if vocabulary.trim().is_empty() {
+        return None;
+    }
+    let bpe_vocab = ensure_bpe_vocab(model_id, dir)?;
+    let hotwords_file = write_hotwords_file(dir, vocabulary)?;
+    Some(HotwordsCfg {
+        bpe_vocab,
+        hotwords_file,
+    })
+}
+
 /// Transcribe a WAV file with a sherpa engine (Moonshine or SenseVoice),
 /// reusing (or lazily loading) a recognizer kept resident on AppState so the
 /// ~2 s model load happens only once. Synchronous/CPU-bound — callers should
 /// run it on a blocking thread. `threads` is baked into the recognizer, so a
-/// change re-loads it; switching model_id also reloads.
-pub fn ensure_engine(app: &tauri::AppHandle, model_id: &str, threads: u32) -> Result<std::sync::Arc<SherpaSttEngine>, String> {
+/// change re-loads it; switching model_id also reloads. `vocabulary` enables
+/// Parakeet hotword biasing; changing it reloads (the context graph is fixed
+/// at recognizer creation), so it's part of the cache key.
+pub fn ensure_engine(
+    app: &tauri::AppHandle,
+    model_id: &str,
+    threads: u32,
+    vocabulary: &str,
+) -> Result<std::sync::Arc<SherpaSttEngine>, String> {
     use tauri::Manager;
     let state = app.state::<crate::AppState>();
     let mut slot = state.sherpa_stt.lock().map_err(|e| e.to_string())?;
-    let key = format!("{model_id}|{threads}");
+    let dir = crate::models::registry::stt_model_dir(model_id);
+    let hotwords = build_hotwords(model_id, &dir, vocabulary);
+    // Vocabulary text is in the key so a different word list forces a reload.
+    let hot_key = hotwords.as_ref().map(|_| vocabulary.trim()).unwrap_or("");
+    let key = format!("{model_id}|{threads}|{hot_key}");
     let hit = slot.as_ref().is_some_and(|(k, _)| *k == key);
     if !hit {
-        let dir = crate::models::registry::stt_model_dir(model_id);
         let eng = std::sync::Arc::new(
             match crate::models::registry::stt_engine(model_id) {
                 crate::models::registry::SttEngine::SenseVoice => {
                     SherpaSttEngine::load_sense_voice(&dir, threads as i32, "auto")?
                 }
                 crate::models::registry::SttEngine::Transducer => {
-                    SherpaSttEngine::load_transducer(&dir, threads as i32)?
+                    SherpaSttEngine::load_transducer(&dir, threads as i32, hotwords.as_ref())?
                 }
                 crate::models::registry::SttEngine::Moonshine => {
                     SherpaSttEngine::load_moonshine(&dir, threads as i32)?
@@ -544,11 +655,12 @@ pub fn transcribe_file(
     audio_path: &str,
     model_id: &str,
     threads: u32,
+    vocabulary: &str,
 ) -> Result<String, String> {
     use tauri::Manager;
     let samples = read_wav_mono_f32(Path::new(audio_path))?;
 
-    let engine = ensure_engine(app, model_id, threads)?;
+    let engine = ensure_engine(app, model_id, threads, vocabulary)?;
     let sensitivity = app
         .state::<crate::AppState>()
         .config

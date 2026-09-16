@@ -49,6 +49,7 @@ export function useRuntimeSync() {
   const device = useSettingsStore((s) => s.settings.audio_device);
   const hotkey = useSettingsStore((s) => s.settings.hotkey);
   const vocabulary = useSettingsStore((s) => s.settings.custom_vocabulary);
+  const useVocabulary = useSettingsStore((s) => s.settings.use_custom_vocabulary);
   const useGpu = useSettingsStore((s) => s.settings.use_gpu);
   const sttCloudProviderId = useSettingsStore((s) => s.settings.stt_cloud_provider_id);
   const activeModeId = useSettingsStore((s) => s.settings.active_mode_id);
@@ -117,13 +118,14 @@ export function useRuntimeSync() {
       language,
       device,
       vocabulary,
+      useVocabulary,
       sttProvider ? "cloud" : "local",
       sttProvider?.base_url ?? "",
       sttProvider?.api_key ?? "",
       sttProvider?.stt_model ?? "",
       useGpu
     );
-  }, [model, language, device, vocabulary, sttCloudProviderId, providers, useGpu]);
+  }, [model, language, device, vocabulary, useVocabulary, sttCloudProviderId, providers, useGpu]);
 
   useEffect(() => {
     setHotkey(hotkey).catch(() => {});

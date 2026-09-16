@@ -764,17 +764,27 @@ export default function Settings() {
         <Cat id="words" active={cat}>
         <Section
           title="Custom vocabulary"
-          desc="Names or jargon Whisper mishears — fed to the model as a hint so it spells them right. Not AI; it does not rewrite your text. Comma-separated, most important first."
+          desc="Names or jargon the model mishears — fed in as a hint so it spells them right. Not AI; it does not rewrite your text. Comma-separated, most important first. Works on Whisper and Parakeet; Moonshine and SenseVoice can't be biased."
           accent="var(--color-sv-sec-vocab)"
           icon={<BookIcon />}
         >
+          <Row
+            label="Use custom vocabulary"
+            hint="Bias the model toward these words. Off is the fastest path (no biasing); on, Parakeet uses a slightly slower beam search — only while this is on."
+          >
+            <Toggle
+              checked={settings.use_custom_vocabulary}
+              onChange={(v) => setSettings({ use_custom_vocabulary: v })}
+            />
+          </Row>
           <div className="py-4">
             <textarea
               value={settings.custom_vocabulary}
               onChange={(e) => setSettings({ custom_vocabulary: e.target.value })}
               placeholder="e.g. Tauri, whisper.cpp, Kubernetes"
               rows={3}
-              className="w-full max-w-[520px] resize-y rounded-lg border border-sv-border bg-sv-bg px-3 py-2 text-sm"
+              disabled={!settings.use_custom_vocabulary}
+              className="w-full max-w-[520px] resize-y rounded-lg border border-sv-border bg-sv-bg px-3 py-2 text-sm disabled:opacity-50"
             />
           </div>
         </Section>
