@@ -43,3 +43,6 @@ coedit-work/
 
 # CI smoke-test scratch
 .smoke/
+
+# local sherpa-onnx source clone (reference only)
+sherpa-onnx_repo/
