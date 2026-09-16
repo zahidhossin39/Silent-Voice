@@ -31,6 +31,39 @@ pub struct DownloadProgress {
     pub error: Option<String>,
 }
 
+/// Reject an id/filename that could escape its target directory before it's
+/// ever joined into a path. Model/voice ids and archive filenames are simple
+/// slugs (e.g. "ggml-tiny.bin", "moonshine-base", "kokoro-en"); a path
+/// separator, a `..`, or an absolute/drive-qualified path is never legitimate
+/// and is the only way these frontend-supplied strings could write or delete
+/// outside the app's own data dirs.
+fn safe_id(id: &str) -> Result<(), String> {
+    use std::path::{Component, Path};
+    if id.is_empty() {
+        return Err("empty model id".into());
+    }
+    // `\` is not a separator on non-Windows, so components() wouldn't flag it —
+    // reject both separators explicitly, then require every component be Normal
+    // (rules out `..`, absolute roots, and Windows drive prefixes).
+    if id.contains('/')
+        || id.contains('\\')
+        || Path::new(id)
+            .components()
+            .any(|c| !matches!(c, Component::Normal(_)))
+    {
+        return Err(format!("invalid model id: {id}"));
+    }
+    Ok(())
+}
+
+/// True only if a tar entry's (already top-stripped) relative path is made purely
+/// of Normal components — no `..` (ParentDir), absolute root, or Windows drive
+/// prefix that could climb out of the extraction dir.
+fn rel_is_safe(rel: &std::path::Path) -> bool {
+    rel.components()
+        .all(|c| matches!(c, std::path::Component::Normal(_)))
+}
+
 /// Download a Whisper GGML model from `url` to the models directory.
 pub async fn download_model(
     app: AppHandle,
@@ -39,6 +72,7 @@ pub async fn download_model(
     file_name: String,
     stop_flag: Option<&DownloadStopFlag>,
 ) -> Result<bool, String> {
+    safe_id(&file_name)?;
     registry::ensure_dirs().map_err(|e| e.to_string())?;
     let dest = registry::models_dir().join(&file_name);
     download_to(app, model_id, url, dest, stop_flag).await
@@ -51,12 +85,14 @@ pub async fn download_llm_model(
     url: String,
     stop_flag: Option<&DownloadStopFlag>,
 ) -> Result<bool, String> {
+    safe_id(&model_id)?;
     registry::ensure_dirs().map_err(|e| e.to_string())?;
     let dest = registry::llm_model_path(&model_id);
     download_to(app, model_id, url, dest, stop_flag).await
 }
 
 pub fn delete_llm_model(model_id: &str) -> Result<(), String> {
+    safe_id(model_id)?;
     let path = registry::llm_model_path(model_id);
     if path.exists() {
         std::fs::remove_file(&path).map_err(|e| e.to_string())?;
@@ -80,6 +116,7 @@ pub async fn download_tts_model(
     url_json: String,
     stop_flag: Option<&DownloadStopFlag>,
 ) -> Result<bool, String> {
+    safe_id(&voice_id)?;
     registry::ensure_dirs().map_err(|e| e.to_string())?;
 
     if url_json.ends_with("tokens.txt") {
@@ -139,6 +176,7 @@ pub async fn download_tts_model(
 }
 
 pub fn delete_tts_model(voice_id: &str) -> Result<(), String> {
+    safe_id(voice_id)?;
     // Sherpa voice = a whole directory.
     let dir = registry::sherpa_voice_dir(voice_id);
     if dir.is_dir() {
@@ -176,22 +214,25 @@ async fn extract_tar_bz2(
             let mut entry = entry_res.map_err(|e| format!("corrupted tar entry: {e}"))?;
             let path = entry.path().map_err(|e| format!("invalid entry path: {e}"))?.into_owned();
 
-            let target_path = if strip_top_folder {
+            let rel = if strip_top_folder {
                 let mut components = path.components();
                 components.next();
                 let subpath = components.as_path();
                 if subpath.as_os_str().is_empty() {
                     continue;
                 }
-                dest_path.join(subpath)
+                subpath.to_path_buf()
             } else {
-                dest_path.join(&path)
+                path.clone()
             };
 
-            // Prevent Zip Slip directory traversal
-            if !target_path.starts_with(&dest_path) {
+            // Prevent Zip Slip: reject any entry whose relative path isn't made
+            // purely of Normal components. `starts_with` alone is NOT enough —
+            // it's lexical, so `dest/../../evil` still "starts with" dest.
+            if !rel_is_safe(&rel) {
                 continue;
             }
+            let target_path = dest_path.join(&rel);
 
             if entry.header().entry_type().is_dir() {
                 std::fs::create_dir_all(&target_path).map_err(|e| e.to_string())?;
@@ -221,6 +262,7 @@ pub async fn download_stt_archive(
     url: String,
     stop_flag: Option<&DownloadStopFlag>,
 ) -> Result<bool, String> {
+    safe_id(&model_id)?;
     registry::ensure_dirs().map_err(|e| e.to_string())?;
     let dest_dir = registry::stt_model_dir(&model_id);
     let archive = registry::models_dir().join(format!("{model_id}.tar.bz2"));
@@ -620,6 +662,7 @@ async fn fetch_to_file(
 }
 
 pub fn delete_model(model_id: &str) -> Result<(), String> {
+    safe_id(model_id)?;
     // Sherpa STT models (Moonshine) are a whole directory; Whisper models are a
     // single ggml .bin file. A whisper id never names a directory, so checking
     // both is safe.
@@ -832,5 +875,41 @@ mod tests {
         assert!(!archive_path.exists(), "archive should be deleted after extraction");
 
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn safe_id_accepts_slugs_and_rejects_traversal() {
+        // Real ids/filenames used by the download commands.
+        for ok in ["ggml-tiny.bin", "moonshine-base", "kokoro-en", "voice#3"] {
+            assert!(safe_id(ok).is_ok(), "{ok} should be allowed");
+        }
+        // Every way a frontend string could escape its target dir.
+        for bad in [
+            "",
+            "..",
+            "../evil",
+            "../../evil.exe",
+            "a/b",
+            "a\\b",
+            "/etc/passwd",
+            "C:\\Windows\\System32",
+        ] {
+            assert!(safe_id(bad).is_err(), "{bad} should be rejected");
+        }
+    }
+
+    #[test]
+    fn rel_is_safe_blocks_zip_slip_paths() {
+        use std::path::Path;
+        // Normal, in-dir paths pass.
+        assert!(rel_is_safe(Path::new("model.txt")));
+        assert!(rel_is_safe(Path::new("sub/dir/model.onnx")));
+        // Anything that could climb out is rejected. `dest.join(these)` would
+        // otherwise escape while still lexically "starting with" dest — the
+        // exact hole the old `starts_with` guard left open.
+        assert!(!rel_is_safe(Path::new("../evil")));
+        assert!(!rel_is_safe(Path::new("../../evil.exe")));
+        assert!(!rel_is_safe(Path::new("a/../../b")));
+        assert!(!rel_is_safe(Path::new("/etc/passwd")));
     }
 }
