@@ -38,6 +38,9 @@ pub struct RuntimeConfig {
     // Whether to actually apply `vocabulary` as a decode-time bias (Whisper
     // initial prompt / Parakeet hotwords). Off = fastest path, no biasing.
     pub use_vocabulary: bool,
+    // Parakeet hotword boost strength (0.5–5). Higher biases harder toward the
+    // vocabulary. Only used by the sherpa transducer path; Whisper ignores it.
+    pub vocabulary_strength: f32,
     // Cloud STT (optional): when stt_source is "cloud", transcription goes to
     // a cloud provider's OpenAI-shaped Whisper endpoint instead of the local
     // whisper.cpp sidecar. See llm::openai::transcribe_audio.
@@ -127,6 +130,7 @@ impl Default for RuntimeConfig {
             use_gpu: false,
             vocabulary: String::new(),
             use_vocabulary: true,
+            vocabulary_strength: 2.0,
             stt_source: "local".into(),
             stt_base_url: String::new(),
             stt_api_key: String::new(),
@@ -392,6 +396,7 @@ fn update_runtime_config(
     audio_device: Option<String>,
     vocabulary: String,
     use_vocabulary: bool,
+    vocabulary_strength: f32,
     stt_source: String,
     stt_base_url: String,
     stt_api_key: String,
@@ -404,6 +409,7 @@ fn update_runtime_config(
     cfg.audio_device = audio_device;
     cfg.vocabulary = vocabulary;
     cfg.use_vocabulary = use_vocabulary;
+    cfg.vocabulary_strength = vocabulary_strength;
     cfg.stt_source = stt_source;
     cfg.stt_base_url = stt_base_url;
     cfg.stt_api_key = stt_api_key;

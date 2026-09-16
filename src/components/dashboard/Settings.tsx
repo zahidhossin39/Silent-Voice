@@ -787,6 +787,36 @@ export default function Settings() {
               className="w-full max-w-[520px] resize-y rounded-lg border border-sv-border bg-sv-bg px-3 py-2 text-sm disabled:opacity-50"
             />
           </div>
+          <div className={settings.use_custom_vocabulary ? "" : "opacity-50"}>
+            <div className="flex items-center justify-between">
+              <label className="text-sm">Vocabulary strength (Parakeet)</label>
+              <span className="text-xs tabular-nums text-sv-muted">
+                {settings.vocabulary_strength.toFixed(1)}
+              </span>
+            </div>
+            <div className="mt-0.5 text-xs text-sv-muted">
+              How hard Parakeet is pushed toward your words. Higher = they win
+              more often; too high can override words that only sound similar.
+              Whisper ignores this.
+            </div>
+            <input
+              type="range"
+              min={0.5}
+              max={5}
+              step={0.5}
+              value={settings.vocabulary_strength}
+              disabled={!settings.use_custom_vocabulary}
+              onChange={(e) =>
+                setSettings({ vocabulary_strength: Number(e.target.value) })
+              }
+              className="sv-slider mt-3 w-full max-w-[520px]"
+              style={
+                {
+                  "--sv-slider-fill": `${((settings.vocabulary_strength - 0.5) / 4.5) * 100}%`,
+                } as React.CSSProperties
+              }
+            />
+          </div>
         </Section>
 
         <Section

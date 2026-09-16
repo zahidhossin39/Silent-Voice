@@ -371,6 +371,7 @@ impl SherpaSttEngine {
         dir: &Path,
         num_threads: i32,
         hotwords: Option<&HotwordsCfg>,
+        hotwords_score: f32,
     ) -> Result<Self, String> {
         let lib = super::sherpa::lib()?;
         let c = |s: String| CString::new(s).map_err(|e| e.to_string());
@@ -416,7 +417,7 @@ impl SherpaSttEngine {
             let hw = c(h.hotwords_file.to_string_lossy().into_owned())?;
             cfg.hotwords_file = hw.as_ptr();
             keep.push(hw);
-            cfg.hotwords_score = HOTWORDS_SCORE;
+            cfg.hotwords_score = hotwords_score;
             cfg.max_active_paths = 4;
         }
 
@@ -534,10 +535,9 @@ const SHERPA_MAX_WHOLE_SECS: usize = 18;
 /// When segmenting, aim for pieces around this long, always cutting at a pause.
 const SHERPA_TARGET_SEG_SECS: usize = 12;
 
-/// Boost added to hotword paths during beam search. ~2.0 biases firmly toward
-/// the user's words without drowning normal decoding.
-// ponytail: fixed score; expose in Settings if users want a strength slider.
-const HOTWORDS_SCORE: f32 = 2.0;
+/// Fallback boost added to hotword paths during beam search, used if the config
+/// can't be read. The live value is the `vocabulary_strength` slider (0.5–5).
+const DEFAULT_HOTWORDS_SCORE: f32 = 2.0;
 
 /// Parakeet's SentencePiece BPE vocab (`piece\tscore` per line), required to
 /// tokenize hotwords. k2-fsa's archive omits it, so it's generated once from
@@ -626,9 +626,15 @@ pub fn ensure_engine(
     let mut slot = state.sherpa_stt.lock().map_err(|e| e.to_string())?;
     let dir = crate::models::registry::stt_model_dir(model_id);
     let hotwords = build_hotwords(model_id, &dir, vocabulary);
-    // Vocabulary text is in the key so a different word list forces a reload.
+    let score = state
+        .config
+        .lock()
+        .map(|c| c.vocabulary_strength)
+        .unwrap_or(DEFAULT_HOTWORDS_SCORE);
+    // Vocabulary text and boost are in the key so changing the word list or the
+    // strength slider forces a reload (both are baked into the recognizer).
     let hot_key = hotwords.as_ref().map(|_| vocabulary.trim()).unwrap_or("");
-    let key = format!("{model_id}|{threads}|{hot_key}");
+    let key = format!("{model_id}|{threads}|{hot_key}|{score}");
     let hit = slot.as_ref().is_some_and(|(k, _)| *k == key);
     if !hit {
         let eng = std::sync::Arc::new(
@@ -637,7 +643,7 @@ pub fn ensure_engine(
                     SherpaSttEngine::load_sense_voice(&dir, threads as i32, "auto")?
                 }
                 crate::models::registry::SttEngine::Transducer => {
-                    SherpaSttEngine::load_transducer(&dir, threads as i32, hotwords.as_ref())?
+                    SherpaSttEngine::load_transducer(&dir, threads as i32, hotwords.as_ref(), score)?
                 }
                 crate::models::registry::SttEngine::Moonshine => {
                     SherpaSttEngine::load_moonshine(&dir, threads as i32)?
