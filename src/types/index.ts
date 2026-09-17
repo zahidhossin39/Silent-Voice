@@ -205,7 +205,7 @@ export interface Settings {
   performance_threads: number; // 0 = auto (all cores); only used when high_performance
   audio_device: string | null;
   auto_start: boolean;
-  theme: "dark" | "light";
+  theme: "dark" | "light" | "system"; // system = follow the Windows light/dark setting
   custom_vocabulary: string; // comma/newline-separated words fed to whisper.cpp as a priming prompt
   use_custom_vocabulary: boolean; // apply the vocabulary as a bias (Whisper prompt / Parakeet hotwords); off = fastest, no biasing
   vocabulary_strength: number; // Parakeet hotword boost (0.5–5). Higher forces the words harder; Whisper ignores it (prompt has no strength knob)

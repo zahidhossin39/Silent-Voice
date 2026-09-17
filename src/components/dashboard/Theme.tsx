@@ -105,17 +105,19 @@ export default function Theme() {
       <section className="mb-10">
         <h2 className="mb-1 text-sm font-medium text-sv-text">Appearance</h2>
         <p className="mb-4 text-xs text-sv-muted">
-          Light or dark for the whole window. Also available any time from the
-          bottom of the sidebar.
+          Light, dark, or matching Windows for the whole window. Also available
+          any time from the bottom of the sidebar.
         </p>
         <div className="flex items-center gap-4 rounded-xl border border-sv-border bg-sv-surface px-4 py-3.5">
           <ThemeSwitch />
           <div className="min-w-0">
             <div className="text-sm font-medium text-sv-text">
-              {theme === "light" ? "Light" : "Dark"}
+              {theme === "system" ? "Match Windows" : theme === "light" ? "Light" : "Dark"}
             </div>
             <div className="text-xs text-sv-muted">
-              {theme === "light"
+              {theme === "system"
+                ? "Switches between light and dark when Windows does."
+                : theme === "light"
                 ? "Bright surfaces — best in a well-lit room."
                 : "Dim surfaces — easier at night and on long sessions."}
             </div>

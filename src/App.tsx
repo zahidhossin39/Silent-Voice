@@ -21,6 +21,7 @@ import { useAnnounceStore } from "./stores/announceStore";
 import { usePipeline } from "./hooks/usePipeline";
 import { useRuntimeSync } from "./hooks/useRuntimeSync";
 import { useAutoVoiceDetection } from "./hooks/useAutoVoiceDetection";
+import { useResolvedTheme } from "./hooks/useResolvedTheme";
 import { useUpdateStore } from "./stores/updateStore";
 import { isTauri, emitEvent } from "./services/tauriBridge";
 import { applyAppTheme } from "./services/appThemes";
@@ -53,7 +54,7 @@ export default function App() {
   const view = new URLSearchParams(window.location.search).get("view");
   const isOverlay = view === "overlay";
 
-  const theme = useSettingsStore((s) => s.settings.theme);
+  const theme = useResolvedTheme();
   const appTheme = useSettingsStore((s) => s.settings.app_theme);
   const onboarded = useSettingsStore((s) => s.settings.onboarded);
   // Settings now persist to a file (async), so gate the UI until the store
