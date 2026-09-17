@@ -20,6 +20,7 @@ import { useStatsStore } from "./stores/statsStore";
 import { useAnnounceStore } from "./stores/announceStore";
 import { usePipeline } from "./hooks/usePipeline";
 import { useRuntimeSync } from "./hooks/useRuntimeSync";
+import { useAutoVoiceDetection } from "./hooks/useAutoVoiceDetection";
 import { useUpdateStore } from "./stores/updateStore";
 import { isTauri, emitEvent } from "./services/tauriBridge";
 import { applyAppTheme } from "./services/appThemes";
@@ -126,6 +127,7 @@ function Dashboard() {
   // Subscribe to backend pipeline + download events and keep Rust in sync.
   usePipeline();
   useRuntimeSync();
+  useAutoVoiceDetection();
 
   useEffect(() => {
     refresh();

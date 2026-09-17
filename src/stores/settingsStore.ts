@@ -41,7 +41,7 @@ function isValidAccelerator(accel: string | undefined | null): boolean {
   );
 }
 
-const DEFAULT_SETTINGS: Settings = {
+export const DEFAULT_SETTINGS: Settings = {
   hotkey: "Ctrl+Shift+Space",
   active_stt_model: "",
   active_mode_id: "raw",
