@@ -117,9 +117,9 @@ export default function Guide() {
                   Without a dedicated GPU, <strong className="text-sv-text font-medium">smaller is faster</strong>. Models, voices, history and logs all live under <code className="rounded bg-sv-surface-2 px-1.5 py-0.5 text-xs text-sv-accent">%APPDATA%\SilentVoice\</code> — nothing is uploaded anywhere by default.
                 </p>
                 <ul className="space-y-3 text-sm max-w-[65ch]">
-                  <DotRow color="bg-sv-good" text="Recommended for your PC" />
-                  <DotRow color="bg-sv-warn" text="Works, but might lag" />
-                  <DotRow color="bg-sv-bad" text="Too heavy (needs better GPU)" />
+                  <FitRow title="Runs well on this PC" text="Pick from here first." />
+                  <FitRow title="Runs, but may be slow" text="Works, with a longer wait each time." />
+                  <FitRow title="Too heavy for this PC" text="Model Store asks before downloading these." />
                 </ul>
               </div>
               <div className="w-full md:max-w-[420px]">
@@ -259,11 +259,12 @@ function PillRow({ label, active, children }: { label: string; active: boolean; 
   );
 }
 
-function DotRow({ color, text }: { color: string; text: string }) {
+// Model Store groups models under these headings (no coloured dots).
+function FitRow({ title, text }: { title: string; text: string }) {
   return (
-    <li className="flex items-center gap-3 p-2.5 rounded-lg bg-sv-surface-2/30 border border-sv-border/30">
-      <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${color}`} />
-      <span className="text-sm text-sv-text">{text}</span>
+    <li className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 rounded-lg border border-sv-border/30 bg-sv-surface-2/30 p-2.5">
+      <span className="text-sm font-medium text-sv-text">{title}</span>
+      <span className="text-xs text-sv-muted">{text}</span>
     </li>
   );
 }

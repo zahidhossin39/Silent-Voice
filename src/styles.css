@@ -303,3 +303,13 @@ body {
     transform: none;
   }
 }
+
+/* Dialog entrance: backdrop fades, panel rises slightly into place. */
+@keyframes sv-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes sv-dialog-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}

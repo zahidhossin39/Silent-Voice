@@ -12,7 +12,6 @@ import { useModelStore } from "../../stores/modelStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import type {
   TtsModel,
-  CompatibilityLevel,
   PiperVoice,
 } from "../../types";
 import { hfPiperVoices, ttsSpeakText } from "../../services/tauriBridge";
@@ -21,12 +20,6 @@ import ProviderLogo from "../shared/ProviderLogo";
 import { ttsNaturalnessScore, ttsSpeedScore } from "../../services/modelMetrics";
 
 type Tab = "stt" | "llm" | "tts";
-
-const DOT: Record<CompatibilityLevel, string> = {
-  good: "bg-sv-good",
-  warn: "bg-sv-warn",
-  bad: "bg-sv-bad",
-};
 
 export default function ModelStore() {
   const [tab, setTab] = useState<Tab>("stt");
@@ -131,7 +124,7 @@ export default function ModelStore() {
   return (
     <Page
       title="Model Store"
-      subtitle="Pick what listens, speaks, and rewrites. Coloured dots show what fits your device."
+      subtitle="Pick what listens, speaks, and rewrites. Models are grouped by how well they run on this PC."
     >
       {/* Tab switch */}
       <div role="tablist" aria-label="Model type" className="mb-4 inline-flex flex-wrap gap-1 rounded-lg border border-sv-border bg-sv-surface p-1 text-sm">
@@ -154,15 +147,6 @@ export default function ModelStore() {
           </div>
         </TabButton>
       </div>
-
-      {/* Legend (compatibility dots apply to STT/LLM; voices all run on CPU) */}
-      {tab !== "tts" && (
-        <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-sv-muted">
-          <LegendDot level="good" label="Recommended" />
-          <LegendDot level="warn" label="Works, may be slow" />
-          <LegendDot level="bad" label="Heavy for your device" />
-        </div>
-      )}
 
       {tab === "tts" ? (
         <>
@@ -242,21 +226,6 @@ export default function ModelStore() {
   );
 }
 
-function LegendDot({
-  level,
-  label,
-}: {
-  level: CompatibilityLevel;
-  label: string;
-}) {
-  return (
-    <span className="inline-flex items-center gap-1.5">
-      <span className={`h-2 w-2 rounded-full ${DOT[level]}`} />
-      {label}
-    </span>
-  );
-}
-
 const TTS_QUALITY_CHIP: Record<string, { label: string; cls: string }> = {
   fast: { label: "Fast", cls: "bg-sv-surface-2 text-sv-muted" },
   balanced: { label: "Balanced", cls: "bg-sv-surface-2 text-sv-muted" },
@@ -326,10 +295,6 @@ function TtsCard({
       } bg-sv-surface transition-colors duration-75 hover:bg-sv-surface-2/40 px-4 py-3`}
     >
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <span
-          className="h-2 w-2 shrink-0 rounded-full bg-sv-good"
-          title="Fits well — voices run on CPU"
-        />
         <ProviderLogo provider={voice.engine} size={30} />
         <div className="flex min-w-[150px] max-w-[380px] flex-1 flex-col gap-0.5">
           <div className="flex items-center gap-2">

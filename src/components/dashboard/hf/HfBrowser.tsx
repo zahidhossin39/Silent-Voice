@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Link } from "react-router-dom";
 import ProviderLogo from "../../shared/ProviderLogo";
 import ConfirmDialog from "../../shared/ConfirmDialog";
@@ -6,6 +6,7 @@ import Select from "../../shared/Select";
 import { useHardwareInfo } from "../../../hooks/useHardwareInfo";
 import { LLM_MODELS } from "../../../services/catalog";
 import { llmCompatibility } from "../../../services/recommend";
+import { FIT_ORDER, FitCheckDialog, FitGroupHeading, fitForRamGb, formatGb, memoryWhy, usableRamGb, type Fit, type FitCheck } from "./fit";
 import { hfSearchModels, hfModelDetails } from "../../../services/tauriBridge";
 import { useModelStore } from "../../../stores/modelStore";
 import { useSettingsStore } from "../../../stores/settingsStore";
@@ -45,13 +46,6 @@ function parseQuant(filename: string): string {
   return match ? match[1].toUpperCase() : "GGUF";
 }
 
-// macOS and Linux report most RAM as "used" because page cache counts as used,
-// even though the OS hands it back on demand. Judging fit on available memory
-// alone therefore marks every model too heavy on those platforms.
-function usableRamGb(hw: HardwareInfo): number {
-  return Math.max(hw.available_ram_gb, hw.total_ram_gb * 0.5);
-}
-
 function getFit(sizeBytes: number, hw: HardwareInfo | null) {
   if (!hw) return null;
   const estRamGb = (sizeBytes / (1024 * 1024 * 1024)) * 1.2;
@@ -73,12 +67,6 @@ function estimateFitFromParams(params_b: number | null, hw: HardwareInfo | null,
   if (estRamGb < usableRamGb(hw)) return "warn";
   return "bad";
 }
-
-const FIT_DOT = {
-  good: "bg-sv-good",
-  warn: "bg-sv-warn",
-  bad: "bg-sv-bad",
-};
 
 // Recommend Q4_K_M > Q5_K_M > Q4 variants > smallest that fits "good"
 function getRecommendedIndex(files: HfFile[], hw: HardwareInfo | null): number {
@@ -323,6 +311,16 @@ export default function HfBrowser({ track }: { track: "llm" | "stt" }) {
     }
   }
   
+  // What a "too heavy / may be slow" download check offers instead: the best
+  // voice model that runs well here, or the largest AI model that does.
+  const sttAlternative = track === "stt" ? STT_MODELS.find((m) => m.id === recommendedSttId) : undefined;
+  const llmAlternative =
+    track === "llm" && hardware
+      ? LLM_MODELS.filter((m) => llmCompatibility(m, hardware).level === "good").sort((a, b) => b.ram_gb - a.ram_gb)[0]
+      : undefined;
+  const staffFit = (m: any): Fit =>
+    !hardware ? "good" : track === "stt" ? fitForRamGb(m.ram_mb / 1024, hardware) : llmCompatibility(m, hardware).level;
+
   const hfResultsVisible = searchResults.filter(item => {
     if (hfShowIncompatible) return true;
     const fit = estimateFitFromParams(item.params_b, hardware, item.id.split("/")[1]);
@@ -387,29 +385,40 @@ export default function HfBrowser({ track }: { track: "llm" | "stt" }) {
         {!debouncedQuery && (
           <div className="flex flex-col gap-2">
             <h3 className="mb-2 text-[10px] font-medium uppercase tracking-wider text-sv-muted">Staff Picks</h3>
-            {staffPicksSorted.map((m: any) => {
-              if (track === "stt") {
-                return (
-                  <SttRow
-                    key={m.id}
-                    model={m}
-                    hardware={hardware}
-                    pinned={pinnedSet.has(m.id)}
-                    onTogglePin={() => togglePinned(m.id)}
-                    recommended={m.id === recommendedSttId}
+            {FIT_ORDER.map((fit) => {
+              const group = staffPicksSorted.filter((m: any) => staffFit(m) === fit);
+              if (group.length === 0) return null;
+              return (
+                <div key={fit} className="flex flex-col gap-2">
+                  <FitGroupHeading
+                    fit={fit}
+                    count={group.length}
+                    why={track === "stt" ? memoryWhy(fit, hardware) : hardware ? LLM_WHY[fit] : undefined}
                   />
-                );
-              } else {
-                return (
-                  <LlmRow
-                    key={m.id}
-                    model={m}
-                    hardware={hardware}
-                    pinned={pinnedSet.has(m.id)}
-                    onTogglePin={() => togglePinned(m.id)}
-                  />
-                );
-              }
+                  {group.map((m: any) =>
+                    track === "stt" ? (
+                      <SttRow
+                        key={m.id}
+                        model={m}
+                        hardware={hardware}
+                        pinned={pinnedSet.has(m.id)}
+                        onTogglePin={() => togglePinned(m.id)}
+                        recommended={m.id === recommendedSttId}
+                        alternative={sttAlternative}
+                      />
+                    ) : (
+                      <LlmRow
+                        key={m.id}
+                        model={m}
+                        hardware={hardware}
+                        pinned={pinnedSet.has(m.id)}
+                        onTogglePin={() => togglePinned(m.id)}
+                        alternative={llmAlternative}
+                      />
+                    )
+                  )}
+                </div>
+              );
             })}
           </div>
         )}
@@ -468,6 +477,14 @@ export default function HfBrowser({ track }: { track: "llm" | "stt" }) {
   );
 }
 
+const LLM_WHY: Record<Fit, string> = {
+  good: "Quick enough for everyday rewrites here",
+  warn: "Runs on the CPU here, so replies take longer",
+  bad: "Needs more memory or a stronger graphics card than this PC has",
+};
+
+const LLM_SLOW = "It will still work, but rewrites take longer and other apps may slow down while it runs.";
+
 // --- Detail Views ---
 
 
@@ -477,16 +494,19 @@ function SttRow({
   hardware, 
   pinned,
   onTogglePin,
-  recommended
+  recommended,
+  alternative,
 }: { 
   model: SttModel; 
   hardware: HardwareInfo | null;
   pinned: boolean;
   onTogglePin: () => void;
   recommended?: boolean;
+  alternative?: SttModel;
 }) {
   const [starting, setStarting] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
+  const [fitCheck, setFitCheck] = useState<FitCheck | null>(null);
   const downloaded = useModelStore((s) => s.downloaded.has(model.id));
   const progress = useModelStore((s) => s.progress[model.id]);
   const download = useModelStore((s) => s.download);
@@ -502,12 +522,8 @@ function SttRow({
   const selectStt = (id: string) =>
     setSettings({ active_stt_model: id, stt_cloud_provider_id: null });
 
-  const estRamGb = model.ram_mb / 1024;
-  let level = "good";
-  if (hardware) {
-    if (estRamGb > usableRamGb(hardware)) level = "bad";
-    else if (estRamGb > usableRamGb(hardware) * 0.8) level = "warn";
-  }
+  const level = fitForRamGb(model.ram_mb / 1024, hardware);
+  const downloadedSet = useModelStore((s) => s.downloaded);
 
   const isDownloading = progress?.status === "downloading";
   const isPaused = progress?.status === "paused";
@@ -526,18 +542,33 @@ function SttRow({
     }
   };
 
+  // Anything that won't run well gets a short check before a big download.
+  const requestDownload = () => {
+    if (level === "good" || !hardware) return void handleDownload();
+    const alt = alternative && alternative.id !== model.id ? alternative : undefined;
+    setFitCheck({
+      fit: level,
+      modelName: model.label,
+      needGb: model.ram_mb / 1024,
+      spareGb: usableRamGb(hardware),
+      alternative: alt && {
+        name: alt.label,
+        detail: `${formatMB(alt.size_mb)} download · uses ${formatGb(alt.ram_mb / 1024)}`,
+        actionLabel: downloadedSet.has(alt.id) ? "Use it" : "Download it",
+        onChoose: () => {
+          setFitCheck(null);
+          if (downloadedSet.has(alt.id)) selectStt(alt.id);
+          else void download(alt.id);
+        },
+      },
+    });
+  };
+
   return (
     <div
       className={`rounded-xl border ${isActive ? "border-sv-accent/40" : "border-sv-border"} bg-sv-surface transition-colors duration-75 hover:bg-sv-surface-2/40 px-4 py-3`}
     >
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        {/* Fit dot: the single at-a-glance "does this run well here" cue. The old
-            "May be slow"/"Pinned"/redundant chips are gone — the dot encodes fit,
-            the pin star encodes pinned, so at most one state chip rides the name. */}
-        <span
-          className={`h-2 w-2 shrink-0 rounded-full ${(FIT_DOT as any)[level]}`}
-          title={level === "good" ? "Fits well on your device" : level === "warn" ? "Runs, may be slow on your device" : "Too heavy for your device"}
-        />
         <ProviderLogo provider={model.provider} size={30} />
         <div className="flex min-w-[150px] max-w-[380px] flex-1 flex-col gap-0.5">
           <div className="flex items-center gap-2">
@@ -626,7 +657,7 @@ function SttRow({
                 </button>
               </div>
             ) : (
-              <button disabled={isBusy} onClick={handleDownload} className={ROW_ACTION_PRIMARY}>
+              <button disabled={isBusy} onClick={requestDownload} className={ROW_ACTION_PRIMARY}>
                 Download
               </button>
             )}
@@ -638,6 +669,14 @@ function SttRow({
         </div>
       </div>
 
+      <FitCheckDialog
+        check={fitCheck}
+        onDownloadAnyway={() => {
+          setFitCheck(null);
+          void handleDownload();
+        }}
+        onCancel={() => setFitCheck(null)}
+      />
       <ConfirmDialog
         open={confirmRemove}
         title="Remove this model?"
@@ -662,16 +701,19 @@ function LlmRow({
   model, 
   hardware, 
   pinned,
-  onTogglePin
+  onTogglePin,
+  alternative,
 }: { 
   model: LlmModel; 
   hardware: HardwareInfo | null;
   pinned: boolean;
   onTogglePin: () => void;
+  alternative?: LlmModel;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [starting, setStarting] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
+  const [fitCheck, setFitCheck] = useState<FitCheck | null>(null);
   const downloaded = useModelStore((s) => s.downloadedLlm.has(model.id));
   const progress = useModelStore((s) => s.progress[model.id]);
   const download = useModelStore((s) => s.downloadLlm);
@@ -682,7 +724,9 @@ function LlmRow({
   const modes = useSettingsStore((s) => s.modes);
   const inUse = modes.some(m => m.model_source === "local" && m.model_id === model.id);
 
-  const level = llmCompatibility(model, hardware).level;
+  const compat = llmCompatibility(model, hardware);
+  const level = compat.level;
+  const downloadedLlmSet = useModelStore((s) => s.downloadedLlm);
   const isDownloading = progress?.status === "downloading";
   const isPaused = progress?.status === "paused";
   const isBusy = starting || isDownloading;
@@ -700,6 +744,26 @@ function LlmRow({
     }
   };
 
+  const requestDownload = () => {
+    if (level === "good" || !hardware) return void handleDownload();
+    const alt = alternative && alternative.id !== model.id && !downloadedLlmSet.has(alternative.id) ? alternative : undefined;
+    setFitCheck({
+      fit: level,
+      modelName: model.name,
+      reason: compat.reason,
+      consequence: level === "warn" ? LLM_SLOW : undefined,
+      alternative: alt && {
+        name: alt.name,
+        detail: `${formatMB(alt.size_mb)} download`,
+        actionLabel: "Download it",
+        onChoose: () => {
+          setFitCheck(null);
+          void download(alt.id);
+        },
+      },
+    });
+  };
+
   return (
     <div
       onMouseEnter={() => setExpanded(true)}
@@ -707,10 +771,6 @@ function LlmRow({
       className={`rounded-xl border ${inUse ? "border-sv-accent/40" : "border-sv-border"} bg-sv-surface transition-colors duration-75 hover:bg-sv-surface-2/40 px-4 py-3`}
     >
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <span
-          className={`h-2 w-2 shrink-0 rounded-full ${(FIT_DOT as any)[level]}`}
-          title={level === "good" ? "Fits well on your device" : level === "warn" ? "Runs, may be slow on your device" : "Too heavy for your device"}
-        />
         <ProviderLogo provider={model.provider} size={30} />
         <div className="flex min-w-[150px] max-w-[380px] flex-1 flex-col gap-0.5">
           <div className="flex items-center gap-2">
@@ -797,7 +857,7 @@ function LlmRow({
                 </button>
               </div>
             ) : (
-              <button disabled={isBusy} onClick={handleDownload} className={ROW_ACTION_PRIMARY}>
+              <button disabled={isBusy} onClick={requestDownload} className={ROW_ACTION_PRIMARY}>
                 Download
               </button>
             )}
@@ -821,6 +881,14 @@ function LlmRow({
         </div>
       </div>
 
+      <FitCheckDialog
+        check={fitCheck}
+        onDownloadAnyway={() => {
+          setFitCheck(null);
+          void handleDownload();
+        }}
+        onCancel={() => setFitCheck(null)}
+      />
       <ConfirmDialog
         open={confirmRemove}
         title="Remove this model?"
@@ -891,12 +959,6 @@ function HfRow({
           <ProviderLogo provider={owner} size={32} />
           <div className="min-w-0 flex-1 flex flex-col gap-1.5">
             <div className="flex items-center gap-2">
-              {fit && (
-                <span
-                  className={`h-1.5 w-1.5 shrink-0 rounded-full ${(FIT_DOT as any)[fit]}`}
-                  title={fit === "good" ? "Fits well" : fit === "warn" ? "May be slow" : "Too heavy"}
-                />
-              )}
               <span className="truncate text-[13px] font-semibold text-sv-text">{name}</span>
               {inUse && <span className="shrink-0 rounded bg-sv-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-sv-accent">In use</span>}
               {pinned && <span className="shrink-0 rounded bg-sv-surface-2 px-1.5 py-0.5 text-[10px] text-sv-muted">Pinned</span>}
@@ -966,6 +1028,8 @@ function HfDetail({ details, hardware, track }: { details: HfModelDetails; hardw
 
   const recommendedIndex = getRecommendedIndex(availableFiles, hardware);
   const [selectedIndex, setSelectedIndex] = useState(recommendedIndex >= 0 ? recommendedIndex : 0);
+  const [fitCheck, setFitCheck] = useState<FitCheck | null>(null);
+  const pendingDownload = useRef<(() => void) | null>(null);
 
   const selectedFile = availableFiles[selectedIndex];
   
@@ -1030,7 +1094,6 @@ function HfDetail({ details, hardware, track }: { details: HfModelDetails; hardw
                 }`}
               >
                 <div className="flex items-center gap-3">
-                  {fit && <span className={`shrink-0 h-2 w-2 rounded-full ${(FIT_DOT as any)[fit]}`} />}
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="font-medium text-sm">{parsedLabel}</span>
@@ -1040,7 +1103,7 @@ function HfDetail({ details, hardware, track }: { details: HfModelDetails; hardw
                     <div className="mt-0.5 text-xs text-sv-muted">
                       {formatMB(f.size_bytes / (1024 * 1024))}
                       {extraTag ? ` · ${extraTag}` : ""}
-                      {fit === "good" ? " · Fits well" : fit === "warn" ? " · Tight fit" : fit === "bad" ? " · Too large" : ""}
+                      {fit === "good" ? " · Runs well here" : fit === "warn" ? " · May be slow here" : fit === "bad" ? " · Too heavy for this PC" : ""}
                       {f.isMultiPart ? " · (Multi-part, not supported)" : ""}
                     </div>
                   </div>
@@ -1091,14 +1154,43 @@ function HfDetail({ details, hardware, track }: { details: HfModelDetails; hardw
               }
             };
 
+            const versionLabel = (f: typeof selectedFile) =>
+              track === "stt"
+                ? (f.name.split("/").pop() ?? f.name).replace(/^ggml-/i, "").replace(/\.bin$/i, "")
+                : `${name} ${parseQuant(f.name)}`;
+            const requestDownload = () => {
+              if (!fit || fit === "good" || !hardware) return doDownload();
+              const rec = availableFiles[recommendedIndex];
+              const recRunsWell =
+                !!rec && recommendedIndex !== selectedIndex && !rec.isMultiPart && getFit(rec.size_bytes, hardware) === "good";
+              pendingDownload.current = doDownload;
+              setFitCheck({
+                fit,
+                modelName: versionLabel(selectedFile),
+                needGb: (selectedFile.size_bytes / (1024 * 1024 * 1024)) * 1.2,
+                spareGb: usableRamGb(hardware),
+                consequence: track === "llm" && fit === "warn" ? LLM_SLOW : undefined,
+                alternative: recRunsWell
+                  ? {
+                      name: versionLabel(rec),
+                      detail: `${formatMB(rec.size_bytes / (1024 * 1024))} download`,
+                      actionLabel: "Pick this version",
+                      onChoose: () => {
+                        setFitCheck(null);
+                        setSelectedIndex(recommendedIndex);
+                      },
+                    }
+                  : undefined,
+              });
+            };
+
             return (
               <div className="mt-2 flex items-center justify-between">
                 <div className="flex flex-col gap-1 text-[11px]">
                   {fit && (
-                    <div className="flex items-center gap-1.5">
-                      <span className={`h-2 w-2 rounded-full ${(FIT_DOT as any)[fit]}`} />
-                      <span className="text-sv-text">{fit === "good" ? "Recommended" : fit === "warn" ? "Works, may be slow" : "Heavy for your device"}</span>
-                    </div>
+                    <span className="text-sv-text">
+                      {fit === "good" ? "Runs well on this PC" : fit === "warn" ? "Runs, but may be slow" : "Too heavy for this PC"}
+                    </span>
                   )}
                   {estSpeed && fit !== "bad" && <span className="text-sv-muted">{estSpeed}</span>}
                 </div>
@@ -1159,7 +1251,7 @@ function HfDetail({ details, hardware, track }: { details: HfModelDetails; hardw
                       </div>
                     </div>
                   ) : (
-                    <button onClick={doDownload} className="rounded-lg border border-sv-border bg-sv-surface-2 px-3 py-1.5 text-xs font-medium text-sv-text transition-colors duration-75 hover:border-sv-accent hover:text-sv-accent">
+                    <button onClick={requestDownload} className="rounded-lg border border-sv-border bg-sv-surface-2 px-3 py-1.5 text-xs font-medium text-sv-text transition-colors duration-75 hover:border-sv-accent hover:text-sv-accent">
                       Download
                     </button>
                   )}
@@ -1169,6 +1261,15 @@ function HfDetail({ details, hardware, track }: { details: HfModelDetails; hardw
           })()}
         </div>
       )}
+
+      <FitCheckDialog
+        check={fitCheck}
+        onDownloadAnyway={() => {
+          setFitCheck(null);
+          pendingDownload.current?.();
+        }}
+        onCancel={() => setFitCheck(null)}
+      />
 
       {details.readme && (
         <div className="rounded-xl border border-sv-border bg-sv-surface">
