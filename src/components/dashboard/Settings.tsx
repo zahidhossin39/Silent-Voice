@@ -103,9 +103,9 @@ export default function Settings() {
 
   return (
     <Page title="Settings">
-      <div className="flex gap-8">
+      <div className="flex flex-col gap-5 lg:flex-row lg:gap-8">
         <Rail query={query} onQuery={setQuery} current={topic} onSelect={setTopic} />
-        <div className="min-w-0 max-w-3xl flex-1 pb-16">
+        <div className="@container min-w-0 max-w-3xl flex-1 pb-16">
           {query.trim() ? (
             <SearchResults ctx={ctx} list={SETTINGS} query={query} onPick={jumpTo} />
           ) : (

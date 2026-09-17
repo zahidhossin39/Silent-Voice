@@ -21,9 +21,14 @@ export function Rail({
   current: TopicId;
   onSelect: (id: TopicId) => void;
 }) {
+  // Below lg (the 820px minimum window leaves ~530px for settings) the rail
+  // folds into a search bar over a scrollable row of topic tabs.
   return (
-    <nav aria-label="Settings sections" className="sticky top-0 flex w-52 shrink-0 flex-col self-start xl:w-56">
-      <label className="relative mb-3 block">
+    <nav
+      aria-label="Settings sections"
+      className="flex min-w-0 flex-col gap-2 lg:sticky lg:top-0 lg:w-52 lg:shrink-0 lg:gap-3 lg:self-start xl:w-56"
+    >
+      <label className="relative block">
         <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-sv-muted">
           <SearchIcon />
         </span>
@@ -35,31 +40,46 @@ export function Rail({
           }}
           placeholder="Search settings"
           aria-label="Search settings"
-          className={inputCls + " w-full py-2 pl-8 text-[13px]"}
+          className={inputCls + ` w-full py-2 pl-8 text-[13px] ${query ? "pr-8" : ""}`}
         />
-      </label>
-      {TOPICS.map((t) => {
-        const active = !query && current === t.id;
-        return (
+        {query && (
           <button
-            key={t.id}
             type="button"
-            onClick={() => {
-              onQuery("");
-              onSelect(t.id);
-            }}
-            aria-current={active ? "page" : undefined}
-            className={`mb-0.5 flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-[13.5px] transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sv-accent ${
-              active ? "bg-sv-surface-2 font-medium text-sv-text" : "text-sv-muted hover:bg-sv-surface-2/60 hover:text-sv-text"
-            }`}
+            aria-label="Clear search"
+            title="Clear search (Esc)"
+            onClick={() => onQuery("")}
+            className="absolute right-1.5 top-1/2 grid h-6 w-6 -translate-y-1/2 place-items-center rounded-md text-sv-muted transition-colors duration-150 hover:bg-sv-surface-2 hover:text-sv-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sv-accent"
           >
-            <span className={active ? "text-sv-text" : "text-sv-muted"}>
-              <t.Icon />
-            </span>
-            {t.label}
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
+              <path d="M6 6l12 12M18 6 6 18" />
+            </svg>
           </button>
-        );
-      })}
+        )}
+      </label>
+      <div className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1 lg:mx-0 lg:flex-col lg:gap-0.5 lg:overflow-visible lg:px-0 lg:pb-0">
+        {TOPICS.map((t) => {
+          const active = !query && current === t.id;
+          return (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => {
+                onQuery("");
+                onSelect(t.id);
+              }}
+              aria-current={active ? "page" : undefined}
+              className={`flex shrink-0 items-center gap-2 whitespace-nowrap rounded-lg px-3 py-1.5 text-left text-[13px] transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sv-accent lg:w-full lg:gap-3 lg:py-2 lg:text-[13.5px] ${
+                active ? "bg-sv-surface-2 font-medium text-sv-text" : "text-sv-muted hover:bg-sv-surface-2/60 hover:text-sv-text"
+              }`}
+            >
+              <span className={active ? "text-sv-text" : "text-sv-muted"}>
+                <t.Icon />
+              </span>
+              {t.label}
+            </button>
+          );
+        })}
+      </div>
     </nav>
   );
 }
@@ -108,21 +128,30 @@ export function Rows({
 }) {
   if (items.length === 0) return null;
   return (
-    <div className={`divide-y divide-sv-border/70 ${bare ? "" : "rounded-xl bg-sv-surface"}`}>
+    // Same card edge as every other page (Home, History, Model Store). Inner
+    // rows round 1px less so the highlight sits inside the border.
+    <div className={`divide-y divide-sv-border/70 ${bare ? "" : "rounded-xl border border-sv-border bg-sv-surface"}`}>
       {items.map((x) => (
         <div
           key={x.id}
           id={`set-${x.id}`}
-          className={`scroll-mt-24 px-5 py-3.5 transition-colors duration-700 ${bare ? "" : "first:rounded-t-xl last:rounded-b-xl"} ${
+          className={`scroll-mt-24 px-5 py-3.5 transition-colors duration-700 ${bare ? "" : "first:rounded-t-[11px] last:rounded-b-[11px]"} ${
             flash === x.id ? "bg-sv-accent/12" : ""
           }`}
         >
-          <div className={x.wide ? "" : "flex items-center justify-between gap-6"}>
+          {/* Side by side when the settings column has room (container, not
+              window, width); stacked when it doesn't, so a dropdown never
+              covers its label. */}
+          <div
+            className={
+              x.wide ? "" : "flex flex-col items-start gap-2.5 @lg:flex-row @lg:items-center @lg:justify-between @lg:gap-6"
+            }
+          >
             <div className="flex min-w-0 items-center gap-1.5">
               <span className="text-[13.5px] text-sv-text">{x.label}</span>
               {x.info && <Info text={typeof x.info === "function" ? x.info(ctx) : x.info} label={x.label} />}
             </div>
-            <div className={x.wide ? "mt-3" : "shrink-0"}>{x.render(ctx, x.label)}</div>
+            <div className={x.wide ? "mt-3" : "max-w-full shrink-0"}>{x.render(ctx, x.label)}</div>
           </div>
         </div>
       ))}
@@ -157,13 +186,13 @@ export function AdvancedCard({
 }) {
   if (items.length === 0) return null;
   return (
-    <div className="mt-4 rounded-xl bg-sv-surface">
+    <div className="mt-4 rounded-xl border border-sv-border bg-sv-surface">
       <button
         type="button"
         aria-expanded={open}
         aria-controls={panelId}
         onClick={onToggle}
-        className="group flex w-full items-center gap-2.5 rounded-xl px-5 py-4 text-left transition-colors duration-150 hover:bg-sv-surface-2/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sv-accent"
+        className="group flex w-full items-center gap-2.5 rounded-[11px] px-5 py-4 text-left transition-colors duration-150 hover:bg-sv-surface-2/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sv-accent"
       >
         {/* -ml-1 cancels the arrow glyph's side padding so its visible edge
             lines up with the setting labels below. */}
@@ -278,7 +307,7 @@ export function SearchResults({
       {grouped.map(({ t, items }) => (
         <section key={t.id} className="mt-6">
           <TopicHeading id={t.id} size="section" />
-          <ul className="mt-2.5 divide-y divide-sv-border/70 rounded-xl bg-sv-surface">
+          <ul className="mt-2.5 divide-y divide-sv-border/70 rounded-xl border border-sv-border bg-sv-surface">
             {items.map((x) => {
               const hidden = !!x.visible && !x.visible(ctx);
               const info = typeof x.info === "function" ? x.info(ctx) : x.info;
@@ -287,7 +316,7 @@ export function SearchResults({
                   <button
                     type="button"
                     onClick={() => onPick(x)}
-                    className="flex w-full items-center gap-4 px-5 py-3 text-left transition-colors duration-150 first:rounded-t-xl last:rounded-b-xl hover:bg-sv-surface-2/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sv-accent"
+                    className="flex w-full items-center gap-4 rounded-[11px] px-5 py-3 text-left transition-colors duration-150 hover:bg-sv-surface-2/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sv-accent"
                   >
                     <span className="min-w-0 flex-1">
                       <span className="block text-[13.5px] text-sv-text">{x.label}</span>
