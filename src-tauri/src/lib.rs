@@ -130,7 +130,7 @@ impl Default for RuntimeConfig {
             use_gpu: false,
             vocabulary: String::new(),
             use_vocabulary: true,
-            vocabulary_strength: 2.0,
+            vocabulary_strength: 1.5,
             stt_source: "local".into(),
             stt_base_url: String::new(),
             stt_api_key: String::new(),

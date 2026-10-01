@@ -537,7 +537,7 @@ const SHERPA_TARGET_SEG_SECS: usize = 12;
 
 /// Fallback boost added to hotword paths during beam search, used if the config
 /// can't be read. The live value is the `vocabulary_strength` slider (0.5–5).
-const DEFAULT_HOTWORDS_SCORE: f32 = 2.0;
+const DEFAULT_HOTWORDS_SCORE: f32 = 1.5;
 
 /// Parakeet's SentencePiece BPE vocab (`piece\tscore` per line), required to
 /// tokenize hotwords. k2-fsa's archive omits it, so it's generated once from
@@ -569,14 +569,37 @@ fn ensure_bpe_vocab(model_id: &str, dir: &Path) -> Option<std::path::PathBuf> {
     Some(p)
 }
 
-/// Write the user's vocabulary (comma/newline separated) as a hotwords file,
-/// one phrase per line. None when empty.
+/// The phrases worth boosting: names and jargon (Claude, Gemini, n8n,
+/// Anti-gravity, Claude Code). Lowercase everyday words (task, ask, discord)
+/// are left out — Parakeet already
+/// spells them, and boosting them made it insert them into unrelated speech
+/// ("could you call me" → "could you Claude me"). Measured with
+/// scripts/vocab_bench.py. Duplicates are dropped.
+fn hotword_phrases(vocabulary: &str) -> Vec<&str> {
+    use harper_core::spell::{Dictionary, FstDictionary};
+    let dict = FstDictionary::curated();
+    let mut out: Vec<&str> = Vec::new();
+    for p in vocabulary.split([',', '\n']).map(str::trim).filter(|s| !s.is_empty()) {
+        let words: Vec<&str> = p
+            .split(|c: char| c.is_whitespace() || c == '-')
+            .filter(|w| !w.is_empty())
+            .collect();
+        // A capitalized word reads as a name the user wants spelled their way
+        // (Claude, Gemini); a lowercase dictionary word is everyday speech.
+        let special = words
+            .iter()
+            .any(|w| w.starts_with(char::is_uppercase) || !dict.contains_word_str(w));
+        if (words.len() > 1 || special) && !out.iter().any(|o| o.eq_ignore_ascii_case(p)) {
+            out.push(p);
+        }
+    }
+    out
+}
+
+/// Write the boost-worthy vocabulary as a hotwords file, one phrase per line.
+/// None when nothing qualifies (the engine then runs fast greedy search).
 fn write_hotwords_file(dir: &Path, vocabulary: &str) -> Option<std::path::PathBuf> {
-    let phrases: Vec<&str> = vocabulary
-        .split([',', '\n'])
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .collect();
+    let phrases = hotword_phrases(vocabulary);
     if phrases.is_empty() {
         return None;
     }
@@ -630,7 +653,10 @@ pub fn ensure_engine(
         .config
         .lock()
         .map(|c| c.vocabulary_strength)
-        .unwrap_or(DEFAULT_HOTWORDS_SCORE);
+        .unwrap_or(DEFAULT_HOTWORDS_SCORE)
+        // Higher boosts force names into unrelated speech: scripts/vocab_bench.py
+        // saw "could you call me" → "could you Claude me" at 2.0, none at 1.5.
+        .clamp(0.5, 1.5);
     // Vocabulary text and boost are in the key so changing the word list or the
     // strength slider forces a reload (both are baked into the recognizer).
     let hot_key = hotwords.as_ref().map(|_| vocabulary.trim()).unwrap_or("");
@@ -932,6 +958,12 @@ mod seg_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hotwords_skip_everyday_words() {
+        let v = "Claude, discord, task, Anti-gravity, n8n, Claude Code, Gemini, task, ask";
+        assert_eq!(hotword_phrases(v), vec!["Claude", "Anti-gravity", "n8n", "Claude Code", "Gemini"]);
+    }
 
     // Spike benchmark. Point it at the extracted Moonshine dir and a real
     // 16 kHz mono dictation clip via env vars, then:

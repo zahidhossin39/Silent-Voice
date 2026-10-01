@@ -55,7 +55,7 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: "dark",
   custom_vocabulary: "",
   use_custom_vocabulary: true,
-  vocabulary_strength: 2,
+  vocabulary_strength: 1.5,
   stt_cloud_provider_id: null,
   toggle_mode: true,
   input_sensitivity: 50,

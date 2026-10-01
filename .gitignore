@@ -46,3 +46,4 @@ coedit-work/
 
 # local sherpa-onnx source clone (reference only)
 sherpa-onnx_repo/
+scripts/.vocab_bench_cache/

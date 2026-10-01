@@ -402,8 +402,8 @@ export const SETTINGS: SettingDef[] = [
         label={label}
         value={c.s.vocabulary_strength}
         min={0.5}
-        max={5}
-        step={0.5}
+        max={1.5}
+        step={0.25}
         onChange={(v) => c.set({ vocabulary_strength: v })}
         left="Gentle"
         right="Strong"
