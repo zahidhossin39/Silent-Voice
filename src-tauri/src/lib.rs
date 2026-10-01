@@ -953,6 +953,7 @@ async fn retranscribe_clip(
 
     let text = system::textfmt::strip_fillers(&raw);
     let text = system::textfmt::collapse_repeated_words(&text);
+    let text = if use_vocabulary { system::soundalike::fix(&text, &vocabulary) } else { text };
     let text = hotkey::apply_replacements(&text, &replacements);
     let text = system::textfmt::format_numbers(&text);
     Ok(RetranscribeResult { text, model_id })

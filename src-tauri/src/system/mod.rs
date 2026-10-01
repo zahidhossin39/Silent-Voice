@@ -27,6 +27,7 @@ pub mod paste;
 pub mod secure_field;
 pub mod sherpa;
 pub mod sherpa_stt;
+pub mod soundalike;
 #[cfg(windows)]
 pub mod squiggle;
 pub mod textfmt;
