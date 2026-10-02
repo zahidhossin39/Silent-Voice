@@ -21,6 +21,17 @@ pub struct Recorder {
     // Live 0–100 loudness of the most recent audio frame (f32 bits), updated on
     // the capture thread so the pill/waveform can react to the real voice.
     level: Arc<AtomicU32>,
+    // Why capture failed (mic couldn't open, or the stream died mid-recording).
+    // Set on the capture thread; read by the pipeline so a dead mic is reported
+    // instead of silently pasting nothing.
+    error: Arc<Mutex<Option<String>>>,
+}
+
+fn record_error(slot: &Arc<Mutex<Option<String>>>, msg: String) {
+    crate::logging::log_error("audio", &msg);
+    if let Ok(mut e) = slot.lock() {
+        e.get_or_insert(msg);
+    }
 }
 
 impl Recorder {
@@ -31,16 +42,24 @@ impl Recorder {
         let buffer = Arc::new(Mutex::new(Vec::<f32>::new()));
         let in_sample_rate = Arc::new(AtomicU32::new(0));
         let level = Arc::new(AtomicU32::new(0));
+        let error = Arc::new(Mutex::new(None));
 
         let buf_clone = buffer.clone();
         let rate_clone = in_sample_rate.clone();
         let level_clone = level.clone();
+        let err_clone = error.clone();
 
         thread::spawn(move || {
-            if let Err(e) =
-                capture_loop(device_name, ctrl_rx, &samples_tx, buf_clone, rate_clone, level_clone)
-            {
-                eprintln!("[audio] capture error: {e}");
+            if let Err(e) = capture_loop(
+                device_name,
+                ctrl_rx,
+                &samples_tx,
+                buf_clone,
+                rate_clone,
+                level_clone,
+                err_clone.clone(),
+            ) {
+                record_error(&err_clone, e);
                 let _ = samples_tx.send(Vec::new());
             }
         });
@@ -51,7 +70,13 @@ impl Recorder {
             buffer,
             in_sample_rate,
             level,
+            error,
         })
+    }
+
+    /// The capture failure, if any. None while the mic is working.
+    pub fn error(&self) -> Option<String> {
+        self.error.lock().ok().and_then(|e| e.clone())
     }
 
     /// A handle to the live 0–100 loudness value, for a throttled emitter to
@@ -100,6 +125,7 @@ fn capture_loop(
     buffer: Arc<Mutex<Vec<f32>>>,
     in_sample_rate: Arc<AtomicU32>,
     level: Arc<AtomicU32>,
+    error: Arc<Mutex<Option<String>>>,
 ) -> Result<(), String> {
     let host = cpal::default_host();
     let device = match device_name {
@@ -121,7 +147,7 @@ fn capture_loop(
     let buf_for_cb = buffer.clone();
     let level_for_cb = level.clone();
 
-    let err_fn = |e| eprintln!("[audio] stream error: {e}");
+    let err_fn = move |e: cpal::StreamError| record_error(&error, format!("microphone stream error: {e}"));
 
     // Capture as f32 regardless of native sample format.
     let stream = match config.sample_format() {
@@ -328,5 +354,22 @@ pub fn list_input_devices() -> Vec<String> {
     match host.input_devices() {
         Ok(devices) => devices.filter_map(|d| d.name().ok()).collect(),
         Err(_) => Vec::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // A mic that can't open must say so. Before this, the pill showed
+    // "recording", the user spoke, and release silently pasted nothing.
+    #[test]
+    fn failed_mic_open_is_reported() {
+        let rec = Recorder::start(Some("no-such-microphone-xyz".into())).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        let err = rec.error();
+        let samples = rec.stop();
+        assert!(samples.is_empty());
+        assert!(err.is_some_and(|e| e.contains("not found")), "error was not surfaced");
     }
 }

@@ -243,8 +243,38 @@ pub fn show_overlay(app: &AppHandle) {
     }
     if let Some(win) = app.get_webview_window(OVERLAY_LABEL) {
         let _ = win.show();
-        let _ = win.set_always_on_top(true);
+        raise_topmost(&win);
     }
+}
+
+/// Put the pill at the top of the always-on-top band. tao's
+/// `set_always_on_top(true)` only calls SetWindowPos when the flag CHANGES, so
+/// once set it's a no-op — any topmost window opened later (Task Manager, a
+/// video pop-out, another app's overlay) stayed above the pill for good.
+/// scripts/pill_zorder_check.py reproduces that.
+#[cfg(windows)]
+fn raise_topmost(win: &tauri::WebviewWindow) {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        SetWindowPos, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE,
+    };
+    let Ok(handle) = win.hwnd() else { return };
+    unsafe {
+        let _ = SetWindowPos(
+            HWND(handle.0 as *mut core::ffi::c_void),
+            HWND_TOPMOST,
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER,
+        );
+    }
+}
+
+#[cfg(not(windows))]
+fn raise_topmost(win: &tauri::WebviewWindow) {
+    let _ = win.set_always_on_top(true);
 }
 
 /// Hide the overlay and set the user-hidden flag (so keep-alive leaves it).
@@ -318,6 +348,6 @@ pub fn ensure_visible(app: &AppHandle) {
         if !win.is_visible().unwrap_or(true) {
             let _ = win.show();
         }
-        let _ = win.set_always_on_top(true);
+        raise_topmost(&win);
     }
 }

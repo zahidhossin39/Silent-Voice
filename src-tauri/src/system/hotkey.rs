@@ -369,13 +369,21 @@ pub fn start_capture(app: &AppHandle) {
             tauri::async_runtime::spawn(async move {
                 loop {
                     tokio::time::sleep(Duration::from_millis(60)).await;
-                    let recording = level_app
+                    let (recording, mic_error) = level_app
                         .state::<AppState>()
                         .recorder
                         .lock()
-                        .map(|s| s.is_some())
-                        .unwrap_or(false);
+                        .map(|s| (s.is_some(), s.as_ref().and_then(|r| r.error())))
+                        .unwrap_or((false, None));
                     if !recording {
+                        break;
+                    }
+                    // The mic failed to open or died mid-recording. Say so now,
+                    // while the user can still react, and keep whatever audio
+                    // did arrive — instead of silently pasting nothing at release.
+                    if let Some(e) = mic_error {
+                        report_error(&level_app, "audio", &format!("The microphone stopped working: {e}"));
+                        finalize_recording(level_app.clone());
                         break;
                     }
                     let v = f32::from_bits(level.load(std::sync::atomic::Ordering::Relaxed));
@@ -410,6 +418,12 @@ fn main_key_vk(shortcut: &Shortcut) -> Option<i32> {
         Code::ArrowUp => 0x26,
         Code::ArrowRight => 0x27,
         Code::ArrowDown => 0x28,
+        Code::PageUp => 0x21,
+        Code::PageDown => 0x22,
+        Code::End => 0x23,
+        Code::Home => 0x24,
+        Code::Insert => 0x2D,
+        Code::Delete => 0x2E,
         Code::KeyA => 0x41, Code::KeyB => 0x42, Code::KeyC => 0x43, Code::KeyD => 0x44,
         Code::KeyE => 0x45, Code::KeyF => 0x46, Code::KeyG => 0x47, Code::KeyH => 0x48,
         Code::KeyI => 0x49, Code::KeyJ => 0x4A, Code::KeyK => 0x4B, Code::KeyL => 0x4C,

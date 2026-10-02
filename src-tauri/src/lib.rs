@@ -292,12 +292,12 @@ pub async fn run_local_llm(
 // ---------------- Hardware ----------------
 
 #[tauri::command]
-fn get_hardware_info() -> hardware::HardwareInfo {
+async fn get_hardware_info() -> hardware::HardwareInfo {
     hardware::detect()
 }
 
 #[tauri::command]
-fn recommend_device_defaults() -> hardware::DeviceRecommendation {
+async fn recommend_device_defaults() -> hardware::DeviceRecommendation {
     hardware::recommend(&hardware::detect())
 }
 
@@ -361,7 +361,7 @@ fn copy_diagnostics(state: State<AppState>) -> String {
 }
 
 #[tauri::command]
-fn list_input_devices() -> Vec<String> {
+async fn list_input_devices() -> Vec<String> {
     capture::list_input_devices()
 }
 
@@ -652,7 +652,7 @@ fn tts_speak_text(app: AppHandle, text: String) {
 }
 
 #[tauri::command]
-fn list_downloaded_tts() -> Vec<String> {
+async fn list_downloaded_tts() -> Vec<String> {
     registry::list_downloaded_tts()
 }
 
@@ -713,7 +713,7 @@ async fn download_tts_model(
 }
 
 #[tauri::command]
-fn delete_tts_model(voice_id: String) -> Result<(), String> {
+async fn delete_tts_model(voice_id: String) -> Result<(), String> {
     downloader::delete_tts_model(&voice_id)
 }
 
@@ -787,7 +787,7 @@ async fn api_test_stt(base_url: String, api_key: String, model: String) -> Resul
 // ---------------- Local LLM (bundled llama.cpp) ----------------
 
 #[tauri::command]
-fn list_downloaded_llm() -> Vec<String> {
+async fn list_downloaded_llm() -> Vec<String> {
     registry::list_downloaded_llm()
 }
 
@@ -804,7 +804,7 @@ async fn download_llm_model(
 }
 
 #[tauri::command]
-fn delete_llm_model(model_id: String) -> Result<(), String> {
+async fn delete_llm_model(model_id: String) -> Result<(), String> {
     downloader::delete_llm_model(&model_id)
 }
 
@@ -823,7 +823,7 @@ async fn local_llm_generate(
 // ---------------- Whisper STT models ----------------
 
 #[tauri::command]
-fn list_downloaded_models() -> Vec<String> {
+async fn list_downloaded_models() -> Vec<String> {
     registry::list_downloaded()
 }
 
@@ -855,24 +855,24 @@ async fn download_stt_archive(
 }
 
 #[tauri::command]
-fn delete_model(model_id: String) -> Result<(), String> {
+async fn delete_model(model_id: String) -> Result<(), String> {
     downloader::delete_model(&model_id)
 }
 
 // ---------------- History (local JSON file) ----------------
 
 #[tauri::command]
-fn load_history() -> Vec<HistoryEntry> {
+async fn load_history() -> Vec<HistoryEntry> {
     history::load()
 }
 
 #[tauri::command]
-fn save_history(entries: Vec<HistoryEntry>) -> Result<(), String> {
+async fn save_history(entries: Vec<HistoryEntry>) -> Result<(), String> {
     history::save(entries)
 }
 
 #[tauri::command]
-fn clear_history() -> Result<(), String> {
+async fn clear_history() -> Result<(), String> {
     history::clear()
 }
 
@@ -965,7 +965,7 @@ async fn retranscribe_clip(
 /// produces an undecodable text blob. It is also several times larger on the
 /// wire than the audio it carries.
 #[tauri::command]
-fn read_audio_clip(file_name: String) -> Result<tauri::ipc::Response, String> {
+async fn read_audio_clip(file_name: String) -> Result<tauri::ipc::Response, String> {
     if file_name.contains('/') || file_name.contains('\\') || file_name.contains("..") {
         return Err("Invalid file name".into());
     }
@@ -975,7 +975,7 @@ fn read_audio_clip(file_name: String) -> Result<tauri::ipc::Response, String> {
 }
 
 #[tauri::command]
-fn copy_audio_file(file_name: String) -> Result<(), String> {
+async fn copy_audio_file(file_name: String) -> Result<(), String> {
     if file_name.contains('/') || file_name.contains('\\') || file_name.contains("..") {
         return Err("Invalid file name".into());
     }
@@ -984,7 +984,7 @@ fn copy_audio_file(file_name: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn prune_audio_clips(keep: usize) -> Result<(), String> {
+async fn prune_audio_clips(keep: usize) -> Result<(), String> {
     history::prune_clips(keep);
     Ok(())
 }
@@ -1119,7 +1119,7 @@ async fn download_coedit_model(app: AppHandle, state: State<'_, AppState>) -> Re
 #[tauri::command]
 fn coedit_installed() -> bool { models::registry::coedit_installed() }
 #[tauri::command]
-fn delete_coedit_model() -> Result<(), String> { models::downloader::delete_coedit_model() }
+async fn delete_coedit_model() -> Result<(), String> { models::downloader::delete_coedit_model() }
 
 #[tauri::command]
 async fn download_gector_model(app: AppHandle, state: State<'_, AppState>, variant: String) -> Result<bool, String> {
@@ -1131,7 +1131,7 @@ async fn download_gector_model(app: AppHandle, state: State<'_, AppState>, varia
 #[tauri::command]
 fn gector_installed() -> bool { models::registry::gector_installed() }
 #[tauri::command]
-fn delete_gector_model() -> Result<(), String> { models::downloader::delete_gector_model() }
+async fn delete_gector_model() -> Result<(), String> { models::downloader::delete_gector_model() }
 
 #[tauri::command]
 async fn download_vad_model(app: AppHandle, state: State<'_, AppState>) -> Result<bool, String> {
@@ -1143,7 +1143,7 @@ async fn download_vad_model(app: AppHandle, state: State<'_, AppState>) -> Resul
 #[tauri::command]
 fn vad_installed() -> bool { models::registry::vad_installed() }
 #[tauri::command]
-fn delete_vad_model() -> Result<(), String> { models::downloader::delete_vad_model() }
+async fn delete_vad_model() -> Result<(), String> { models::downloader::delete_vad_model() }
 
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
