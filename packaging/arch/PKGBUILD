@@ -13,16 +13,29 @@ url="https://github.com/zahidhossin39/Silent-Voice"
 license=('MIT')
 # Arch names for the .deb's Depends: libasound2, libxdo3, x11-utils,
 # libayatana-appindicator3-1, libwebkit2gtk-4.1-0, libgtk-3-0.
-depends=('alsa-lib' 'xdotool' 'xorg-xprop' 'xorg-xwininfo'
+# The app is linked against libxdo.so.3, but Arch's xdotool ships libxdo.so.4
+# only, so the binary would not even start. Ubuntu's libxdo3 is bundled
+# privately below instead; these are its own runtime deps.
+depends=('alsa-lib' 'libx11' 'libxtst' 'libxinerama' 'libxkbcommon'
+         'xorg-xprop' 'xorg-xwininfo'
          'libayatana-appindicator' 'webkit2gtk-4.1' 'gtk3')
+makedepends=('patchelf')
 provides=('silent-voice')
 conflicts=('silent-voice')
 options=('!strip' '!debug')
-source=("https://github.com/zahidhossin39/Silent-Voice/releases/download/v${pkgver}/Silent.Voice_${pkgver}_amd64.deb")
-sha256sums=('SKIP')
+_libxdo=libxdo3_3.20160805.1-4_amd64.deb
+source=("https://github.com/zahidhossin39/Silent-Voice/releases/download/v${pkgver}/Silent.Voice_${pkgver}_amd64.deb"
+        "http://archive.ubuntu.com/ubuntu/pool/universe/x/xdotool/${_libxdo}")
+# Both are .debs whose payloads share the name data.tar.*; extract by hand.
+noextract=("Silent.Voice_${pkgver}_amd64.deb" "${_libxdo}")
+sha256sums=('SKIP' 'SKIP')
 
 package() {
-  bsdtar -xf data.tar.* -C "$pkgdir"
+  local app="$pkgdir/usr/lib/Silent Voice"
+  bsdtar -xOf "Silent.Voice_${pkgver}_amd64.deb" 'data.tar.*' | bsdtar -xf - -C "$pkgdir"
+  bsdtar -xOf "${_libxdo}" 'data.tar.*' | bsdtar -xf - -C "$srcdir" ./usr/lib/x86_64-linux-gnu/libxdo.so.3
+  install -Dm644 "$srcdir/usr/lib/x86_64-linux-gnu/libxdo.so.3" "$app/libxdo.so.3"
+  patchelf --add-rpath '/usr/lib/Silent Voice' "$pkgdir/usr/bin/silent-voice"
   # Windows binaries shipped in older .debs can never run here.
   find "$pkgdir/usr/lib/Silent Voice" -type f \( -iname '*.dll' -o -iname '*.exe' \) -delete
 }
