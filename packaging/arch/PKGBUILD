@@ -1,7 +1,9 @@
 # Arch Linux package for Silent Voice, built from the official release .deb.
 #
 # Install:   cd packaging/arch && makepkg -si
-# New version: bump pkgver, then run `updpkgsums` (or set sha256sums=('SKIP')).
+# New version: bump pkgver. From v0.1.11 the release names the file
+#   Silent.Voice_${pkgver}_Linux_Debian-Ubuntu_amd64.deb
+# so switch the source URL to that name when bumping.
 pkgname=silent-voice-bin
 pkgver=0.1.10
 pkgrel=1

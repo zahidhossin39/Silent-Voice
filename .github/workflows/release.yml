@@ -131,18 +131,32 @@ jobs:
           fi
           echo "Signed: ${sigs[*]}"
 
-      # tauri-action always uploads the macOS .app as "<name>_aarch64.app.tar.gz".
-      # It is only an updater payload, and macOS updates are off, so nothing
-      # uses it — but on the release page it reads like the Linux download.
-      # Linux users grabbed it and found a Mac app. The .dmg is the installer.
-      - name: Remove the confusing macOS .app.tar.gz
-        if: matrix.label == 'macOS'
+      # Make every download say which OS it is for. tauri-action names files
+      # by extension only (.dmg / .deb / .AppImage), and users had to guess.
+      # Windows keeps its name: latest.json points the auto-updater at it.
+      # Also deletes the macOS "<name>_aarch64.app.tar.gz": an updater payload
+      # nothing uses (mac updates are off) that reads like the Linux download.
+      - name: Give the downloads clear names
+        if: matrix.label != 'Windows'
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VER: ${{ github.ref_name }}
         run: |
-          gh api "repos/${{ github.repository }}/releases/${{ steps.tauri.outputs.releaseId }}/assets"             --jq '.[] | select(.name | endswith(".app.tar.gz")) | .id' |
-          while read -r id; do
-            echo "deleting asset $id"
-            gh api -X DELETE "repos/${{ github.repository }}/releases/assets/$id"
+          v="${VER#v}"
+          api="repos/${{ github.repository }}/releases"
+          gh api "$api/${{ steps.tauri.outputs.releaseId }}/assets" --jq '.[] | "\(.id) \(.name)"' |
+          while read -r id name; do
+            case "${{ matrix.label }}:$name" in
+              macOS:*.app.tar.gz*) new="" ;;
+              macOS:*.dmg)        new="Silent.Voice_${v}_macOS_Apple-Silicon.dmg" ;;
+              Linux:*.AppImage)   new="Silent.Voice_${v}_Linux_any-distro_x86_64.AppImage" ;;
+              Linux:*.deb)        new="Silent.Voice_${v}_Linux_Debian-Ubuntu_amd64.deb" ;;
+              *) continue ;;
+            esac
+            if [ -z "$new" ]; then
+              echo "deleting $name"; gh api -X DELETE "$api/assets/$id"
+            elif [ "$name" != "$new" ]; then
+              echo "$name -> $new"; gh api -X PATCH "$api/assets/$id" -f name="$new" >/dev/null
+            fi
           done
