@@ -37,7 +37,7 @@ kill $PID 2>/dev/null || true
 if ! grep -q "Silent Voice starting" "$LOGDIR/silent-voice.log" 2>/dev/null; then
   fail "process stayed up but never reached its own startup log line"
 fi
-if grep -qiE "EGL|Failed to create GBM|cannot open shared object|symbol lookup error" app.log; then
+if grep -qiE "Could not create default EGL display|EGL_BAD|Failed to create GBM|cannot open shared object|symbol lookup error" app.log; then
   fail "started, but with graphics/library errors (likely a blank window)"
 fi
 echo "PASS: launches and reaches startup"

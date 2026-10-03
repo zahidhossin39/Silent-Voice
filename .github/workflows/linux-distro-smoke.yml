@@ -24,18 +24,19 @@ jobs:
         include:
           - distro: Arch
             image: archlinux:latest
-            setup: pacman -Syu --noconfirm --needed xorg-server-xvfb xorg-xauth mesa curl alsa-lib
+            setup: pacman -Syu --noconfirm --needed xorg-server-xvfb xorg-xauth mesa curl alsa-lib gtk3
           - distro: Fedora
             image: fedora:latest
-            setup: dnf install -y xorg-x11-server-Xvfb xorg-x11-xauth mesa-dri-drivers curl which alsa-lib
+            setup: dnf install -y xorg-x11-server-Xvfb xorg-x11-xauth mesa-dri-drivers curl which alsa-lib gtk3
           - distro: Ubuntu 24.04
             image: ubuntu:24.04
-            setup: apt-get update && apt-get install -y xvfb xauth curl libgl1 libegl1 libasound2t64
+            setup: apt-get update && apt-get install -y xvfb xauth curl libgl1 libegl1 libasound2t64 libgtk-3-0t64
     name: ${{ matrix.distro }}
     runs-on: ubuntu-latest
     container: ${{ matrix.image }}
-    # ALSA is installed above because every real desktop has it; AppImages
-    # deliberately do not bundle it (it must match the system sound stack).
+    # ALSA and GTK3 (which pulls in fontconfig, X11, Mesa...) stand in for the
+    # desktop every real user has: AppImages deliberately leave those system
+    # libraries out so they match the host's sound, font and graphics stack.
     steps:
       - uses: actions/checkout@v4
       - name: Install a bare desktop-less base
