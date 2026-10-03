@@ -28,14 +28,14 @@ jobs:
           - distro: Fedora
             image: fedora:latest
             setup: dnf install -y xorg-x11-server-Xvfb xorg-x11-xauth mesa-dri-drivers curl which alsa-lib gtk3
-          - distro: Arch (DMA-BUF off)
+          - distro: Arch (no bundled wayland)
             image: archlinux:latest
             setup: pacman -Syu --noconfirm --needed xorg-server-xvfb xorg-xauth mesa curl alsa-lib gtk3
-            env: WEBKIT_DISABLE_DMABUF_RENDERER=1
-          - distro: Fedora (DMA-BUF off)
+            env: SMOKE_STRIP_WAYLAND=1
+          - distro: Fedora (no bundled wayland)
             image: fedora:latest
             setup: dnf install -y xorg-x11-server-Xvfb xorg-x11-xauth mesa-dri-drivers curl which alsa-lib gtk3
-            env: WEBKIT_DISABLE_DMABUF_RENDERER=1
+            env: SMOKE_STRIP_WAYLAND=1
           - distro: Ubuntu 24.04
             image: ubuntu:24.04
             setup: apt-get update && apt-get install -y xvfb xauth curl libgl1 libegl1 libasound2t64 libgtk-3-0t64 libgles2

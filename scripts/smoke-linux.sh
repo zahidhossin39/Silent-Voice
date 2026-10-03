@@ -9,6 +9,13 @@ chmod +x "$APP" 2>/dev/null || true
 LOGDIR="$HOME/.config/SilentVoice/logs"
 rm -rf "$HOME/.config/SilentVoice"
 
+# [DEBUG-wl] probe: run the AppImage with its bundled libwayland removed.
+if [ -n "$SMOKE_STRIP_WAYLAND" ]; then
+  (cd /tmp && "$APP" --appimage-extract >/dev/null)
+  rm -fv /tmp/squashfs-root/usr/lib/libwayland-*
+  APP=/tmp/squashfs-root/AppRun
+fi
+
 # Containers have no FUSE; extract-and-run is what a user without libfuse2
 # gets too, so it exercises the same bundled libraries.
 APPIMAGE_EXTRACT_AND_RUN=1 xvfb-run -a --server-args="-screen 0 1280x800x24" \
