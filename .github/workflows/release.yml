@@ -55,6 +55,14 @@ jobs:
         if: runner.os != 'Windows'
         run: bash scripts/fetch-sidecars.sh
 
+      # The Windows sidecars (.dll/.exe) are committed to the repo and the
+      # resource globs copy whole folders, so without this every Linux and
+      # macOS package carried ~75 MB of Windows binaries it can never run.
+      - name: Drop Windows-only sidecars
+        if: runner.os != 'Windows'
+        shell: bash
+        run: find src-tauri/sidecars -type f \( -iname '*.dll' -o -iname '*.exe' \) -print -delete
+
       - name: Fail if the signing secret is missing
         shell: bash
         run: |
@@ -66,6 +74,7 @@ jobs:
           fi
 
       - name: Build, sign, and publish
+        id: tauri
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -81,13 +90,17 @@ jobs:
 
             **Windows** — `.exe`. Existing installs update themselves.
 
-            **macOS** — `.dmg`. The app is not notarised yet, so Gatekeeper
+            **macOS** (Apple Silicon) — `.dmg`. The app is not notarised yet, so Gatekeeper
             will refuse it on first launch: right-click the app and choose
             **Open**, then confirm. Silent Voice also needs Accessibility
             permission (System Settings > Privacy & Security > Accessibility)
             or the hotkey and paste do nothing.
 
-            **Linux** — `.deb` or `.AppImage`. X11 only; Wayland cannot allow
+            **Linux** — Ubuntu/Debian: `.deb`. Any other distro (Arch, Fedora…):
+            `.AppImage` — `chmod +x` it and run; if it says FUSE is missing,
+            install `fuse2` or run it with `--appimage-extract-and-run`.
+            Arch users can also build a native package from `packaging/arch/PKGBUILD`
+            in the repo (`makepkg -si`). X11 only; Wayland cannot allow
             an app to type into another app. Inline proofreading additionally
             needs `gsettings set org.gnome.desktop.interface toolkit-accessibility true`.
 
@@ -117,3 +130,19 @@ jobs:
             exit 1
           fi
           echo "Signed: ${sigs[*]}"
+
+      # tauri-action always uploads the macOS .app as "<name>_aarch64.app.tar.gz".
+      # It is only an updater payload, and macOS updates are off, so nothing
+      # uses it — but on the release page it reads like the Linux download.
+      # Linux users grabbed it and found a Mac app. The .dmg is the installer.
+      - name: Remove the confusing macOS .app.tar.gz
+        if: matrix.label == 'macOS'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api "repos/${{ github.repository }}/releases/${{ steps.tauri.outputs.releaseId }}/assets"             --jq '.[] | select(.name | endswith(".app.tar.gz")) | .id' |
+          while read -r id; do
+            echo "deleting asset $id"
+            gh api -X DELETE "repos/${{ github.repository }}/releases/assets/$id"
+          done

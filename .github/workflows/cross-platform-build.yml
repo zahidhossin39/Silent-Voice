@@ -10,6 +10,7 @@ on:
     paths:
       - "scripts/fetch-sidecars.sh"
       - "scripts/smoke-test.sh"
+      - "scripts/smoke-linux.sh"
       # Inline proofreading links glib/gobject and creates windows at startup;
       # only a full build and launch proves either still works.
       - "src-tauri/src/system/atspi.rs"
@@ -68,6 +69,14 @@ jobs:
       - name: Fetch sidecars
         if: steps.sidecar-cache.outputs.cache-hit != 'true'
         run: bash scripts/fetch-sidecars.sh
+
+      # The Windows sidecars (.dll/.exe) are committed to the repo and the
+      # resource globs copy whole folders, so without this every Linux and
+      # macOS package carried ~75 MB of Windows binaries it can never run.
+      - name: Drop Windows-only sidecars
+        if: runner.os != 'Windows'
+        shell: bash
+        run: find src-tauri/sidecars -type f \( -iname '*.dll' -o -iname '*.exe' \) -print -delete
 
       - name: Build the app
         id: build
@@ -133,6 +142,13 @@ jobs:
           CODE=${PIPESTATUS[0]}
           echo "code=$CODE" >> $GITHUB_OUTPUT
           exit $CODE
+
+      # The .deb smoke test above never touched the AppImage, which is what
+      # every non-Debian distro has to use.
+      - name: Smoke test - the AppImage starts too
+        if: runner.os == 'Linux' && steps.build.outputs.code == '0'
+        shell: bash
+        run: bash scripts/smoke-linux.sh out/*.AppImage
 
       - name: Post the failure where it can be read
         if: always() && (steps.build.outputs.code != '0' || steps.smoke.outputs.code != '0')

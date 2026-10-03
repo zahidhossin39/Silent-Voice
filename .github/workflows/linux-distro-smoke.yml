@@ -1,0 +1,75 @@
+name: Linux distro smoke test
+
+# Does the published AppImage actually start on distros other than the Ubuntu
+# it was built on? Downloads a release's AppImage and launches it in clean
+# containers. Fast (no build), so it runs on every change to itself or the
+# smoke script, and can be pointed at any tag by hand.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to test (default: latest)"
+        required: false
+  push:
+    paths:
+      - "scripts/smoke-linux.sh"
+      - "packaging/arch/**"
+      - ".github/workflows/linux-distro-smoke.yml"
+
+jobs:
+  smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - distro: Arch
+            image: archlinux:latest
+            setup: pacman -Syu --noconfirm --needed xorg-server-xvfb xorg-xauth mesa curl
+          - distro: Fedora
+            image: fedora:latest
+            setup: dnf install -y xorg-x11-server-Xvfb xorg-x11-xauth mesa-dri-drivers curl which
+          - distro: Ubuntu 24.04
+            image: ubuntu:24.04
+            setup: apt-get update && apt-get install -y xvfb xauth curl libgl1 libegl1
+    name: ${{ matrix.distro }}
+    runs-on: ubuntu-latest
+    container: ${{ matrix.image }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install a bare desktop-less base
+        run: ${{ matrix.setup }}
+      - name: Download the AppImage
+        shell: bash
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          if [ -n "$TAG" ]; then path="tags/$TAG"; else path="latest"; fi
+          url=$(curl -fsSL "https://api.github.com/repos/${{ github.repository }}/releases/$path" \
+            | grep -o '"browser_download_url": *"[^"]*\.AppImage"' | cut -d'"' -f4 | head -1)
+          echo "AppImage: $url"
+          curl -fsSL -o app.AppImage "$url"
+      - name: Launch it
+        shell: bash
+        run: bash scripts/smoke-linux.sh app.AppImage
+
+  # The Arch package (packaging/arch/PKGBUILD) built and installed for real.
+  arch-pkgbuild:
+    name: Arch PKGBUILD
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Base tools
+        run: pacman -Syu --noconfirm --needed base-devel xorg-server-xvfb xorg-xauth mesa sudo
+      - name: makepkg -si (as a normal user, like a real install)
+        run: |
+          useradd -m builder
+          echo 'builder ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/builder
+          cp -r packaging/arch /home/builder/pkg && chown -R builder /home/builder/pkg
+          su builder -c 'cd ~/pkg && makepkg -si --noconfirm'
+      - name: No Windows binaries installed
+        run: |
+          if find "/usr/lib/Silent Voice" -iname '*.dll' -o -iname '*.exe' | grep -q .; then
+            echo "FAIL: Windows binaries in the Arch package"; exit 1; fi
+      - name: Launch it
+        run: su builder -c "cd ~ && bash '$GITHUB_WORKSPACE/scripts/smoke-linux.sh' /usr/bin/silent-voice"

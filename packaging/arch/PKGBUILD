@@ -1,0 +1,26 @@
+# Arch Linux package for Silent Voice, built from the official release .deb.
+#
+# Install:   cd packaging/arch && makepkg -si
+# New version: bump pkgver, then run `updpkgsums` (or set sha256sums=('SKIP')).
+pkgname=silent-voice-bin
+pkgver=0.1.10
+pkgrel=1
+pkgdesc="Free, local-first voice-to-text dictation"
+arch=('x86_64')
+url="https://github.com/zahidhossin39/Silent-Voice"
+license=('MIT')
+# Arch names for the .deb's Depends: libasound2, libxdo3, x11-utils,
+# libayatana-appindicator3-1, libwebkit2gtk-4.1-0, libgtk-3-0.
+depends=('alsa-lib' 'xdotool' 'xorg-xprop' 'xorg-xwininfo'
+         'libayatana-appindicator' 'webkit2gtk-4.1' 'gtk3')
+provides=('silent-voice')
+conflicts=('silent-voice')
+options=('!strip' '!debug')
+source=("https://github.com/zahidhossin39/Silent-Voice/releases/download/v${pkgver}/Silent.Voice_${pkgver}_amd64.deb")
+sha256sums=('SKIP')
+
+package() {
+  bsdtar -xf data.tar.* -C "$pkgdir"
+  # Windows binaries shipped in older .debs can never run here.
+  find "$pkgdir/usr/lib/Silent Voice" -type f \( -iname '*.dll' -o -iname '*.exe' \) -delete
+}
