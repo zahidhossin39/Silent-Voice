@@ -17,19 +17,27 @@ PID=$!
 sleep 40
 
 echo "--- stdout/stderr ---"; cat app.log || true
+
+# Failure details as a CI annotation: job logs need repo-admin rights to read,
+# annotations are public, so whoever debugs a failure can see the cause.
+fail() {
+  echo "FAIL: $1"
+  if [ -n "$GITHUB_ACTIONS" ]; then
+    body=$( { echo "$1"; echo "--- stderr ---"; tail -25 app.log; echo "--- app log ---"; tail -15 "$LOGDIR/silent-voice.log" 2>/dev/null; } | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+    echo "::error title=smoke-linux::$body"
+  fi
+  exit 1
+}
 echo "--- app log ---"; cat "$LOGDIR/silent-voice.log" 2>/dev/null || echo "(no log file written)"
 
 if ! kill -0 $PID 2>/dev/null; then
-  echo "FAIL: the app exited within 40s of launch"
-  exit 1
+  fail "the app exited within 40s of launch"
 fi
 kill $PID 2>/dev/null || true
 if ! grep -q "Silent Voice starting" "$LOGDIR/silent-voice.log" 2>/dev/null; then
-  echo "FAIL: process stayed up but never reached its own startup log line"
-  exit 1
+  fail "process stayed up but never reached its own startup log line"
 fi
 if grep -qiE "EGL|Failed to create GBM|cannot open shared object|symbol lookup error" app.log; then
-  echo "FAIL: started, but with graphics/library errors (likely a blank window)"
-  exit 1
+  fail "started, but with graphics/library errors (likely a blank window)"
 fi
 echo "PASS: launches and reaches startup"
