@@ -198,7 +198,7 @@ jobs:
             setup: pacman -Syu --noconfirm --needed xorg-server-xvfb xorg-xauth mesa alsa-lib gtk3
           - distro: Fedora
             image: fedora:latest
-            setup: dnf install -y xorg-x11-server-Xvfb xorg-x11-xauth mesa-dri-drivers which alsa-lib gtk3 libwayland-server
+            setup: dnf install -y xorg-x11-server-Xvfb xorg-x11-xauth mesa-dri-drivers which alsa-lib gtk3 libwayland-server libglvnd-gles
     name: AppImage on ${{ matrix.distro }}
     runs-on: ubuntu-latest
     container: ${{ matrix.image }}

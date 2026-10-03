@@ -30,6 +30,9 @@ if ! kill -0 $PID 2>/dev/null; then
   exit 1
 fi
 kill $PID 2>/dev/null || true
+# Stop the app itself too ($PID is only xvfb-run on Linux); it is
+# single-instance, so a leftover copy breaks the next launch test.
+pkill -x 'silent-voice|AppRun.wrapped' 2>/dev/null; sleep 1; pkill -9 -x 'silent-voice|AppRun.wrapped' 2>/dev/null || true
 
 if ! grep -q "Silent Voice starting" "$LOGDIR/silent-voice.log" 2>/dev/null; then
   echo "FAIL: process stayed up but never reached its own startup log line"

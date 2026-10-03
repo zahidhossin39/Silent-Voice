@@ -9,6 +9,11 @@ chmod +x "$APP" 2>/dev/null || true
 LOGDIR="$HOME/.config/SilentVoice/logs"
 rm -rf "$HOME/.config/SilentVoice"
 
+# Silent Voice is single-instance: a copy left running by an earlier test
+# makes this launch hand over and exit. Killing $PID only stops xvfb-run.
+stop_app() { pkill -x 'silent-voice|AppRun.wrapped' 2>/dev/null; sleep 1; pkill -9 -x 'silent-voice|AppRun.wrapped' 2>/dev/null; true; }
+stop_app
+
 
 # Containers have no FUSE; extract-and-run is what a user without libfuse2
 # gets too, so it exercises the same bundled libraries.
@@ -35,6 +40,7 @@ if ! kill -0 $PID 2>/dev/null; then
   fail "the app exited within 40s of launch"
 fi
 kill $PID 2>/dev/null || true
+stop_app
 if ! grep -q "Silent Voice starting" "$LOGDIR/silent-voice.log" 2>/dev/null; then
   fail "process stayed up but never reached its own startup log line"
 fi
