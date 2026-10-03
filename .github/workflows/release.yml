@@ -131,6 +131,16 @@ jobs:
           fi
           echo "Signed: ${sigs[*]}"
 
+      # tauri-action has already uploaded the AppImage; fix the local copy
+      # (see scripts/fix-appimage.sh) and the next step replaces the upload.
+      - name: Drop the bundled libwayland from the AppImage
+        if: matrix.label == 'Linux'
+        shell: bash
+        run: |
+          for f in src-tauri/target/release/bundle/appimage/*.AppImage; do
+            bash scripts/fix-appimage.sh "$f"
+          done
+
       # Make every download say which OS it is for. tauri-action names files
       # by extension only (.dmg / .deb / .AppImage), and users had to guess.
       # Windows keeps its name: latest.json points the auto-updater at it.
@@ -154,6 +164,14 @@ jobs:
               Linux:*.deb)        new="Silent.Voice_${v}_Linux_Debian-Ubuntu_amd64.deb" ;;
               *) continue ;;
             esac
+            if [ "${{ matrix.label }}" = Linux ] && [[ "$name" == *.AppImage ]]; then
+              # Replace the uploaded AppImage with the fixed local one.
+              gh api -X DELETE "$api/assets/$id"
+              f=$(ls src-tauri/target/release/bundle/appimage/*.AppImage | head -1)
+              curl -fsS -X POST -H "Authorization: Bearer $GH_TOKEN"                 -H "Content-Type: application/octet-stream" --data-binary @"$f"                 "https://uploads.github.com/repos/${{ github.repository }}/releases/${{ steps.tauri.outputs.releaseId }}/assets?name=$new" >/dev/null
+              echo "uploaded fixed AppImage as $new"
+              continue
+            fi
             if [ -z "$new" ]; then
               echo "deleting $name"; gh api -X DELETE "$api/assets/$id"
             elif [ "$name" != "$new" ]; then

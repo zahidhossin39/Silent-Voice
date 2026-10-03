@@ -11,6 +11,7 @@ on:
       - "scripts/fetch-sidecars.sh"
       - "scripts/smoke-test.sh"
       - "scripts/smoke-linux.sh"
+      - "scripts/fix-appimage.sh"
       # Inline proofreading links glib/gobject and creates windows at startup;
       # only a full build and launch proves either still works.
       - "src-tauri/src/system/atspi.rs"
@@ -101,6 +102,14 @@ jobs:
 
       # Collect and upload before deciding the job failed: a .deb is still
       # worth having when only the AppImage bundler falls over.
+      - name: Drop the bundled libwayland from the AppImage
+        if: runner.os == 'Linux' && steps.build.outputs.code == '0'
+        shell: bash
+        run: |
+          for f in src-tauri/target/release/bundle/appimage/*.AppImage; do
+            bash scripts/fix-appimage.sh "$f"
+          done
+
       - name: Collect the installers
         if: always()
         shell: bash
@@ -174,3 +183,32 @@ jobs:
           gh api -X POST "repos/${{ github.repository }}/commits/${{ github.sha }}/comments" \
             -f body="$(cat body.md)"
           exit 1
+
+  # The AppImage just built (and fixed by scripts/fix-appimage.sh), launched on
+  # the distros where the old one crashed with EGL_BAD_PARAMETER.
+  distros:
+    needs: build
+    if: always()
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - distro: Arch
+            image: archlinux:latest
+            setup: pacman -Syu --noconfirm --needed xorg-server-xvfb xorg-xauth mesa alsa-lib gtk3
+          - distro: Fedora
+            image: fedora:latest
+            setup: dnf install -y xorg-x11-server-Xvfb xorg-x11-xauth mesa-dri-drivers which alsa-lib gtk3 libwayland-server
+    name: AppImage on ${{ matrix.distro }}
+    runs-on: ubuntu-latest
+    container: ${{ matrix.image }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: ${{ matrix.setup }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: silent-voice-Linux
+          path: out
+      - name: Launch it
+        shell: bash
+        run: bash scripts/smoke-linux.sh out/*.AppImage
