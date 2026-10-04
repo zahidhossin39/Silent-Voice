@@ -208,6 +208,9 @@ jobs:
           - distro: Fedora
             image: fedora:latest
             setup: dnf install -y xorg-x11-server-Xvfb xorg-x11-xauth mesa-dri-drivers which alsa-lib gtk3 libwayland-server libglvnd-gles
+          - distro: Ubuntu 24.04
+            image: ubuntu:24.04
+            setup: apt-get update && apt-get install -y xvfb xauth libgl1 libegl1 libasound2t64 libgtk-3-0t64 libgles2 libgbm1 libwayland-server0
     name: AppImage on ${{ matrix.distro }}
     runs-on: ubuntu-latest
     container: ${{ matrix.image }}
