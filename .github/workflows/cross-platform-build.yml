@@ -191,6 +191,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
         run: |
           {
             if [ "${{ steps.build.outputs.code }}" != "0" ]; then
@@ -207,6 +208,12 @@ jobs:
               echo '```'
             fi
           } > body.md
+          # Commit comments are public and NOT masked like job logs: tauri's
+          # verbose output prints the keychain and certificate passwords.
+          sed -i.bak -E 's/(-[pP]) [^ ]+/\1 <REDACTED>/g' body.md
+          if [ -n "$APPLE_CERTIFICATE_PASSWORD" ] && grep -qF "$APPLE_CERTIFICATE_PASSWORD" body.md; then
+            echo "certificate password still in the log, not posting it"; exit 1
+          fi
           gh api -X POST "repos/${{ github.repository }}/commits/${{ github.sha }}/comments" \
             -f body="$(cat body.md)"
           exit 1
