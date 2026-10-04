@@ -17,7 +17,9 @@ else
   BIN=$(find "$APP/Contents/MacOS" -maxdepth 1 -type f | head -1)
   LOGDIR="$HOME/Library/Application Support/SilentVoice/logs"
   rm -rf "$HOME/Library/Application Support/SilentVoice"
-  "$BIN" > app.log 2>&1 &
+  # Paste once at startup: the v0.1.11 dictation crash (keyboard-layout
+  # lookup off the main thread) killed the app right here.
+  SV_SELFTEST_PASTE=1 "$BIN" > app.log 2>&1 &
 fi
 PID=$!
 sleep 30
@@ -27,6 +29,10 @@ echo "--- app log ---"; cat "$LOGDIR/silent-voice.log" 2>/dev/null || echo "(no 
 
 if ! kill -0 $PID 2>/dev/null; then
   echo "FAIL: the app exited within 30s of launch"
+  # macOS writes a crash report; its crashing frames name the cause.
+  for r in "$HOME"/Library/Logs/DiagnosticReports/silent-voice*.ips; do
+    [ -f "$r" ] && grep -o '"symbol":"[^"]*"' "$r" | head -12
+  done
   exit 1
 fi
 kill $PID 2>/dev/null || true
@@ -39,6 +45,14 @@ if ! grep -q "Silent Voice starting" "$LOGDIR/silent-voice.log" 2>/dev/null; the
   exit 1
 fi
 echo "PASS: launches and reaches startup"
+
+if [ "$(uname -s)" = Darwin ]; then
+  if ! grep -q "paste from worker thread" "$LOGDIR/silent-voice.log"; then
+    echo "FAIL: the startup paste self-test never finished"
+    exit 1
+  fi
+  echo "PASS: pastes from a worker thread without crashing"
+fi
 
 # Booting only proves the GUI starts. This proves the actual feature: run the
 # bundled whisper CLI against a known clip and check it comes back with the

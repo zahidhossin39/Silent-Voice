@@ -1220,6 +1220,16 @@ pub fn run() {
             tray::build_tray(app.handle())?;
             overlay::create_overlay(app.handle())?;
 
+            // CI smoke test (scripts/smoke-test.sh): paste once from a tokio
+            // worker, the same thread a real dictation pastes from. macOS kills
+            // the app if the paste touches main-thread-only APIs from there.
+            if std::env::var_os("SV_SELFTEST_PASTE").is_some() {
+                tauri::async_runtime::spawn(async {
+                    let r = system::paste::paste_at_cursor("silent voice selftest");
+                    logging::log_info("selftest", &format!("paste from worker thread: {r:?}"));
+                });
+            }
+
             // Force the main window to be visible, centered, and focused.
             if let Some(win) = app.get_webview_window("main") {
                 let _ = win.center();
