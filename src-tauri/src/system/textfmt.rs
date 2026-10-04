@@ -512,7 +512,7 @@ fn spoken_symbols_line(line: &str) -> String {
 
 /// "<local> at <domain.tld>" → "local@domain.tld". The local part may be
 /// spoken in pieces: "john dot smith" / "john underscore smith".
-fn join_emails(toks: Vec<String>) -> Vec<String> {
+fn join_emails(toks: Vec<String>) -> String {
     let mut out: Vec<String> = Vec::new();
     let mut i = 0;
     while i < toks.len() {

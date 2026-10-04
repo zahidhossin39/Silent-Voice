@@ -763,6 +763,7 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
 
     let raw_text = textfmt::strip_fillers(&raw_text);
     let raw_text = textfmt::collapse_repeated_words(&raw_text);
+    let raw_text = textfmt::spoken_symbols(&raw_text);
     let raw_text = if use_vocabulary {
         crate::system::soundalike::fix(&raw_text, &vocabulary)
     } else {
