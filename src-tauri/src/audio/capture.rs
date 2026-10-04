@@ -366,8 +366,15 @@ mod tests {
     #[test]
     fn failed_mic_open_is_reported() {
         let rec = Recorder::start(Some("no-such-microphone-xyz".into())).unwrap();
-        std::thread::sleep(std::time::Duration::from_millis(300));
-        let err = rec.error();
+        // Poll: a fixed 300 ms sleep was flaky on slow CI runners.
+        let mut err = None;
+        for _ in 0..100 {
+            err = rec.error();
+            if err.is_some() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
         let samples = rec.stop();
         assert!(samples.is_empty());
         assert!(err.is_some_and(|e| e.contains("not found")), "error was not surfaced");
