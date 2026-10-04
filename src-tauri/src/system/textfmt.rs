@@ -315,19 +315,14 @@ fn tidy_numbers(toks: Vec<String>) -> String {
     let mut i = 0;
     while i < toks.len() {
         let t = toks[i].as_str();
-        // Digit run: 4+ single digits (phone numbers, PINs), or 2+ ending in a dotted number
-        // ("1 9 2.168" → "192.168").
-        // Counting "1 2 3" stays separate. ponytail: a 4+ spoken list would join.
+        // Digit run ending in a dotted number: "1 9 2.168" → "192.168" (IPs).
+        // Plain runs ("1 2 3 4") stay separate — they may be counting.
         let mut j = i;
         while j < toks.len() && toks[j].len() == 1 && is_digits(&toks[j]) { j += 1; }
         let dotted_tail = j - i >= 2 && toks.get(j).map_or(false, |n| is_num(split_punct(n).0));
-        if j - i >= 4 || dotted_tail {
-            let mut joined: String = toks[i..j].concat();
-            if dotted_tail {
-                joined.push_str(&toks[j]);
-                j += 1;
-            }
-            out.push(joined);
+        if dotted_tail {
+            out.push(format!("{}{}", toks[i..j].concat(), toks[j]));
+            j += 1;
             i = j;
             continue;
         }
@@ -550,27 +545,6 @@ const SYMBOL_WORDS: &[(&str, &str, bool, bool)] = &[
     ("percent sign", "%", true, false),
 ];
 
-// "camel case user name" → "userName". Takes the next words up to a
-// punctuation mark, a stop word, or 4 words.
-// ponytail: 4-word cap + stop list; add a spoken "end case" if names run longer.
-const CASE_COMMANDS: &[&str] = &["camel case", "pascal case", "snake case", "kebab case", "constant case", "all caps"];
-const CASE_STOP: &[&str] = &[
-    "is", "are", "was", "were", "the", "a", "an", "and", "or", "to", "in", "of", "for", "with",
-    "on", "at", "from", "should", "will", "then", "but", "it", "that", "which", "as", "into",
-];
-
-fn apply_case(cmd: &str, words: &[String]) -> String {
-    let lw: Vec<String> = words.iter().map(|w| w.to_lowercase()).collect();
-    match cmd {
-        "camel case" => lw.iter().enumerate().map(|(i, w)| if i == 0 { w.clone() } else { capitalize_first(w) }).collect(),
-        "pascal case" => lw.iter().map(|w| capitalize_first(w)).collect(),
-        "snake case" => lw.join("_"),
-        "kebab case" => lw.join("-"),
-        "constant case" => lw.join("_").to_uppercase(),
-        _ => lw.join(" ").to_uppercase(), // all caps
-    }
-}
-
 /// If `phrase` starts at toks[i], returns (word count, trailing punctuation
 /// on its last word). Punctuation inside the phrase breaks the match.
 fn phrase_at(toks: &[&str], i: usize, phrase: &str) -> Option<(usize, String)> {
@@ -589,26 +563,6 @@ fn symbol_words(line: &str) -> String {
     let mut glue_next = false;
     let mut i = 0;
     'outer: while i < toks.len() {
-        for &cmd in CASE_COMMANDS {
-            if let Some((n, punct)) = phrase_at(&toks, i, cmd) {
-                if !punct.is_empty() { break; }
-                let mut words = Vec::new();
-                let mut tail = String::new();
-                let mut k = i + n;
-                while k < toks.len() && words.len() < 4 {
-                    let (core, p) = split_punct(toks[k]);
-                    if core.is_empty() || CASE_STOP.contains(&core.to_lowercase().as_str()) { break; }
-                    words.push(core.to_string());
-                    k += 1;
-                    if !p.is_empty() { tail = p.to_string(); break; }
-                }
-                if words.is_empty() { break; }
-                out.push(format!("{}{tail}", apply_case(cmd, &words)));
-                glue_next = false;
-                i = k;
-                continue 'outer;
-            }
-        }
         for &(phrase, sym, gl, gr) in SYMBOL_WORDS {
             if let Some((n, punct)) = phrase_at(&toks, i, phrase) {
                 match out.last_mut() {
@@ -633,8 +587,7 @@ fn symbol_words(line: &str) -> String {
 
 pub fn spoken_symbols(text: &str) -> String {
     let lower = text.to_lowercase();
-    let has_command = SYMBOL_WORDS.iter().any(|(p, ..)| lower.contains(p.split(' ').next().unwrap()))
-        || CASE_COMMANDS.iter().any(|c| lower.contains(c));
+    let has_command = SYMBOL_WORDS.iter().any(|(p, ..)| lower.contains(p.split(' ').next().unwrap()));
     if !(has_command || lower.contains("dot") || lower.contains(". ") || lower.contains(" at ")) {
         return text.to_string();
     }
@@ -1061,13 +1014,6 @@ mod tests {
         // web addresses
         assert_eq!(spoken_symbols("go to https colon slash slash www dot google dot com slash docs"), "go to https://www.google.com/docs");
         assert_eq!(spoken_symbols("visit www dot example dot org."), "visit www.example.org.");
-        // case commands
-        assert_eq!(spoken_symbols("rename it camel case user name is wrong"), "rename it userName is wrong");
-        assert_eq!(spoken_symbols("snake case max retry count, then"), "max_retry_count, then");
-        assert_eq!(spoken_symbols("pascal case http client"), "HttpClient");
-        assert_eq!(spoken_symbols("kebab case main nav bar"), "main-nav-bar");
-        assert_eq!(spoken_symbols("constant case api key"), "API_KEY");
-        assert_eq!(spoken_symbols("all caps warning"), "WARNING");
     }
 
     #[test]
@@ -1075,7 +1021,6 @@ mod tests {
         assert_eq!(format_numbers("v one point two point three"), "v1.2.3");
         assert_eq!(format_numbers("version one point two point three"), "version 1.2.3");
         assert_eq!(format_numbers("one nine two point one six eight point one point one"), "192.168.1.1");
-        assert_eq!(format_numbers("call five five five one two three four"), "call 5551234");
         assert_eq!(format_numbers("three thirty pm"), "3:30 PM");
         assert_eq!(format_numbers("meet at three pm."), "meet at 3 PM.");
         assert_eq!(format_numbers("at seven forty five a.m. ok"), "at 7:45 a.m. ok");
@@ -1135,7 +1080,7 @@ mod tests {
     fn digit_runs_convert_separately() {
         assert_eq!(
             format_numbers("call five five five one two three"),
-            "call 555123"
+            "call 5 5 5 1 2 3"
         );
     }
 
