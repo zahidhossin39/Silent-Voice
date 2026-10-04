@@ -5,6 +5,10 @@ name: Linux distro smoke test
 # containers. Fast (no build), so it runs on every change to itself or the
 # smoke script, and can be pointed at any tag by hand.
 on:
+  # A published release is what users download, so test it as soon as it is
+  # public. (Unreleased builds are covered by cross-platform-build.yml.)
+  release:
+    types: [published]
   workflow_dispatch:
     inputs:
       tag:
@@ -18,6 +22,9 @@ on:
 
 jobs:
   smoke:
+    # On a plain push this would only re-test the LAST release, which can't
+    # change with the commit; the PKGBUILD job below still runs on push.
+    if: github.event_name != 'push'
     strategy:
       fail-fast: false
       matrix:
@@ -44,7 +51,7 @@ jobs:
       - name: Download the AppImage
         shell: bash
         env:
-          TAG: ${{ inputs.tag }}
+          TAG: ${{ inputs.tag || github.event.release.tag_name }}
         run: |
           if [ -n "$TAG" ]; then path="tags/$TAG"; else path="latest"; fi
           url=$(curl -fsSL "https://api.github.com/repos/${{ github.repository }}/releases/$path" \
