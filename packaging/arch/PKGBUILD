@@ -5,7 +5,7 @@
 #   Silent.Voice_${pkgver}_Linux_Debian-Ubuntu_amd64.deb
 # so switch the source URL to that name when bumping.
 pkgname=silent-voice-bin
-pkgver=0.1.10
+pkgver=0.1.11
 pkgrel=1
 pkgdesc="Free, local-first voice-to-text dictation"
 arch=('x86_64')
@@ -24,15 +24,15 @@ provides=('silent-voice')
 conflicts=('silent-voice')
 options=('!strip' '!debug')
 _libxdo=libxdo3_3.20160805.1-4_amd64.deb
-source=("https://github.com/zahidhossin39/Silent-Voice/releases/download/v${pkgver}/Silent.Voice_${pkgver}_amd64.deb"
+source=("https://github.com/zahidhossin39/Silent-Voice/releases/download/v${pkgver}/Silent.Voice_${pkgver}_Linux_Debian-Ubuntu_amd64.deb"
         "http://archive.ubuntu.com/ubuntu/pool/universe/x/xdotool/${_libxdo}")
 # Both are .debs whose payloads share the name data.tar.*; extract by hand.
-noextract=("Silent.Voice_${pkgver}_amd64.deb" "${_libxdo}")
+noextract=("Silent.Voice_${pkgver}_Linux_Debian-Ubuntu_amd64.deb" "${_libxdo}")
 sha256sums=('SKIP' 'SKIP')
 
 package() {
   local app="$pkgdir/usr/lib/Silent Voice"
-  bsdtar -xOf "Silent.Voice_${pkgver}_amd64.deb" 'data.tar.*' | bsdtar -xf - -C "$pkgdir"
+  bsdtar -xOf "Silent.Voice_${pkgver}_Linux_Debian-Ubuntu_amd64.deb" 'data.tar.*' | bsdtar -xf - -C "$pkgdir"
   bsdtar -xOf "${_libxdo}" 'data.tar.*' | bsdtar -xf - -C "$srcdir" ./usr/lib/x86_64-linux-gnu/libxdo.so.3
   install -Dm644 "$srcdir/usr/lib/x86_64-linux-gnu/libxdo.so.3" "$app/libxdo.so.3"
   patchelf --add-rpath '/usr/lib/Silent Voice' "$pkgdir/usr/bin/silent-voice"
