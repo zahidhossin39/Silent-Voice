@@ -130,7 +130,7 @@ jobs:
 
       # See scripts/fix-appimage.sh. Repacking changes the file, so its
       # updater signature has to be made again or every update would be refused.
-      - name: Drop the bundled libwayland from the AppImage, then re-sign it
+      - name: Make the bundled libwayland a host fallback in the AppImage, then re-sign it
         if: matrix.label == 'Linux'
         shell: bash
         env:
