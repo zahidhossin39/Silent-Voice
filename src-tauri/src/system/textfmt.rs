@@ -315,13 +315,13 @@ fn tidy_numbers(toks: Vec<String>) -> String {
     let mut i = 0;
     while i < toks.len() {
         let t = toks[i].as_str();
-        // Digit run: 3+ single digits, or 2+ ending in a dotted number
+        // Digit run: 4+ single digits (phone numbers, PINs), or 2+ ending in a dotted number
         // ("1 9 2.168" → "192.168").
-        // ponytail: a spoken list like "1 2 3" also joins; rare in dictation.
+        // Counting "1 2 3" stays separate. ponytail: a 4+ spoken list would join.
         let mut j = i;
         while j < toks.len() && toks[j].len() == 1 && is_digits(&toks[j]) { j += 1; }
         let dotted_tail = j - i >= 2 && toks.get(j).map_or(false, |n| is_num(split_punct(n).0));
-        if j - i >= 3 || dotted_tail {
+        if j - i >= 4 || dotted_tail {
             let mut joined: String = toks[i..j].concat();
             if dotted_tail {
                 joined.push_str(&toks[j]);
@@ -334,7 +334,7 @@ fn tidy_numbers(toks: Vec<String>) -> String {
         // "<decimal> point <num>" chains: "1.2 point 3" → "1.2.3".
         if t.eq_ignore_ascii_case("point") {
             if let (Some(prev), Some(next)) = (out.last(), toks.get(i + 1)) {
-                if is_num(prev) && prev.contains('.') && is_num(split_punct(next).0) {
+                if is_num(prev.trim_start_matches(['v', 'V'])) && prev.contains('.') && is_num(split_punct(next).0) {
                     let prev = out.pop().unwrap();
                     out.push(format!("{prev}.{next}"));
                     i += 2;
@@ -1135,7 +1135,7 @@ mod tests {
     fn digit_runs_convert_separately() {
         assert_eq!(
             format_numbers("call five five five one two three"),
-            "call 5 5 5 1 2 3"
+            "call 555123"
         );
     }
 
