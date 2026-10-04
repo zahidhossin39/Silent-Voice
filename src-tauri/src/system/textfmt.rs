@@ -299,6 +299,77 @@ pub fn format_numbers(text: &str) -> String {
         wi = end_wi + extra_consumed;
     }
 
+    tidy_numbers(out)
+}
+
+/// Second pass over format_numbers output, for shapes that span several
+/// numbers so the word parser can't see them:
+///   "1.2 point 3"   → "1.2.3"     (versions, IPs)
+///   "5 5 5 1 2 3 4" → "5551234"   (phone numbers, codes)
+///   "v 1.2.3"       → "v1.2.3"
+///   "3 30 pm"       → "3:30 PM"   ("3 pm" → "3 PM")
+fn tidy_numbers(toks: Vec<String>) -> String {
+    let is_digits = |t: &str| !t.is_empty() && t.chars().all(|c| c.is_ascii_digit());
+    let is_num = |t: &str| t.starts_with(|c: char| c.is_ascii_digit()) && t.chars().all(|c| c.is_ascii_digit() || c == '.');
+    let mut out: Vec<String> = Vec::new();
+    let mut i = 0;
+    while i < toks.len() {
+        let t = toks[i].as_str();
+        // Digit run: 3+ single digits, or 2+ ending in a dotted number
+        // ("1 9 2.168" → "192.168").
+        // ponytail: a spoken list like "1 2 3" also joins; rare in dictation.
+        let mut j = i;
+        while j < toks.len() && toks[j].len() == 1 && is_digits(&toks[j]) { j += 1; }
+        let dotted_tail = j - i >= 2 && toks.get(j).map_or(false, |n| is_num(split_punct(n).0));
+        if j - i >= 3 || dotted_tail {
+            let mut joined: String = toks[i..j].concat();
+            if dotted_tail {
+                joined.push_str(&toks[j]);
+                j += 1;
+            }
+            out.push(joined);
+            i = j;
+            continue;
+        }
+        // "<decimal> point <num>" chains: "1.2 point 3" → "1.2.3".
+        if t.eq_ignore_ascii_case("point") {
+            if let (Some(prev), Some(next)) = (out.last(), toks.get(i + 1)) {
+                if is_num(prev) && prev.contains('.') && is_num(split_punct(next).0) {
+                    let prev = out.pop().unwrap();
+                    out.push(format!("{prev}.{next}"));
+                    i += 2;
+                    continue;
+                }
+            }
+        }
+        // Times: "<1-12> [<00-59>] am/pm".
+        if let Some(h) = t.parse::<u32>().ok().filter(|h| (1..=12).contains(h) && is_digits(t)) {
+            let (min, k) = match toks.get(i + 1).map(|m| m.as_str()) {
+                Some(m) if m.len() == 2 && is_digits(m) && m < "60" => (Some(m.to_string()), i + 2),
+                _ => (None, i + 1),
+            };
+            if let Some(mer) = toks.get(k) {
+                let (core, punct) = split_punct(mer);
+                let bare = core.to_lowercase().replace('.', "");
+                if bare == "am" || bare == "pm" {
+                    // Keep "a.m." if the STT wrote it that way; plain am/pm → AM/PM.
+                    let mer = if core.contains('.') { mer.to_string() } else { format!("{}{punct}", bare.to_uppercase()) };
+                    out.push(match min { Some(m) => format!("{h}:{m} {mer}"), None => format!("{h} {mer}") });
+                    i = k + 1;
+                    continue;
+                }
+            }
+        }
+        // "v 1.2.3" → "v1.2.3"
+        if out.last().map_or(false, |p| p.eq_ignore_ascii_case("v")) && is_num(split_punct(t).0) {
+            let prev = out.pop().unwrap();
+            out.push(format!("{prev}{t}"));
+            i += 1;
+            continue;
+        }
+        out.push(t.to_string());
+        i += 1;
+    }
     out.join(" ")
 }
 
@@ -461,15 +532,117 @@ fn split_punct(tok: &str) -> (&str, &str) {
     (core, &tok[core.len()..])
 }
 
+// Spoken symbol words → (symbol, glue to previous word, glue to next word).
+// Longer phrases first so "colon slash slash" wins over "slash".
+// ponytail: bare "dash" and "colon" are left out — both are ordinary English
+// ("a quick dash", "colon cancer"); say "hyphen", or "colon slash slash".
+const SYMBOL_WORDS: &[(&str, &str, bool, bool)] = &[
+    ("colon slash slash", "://", true, true),
+    ("forward slash", "/", true, true),
+    ("back slash", "\\", true, true),
+    ("backslash", "\\", true, true),
+    ("slash", "/", true, true),
+    ("underscore", "_", true, true),
+    ("hyphen", "-", true, true),
+    ("at sign", "@", true, true),
+    ("hash tag", "#", false, true),
+    ("hashtag", "#", false, true),
+    ("percent sign", "%", true, false),
+];
+
+// "camel case user name" → "userName". Takes the next words up to a
+// punctuation mark, a stop word, or 4 words.
+// ponytail: 4-word cap + stop list; add a spoken "end case" if names run longer.
+const CASE_COMMANDS: &[&str] = &["camel case", "pascal case", "snake case", "kebab case", "constant case", "all caps"];
+const CASE_STOP: &[&str] = &[
+    "is", "are", "was", "were", "the", "a", "an", "and", "or", "to", "in", "of", "for", "with",
+    "on", "at", "from", "should", "will", "then", "but", "it", "that", "which", "as", "into",
+];
+
+fn apply_case(cmd: &str, words: &[String]) -> String {
+    let lw: Vec<String> = words.iter().map(|w| w.to_lowercase()).collect();
+    match cmd {
+        "camel case" => lw.iter().enumerate().map(|(i, w)| if i == 0 { w.clone() } else { capitalize_first(w) }).collect(),
+        "pascal case" => lw.iter().map(|w| capitalize_first(w)).collect(),
+        "snake case" => lw.join("_"),
+        "kebab case" => lw.join("-"),
+        "constant case" => lw.join("_").to_uppercase(),
+        _ => lw.join(" ").to_uppercase(), // all caps
+    }
+}
+
+/// If `phrase` starts at toks[i], returns (word count, trailing punctuation
+/// on its last word). Punctuation inside the phrase breaks the match.
+fn phrase_at(toks: &[&str], i: usize, phrase: &str) -> Option<(usize, String)> {
+    let words: Vec<&str> = phrase.split(' ').collect();
+    if i + words.len() > toks.len() { return None; }
+    for (k, w) in words.iter().enumerate() {
+        let (core, punct) = split_punct(toks[i + k]);
+        if !core.eq_ignore_ascii_case(w) || (k + 1 < words.len() && !punct.is_empty()) { return None; }
+    }
+    Some((words.len(), split_punct(toks[i + words.len() - 1]).1.to_string()))
+}
+
+fn symbol_words(line: &str) -> String {
+    let toks: Vec<&str> = line.split_whitespace().collect();
+    let mut out: Vec<String> = Vec::new();
+    let mut glue_next = false;
+    let mut i = 0;
+    'outer: while i < toks.len() {
+        for &cmd in CASE_COMMANDS {
+            if let Some((n, punct)) = phrase_at(&toks, i, cmd) {
+                if !punct.is_empty() { break; }
+                let mut words = Vec::new();
+                let mut tail = String::new();
+                let mut k = i + n;
+                while k < toks.len() && words.len() < 4 {
+                    let (core, p) = split_punct(toks[k]);
+                    if core.is_empty() || CASE_STOP.contains(&core.to_lowercase().as_str()) { break; }
+                    words.push(core.to_string());
+                    k += 1;
+                    if !p.is_empty() { tail = p.to_string(); break; }
+                }
+                if words.is_empty() { break; }
+                out.push(format!("{}{tail}", apply_case(cmd, &words)));
+                glue_next = false;
+                i = k;
+                continue 'outer;
+            }
+        }
+        for &(phrase, sym, gl, gr) in SYMBOL_WORDS {
+            if let Some((n, punct)) = phrase_at(&toks, i, phrase) {
+                match out.last_mut() {
+                    Some(prev) if gl && !prev.ends_with(|c: char| ",;:!?".contains(c)) => prev.push_str(sym),
+                    _ => out.push(sym.to_string()),
+                }
+                out.last_mut().unwrap().push_str(&punct);
+                glue_next = gr && punct.is_empty();
+                i += n;
+                continue 'outer;
+            }
+        }
+        match out.last_mut() {
+            Some(prev) if glue_next => prev.push_str(toks[i]),
+            _ => out.push(toks[i].to_string()),
+        }
+        glue_next = false;
+        i += 1;
+    }
+    out.join(" ")
+}
+
 pub fn spoken_symbols(text: &str) -> String {
     let lower = text.to_lowercase();
-    if !(lower.contains("dot") || lower.contains(". ") || lower.contains(" at ")) {
+    let has_command = SYMBOL_WORDS.iter().any(|(p, ..)| lower.contains(p.split(' ').next().unwrap()))
+        || CASE_COMMANDS.iter().any(|c| lower.contains(c));
+    if !(has_command || lower.contains("dot") || lower.contains(". ") || lower.contains(" at ")) {
         return text.to_string();
     }
     text.split('\n').map(spoken_symbols_line).collect::<Vec<_>>().join("\n")
 }
 
 fn spoken_symbols_line(line: &str) -> String {
+    let line = symbol_words(line);
     let toks: Vec<&str> = line.split_whitespace().collect();
     let mut out: Vec<String> = Vec::new();
     let mut i = 0;
@@ -477,6 +650,20 @@ fn spoken_symbols_line(line: &str) -> String {
         let (core, _) = split_punct(toks[i]);
         let next = toks.get(i + 1).map(|t| split_punct(t));
         let next_sfx = next.map(|(c, p)| (c.to_lowercase(), p));
+        // Inside a web address ("www dot google", "https://www dot google")
+        // "dot" joins any word, not just known suffixes.
+        if core.eq_ignore_ascii_case("dot") && toks[i] == core {
+            let in_url = out.last().map_or(false, |p| {
+                let p = p.to_lowercase();
+                p.ends_with("www") || (p.contains("://") && !p.ends_with(|c: char| c.is_ascii_punctuation()))
+            });
+            if let (true, Some((w, punct))) = (in_url, next) {
+                let prev = out.pop().unwrap();
+                out.push(format!("{prev}.{}{punct}", w.to_lowercase()));
+                i += 2;
+                continue;
+            }
+        }
         // "dot <suffix>"
         if core.eq_ignore_ascii_case("dot") && toks[i] == core {
             if let Some((sfx, punct)) = next_sfx.as_ref().filter(|(c, _)| SUFFIXES.contains(&c.as_str())) {
@@ -810,6 +997,23 @@ pub fn structure_text(text: &str) -> String {
             }
             cap_result.push(c);
         } else if c.is_alphabetic() {
+            // Don't capitalise a sentence-opening email, URL, file name or
+            // code identifier: "john@gmail.com", "readme.md", "userName".
+            if cap_next_alpha && (i == 0 || chars2[i - 1].is_whitespace()) {
+                let tok: String = chars2[i..].iter().take_while(|c| !c.is_whitespace()).collect();
+                let core = tok.trim_end_matches(|c: char| ",.?!;:".contains(c));
+                let literal = core.contains('@')
+                    || core.contains('/')
+                    || core.contains('_')
+                    || core.contains('.')
+                    || core.chars().skip(1).any(|c| c.is_uppercase());
+                if literal {
+                    cap_result.push(c);
+                    cap_next_alpha = false;
+                    i += 1;
+                    continue;
+                }
+            }
             if cap_next_alpha {
                 for uc in c.to_uppercase() {
                     cap_result.push(uc);
@@ -844,9 +1048,47 @@ mod tests {
         assert_eq!(spoken_symbols("a red dot appeared"), "a red dot appeared");
         assert_eq!(spoken_symbols("I was home. In the morning"), "I was home. In the morning");
         assert_eq!(spoken_symbols("meet me at noon"), "meet me at noon");
-        assert_eq!(spoken_symbols("line one
-file dot py"), "line one
-file.py");
+        assert_eq!(spoken_symbols("line one\nfile dot py"), "line one\nfile.py");
+        // symbol words
+        assert_eq!(spoken_symbols("src slash main dot rs"), "src/main.rs");
+        assert_eq!(spoken_symbols("users back slash zaid"), "users\\zaid");
+        assert_eq!(spoken_symbols("my underscore file dot txt"), "my_file.txt");
+        assert_eq!(spoken_symbols("hashtag rust is great"), "#rust is great");
+        assert_eq!(spoken_symbols("fifty percent sign off"), "fifty% off");
+        assert_eq!(spoken_symbols("and slash or"), "and/or");
+        assert_eq!(spoken_symbols("a quick dash home"), "a quick dash home");
+        assert_eq!(spoken_symbols("zaid at sign home"), "zaid@home");
+        // web addresses
+        assert_eq!(spoken_symbols("go to https colon slash slash www dot google dot com slash docs"), "go to https://www.google.com/docs");
+        assert_eq!(spoken_symbols("visit www dot example dot org."), "visit www.example.org.");
+        // case commands
+        assert_eq!(spoken_symbols("rename it camel case user name is wrong"), "rename it userName is wrong");
+        assert_eq!(spoken_symbols("snake case max retry count, then"), "max_retry_count, then");
+        assert_eq!(spoken_symbols("pascal case http client"), "HttpClient");
+        assert_eq!(spoken_symbols("kebab case main nav bar"), "main-nav-bar");
+        assert_eq!(spoken_symbols("constant case api key"), "API_KEY");
+        assert_eq!(spoken_symbols("all caps warning"), "WARNING");
+    }
+
+    #[test]
+    fn test_tidy_numbers() {
+        assert_eq!(format_numbers("v one point two point three"), "v1.2.3");
+        assert_eq!(format_numbers("version one point two point three"), "version 1.2.3");
+        assert_eq!(format_numbers("one nine two point one six eight point one point one"), "192.168.1.1");
+        assert_eq!(format_numbers("call five five five one two three four"), "call 5551234");
+        assert_eq!(format_numbers("three thirty pm"), "3:30 PM");
+        assert_eq!(format_numbers("meet at three pm."), "meet at 3 PM.");
+        assert_eq!(format_numbers("at seven forty five a.m. ok"), "at 7:45 a.m. ok");
+        assert_eq!(format_numbers("three point five stars"), "3.5 stars");
+        assert_eq!(format_numbers("I am fine"), "I am fine");
+    }
+
+    #[test]
+    fn test_no_capital_on_literals() {
+        assert_eq!(structure_text("john@gmail.com is mine"), "john@gmail.com is mine");
+        assert_eq!(structure_text("readme.md is here. userName too"), "readme.md is here. userName too");
+        assert_eq!(structure_text("hello there. my_var works"), "Hello there. my_var works");
+        assert_eq!(structure_text("hello. world"), "Hello. World");
     }
 
     #[test]

@@ -47,7 +47,10 @@ fi
 echo "PASS: launches and reaches startup"
 
 if [ "$(uname -s)" = Darwin ]; then
-  if ! grep -q "paste from worker thread" "$LOGDIR/silent-voice.log"; then
+  # Public annotation (job logs need admin rights): what the paste returned.
+  line=$(grep "paste from worker thread" "$LOGDIR/silent-voice.log" | tail -1)
+  echo "::notice title=paste self-test::macOS $(sw_vers -productVersion): ${line:-no result logged}"
+  if [ -z "$line" ]; then
     echo "FAIL: the startup paste self-test never finished"
     exit 1
   fi
