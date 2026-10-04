@@ -12,12 +12,7 @@
 
 use crate::models::registry;
 use crate::AppState;
-use super::paste::clipboard_modifier;
 use arboard::Clipboard;
-use enigo::{
-    Direction::{Click, Press, Release},
-    Enigo, Key, Keyboard, Settings as EnigoSettings,
-};
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -97,12 +92,7 @@ fn copy_selection() -> Result<String, String> {
     // Clear so we can tell "nothing was selected" from "old clipboard text".
     let _ = clipboard.clear();
 
-    let mut enigo = Enigo::new(&EnigoSettings::default()).map_err(|e| e.to_string())?;
-    enigo.key(clipboard_modifier(), Press).map_err(|e| e.to_string())?;
-    enigo
-        .key(Key::Unicode('c'), Click)
-        .map_err(|e| e.to_string())?;
-    enigo.key(clipboard_modifier(), Release).map_err(|e| e.to_string())?;
+    super::paste::press_shortcut('c')?;
     std::thread::sleep(Duration::from_millis(180));
 
     let selected = clipboard.get_text().unwrap_or_default();

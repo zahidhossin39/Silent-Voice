@@ -62,9 +62,15 @@ export default function Home() {
   // Defaults true so the banner never flashes before the check resolves, and
   // never appears at all off macOS (where the check always returns true).
   const [accessibilityOk, setAccessibilityOk] = useState(true);
+  // Re-check while it is off: the user grants it in System Settings while
+  // this page is open, and a single check left the warning up until restart.
   useEffect(() => {
+    if (!accessibilityOk) {
+      const id = setInterval(() => accessibilityGranted().then(setAccessibilityOk), 3000);
+      return () => clearInterval(id);
+    }
     accessibilityGranted().then(setAccessibilityOk);
-  }, []);
+  }, [accessibilityOk]);
 
   // A model that ignores the Language setting must not present a live language
   // control — that silent mismatch is what made Bangla come back as English.

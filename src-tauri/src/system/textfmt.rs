@@ -427,6 +427,129 @@ fn capitalize_first(token: &str) -> String {
     out
 }
 
+// ── Spoken symbols: file extensions, domains, emails ─────────────────────────
+// "readme dot md" → "readme.md", "the dot txt file" → "the .txt file",
+// "google dot com" → "google.com", "john dot smith at gmail dot com" →
+// "john.smith@gmail.com". Also repairs STT that already wrote the period but
+// split it: "readme. MD" / "gmail. Com" → "readme.md" / "gmail.com".
+// ponytail: fixed suffix list, not a general "dot <anything>" rule — "dot"
+// before an unknown word is left alone so "a red dot appeared" survives.
+const SUFFIXES: &[&str] = &[
+    "md", "txt", "json", "js", "ts", "tsx", "jsx", "py", "rs", "html", "htm", "css", "csv",
+    "pdf", "docx", "doc", "xlsx", "xls", "pptx", "png", "jpg", "jpeg", "gif", "svg", "webp",
+    "mp3", "mp4", "wav", "mov", "zip", "rar", "exe", "msi", "dll", "yaml", "yml", "toml",
+    "xml", "sh", "bat", "ps1", "log", "ini", "env", "sql", "db", "go", "java", "cpp", "c",
+    "h", "kt", "swift", "rb", "php", "lua", "vue", "svelte", "ipynb", "lock", "cfg", "conf",
+    "com", "org", "net", "io", "dev", "ai", "app", "co", "edu", "gov", "uk", "in", "us",
+    "me", "info", "xyz", "tech", "bd", "ca", "de", "au",
+];
+// Suffixes that are also ordinary words: only joined when "dot" was spoken,
+// never when repairing a "word. Word" sentence break.
+const AMBIGUOUS: &[&str] = &[
+    "in", "us", "me", "go", "c", "h", "app", "co", "ai", "doc", "log", "lock", "env", "db",
+    "dev", "info", "ca", "de", "au", "conf",
+];
+// Words after which "dot md" means the bare extension, not "<word>.md".
+const STANDALONE_BEFORE: &[&str] = &[
+    "a", "an", "the", "my", "your", "our", "this", "that", "these", "those", "any", "every",
+    "all", "some", "each", "open", "in", "into", "to", "of", "as", "and", "or", "with", "for",
+    "save", "create", "make", "new", "is", "are", "it's", "its", "use", "from", "on",
+];
+
+fn split_punct(tok: &str) -> (&str, &str) {
+    let core = tok.trim_end_matches(|c: char| matches!(c, ',' | '.' | '?' | '!' | ';' | ':'));
+    (core, &tok[core.len()..])
+}
+
+pub fn spoken_symbols(text: &str) -> String {
+    let lower = text.to_lowercase();
+    if !(lower.contains("dot") || lower.contains(". ") || lower.contains(" at ")) {
+        return text.to_string();
+    }
+    text.split('\n').map(spoken_symbols_line).collect::<Vec<_>>().join("\n")
+}
+
+fn spoken_symbols_line(line: &str) -> String {
+    let toks: Vec<&str> = line.split_whitespace().collect();
+    let mut out: Vec<String> = Vec::new();
+    let mut i = 0;
+    while i < toks.len() {
+        let (core, _) = split_punct(toks[i]);
+        let next = toks.get(i + 1).map(|t| split_punct(t));
+        let next_sfx = next.map(|(c, p)| (c.to_lowercase(), p));
+        // "dot <suffix>"
+        if core.eq_ignore_ascii_case("dot") && toks[i] == core {
+            if let Some((sfx, punct)) = next_sfx.as_ref().filter(|(c, _)| SUFFIXES.contains(&c.as_str())) {
+                // Join onto the previous word unless it closed a clause or is
+                // a word like "the"/"a" ("the dot md file" → "the .md file").
+                let attach = out.last().map_or(false, |prev| {
+                    !prev.ends_with(|c: char| c.is_ascii_punctuation())
+                        && !STANDALONE_BEFORE.contains(&prev.to_lowercase().as_str())
+                });
+                if attach {
+                    let prev = out.pop().unwrap();
+                    out.push(format!("{prev}.{sfx}{punct}"));
+                } else {
+                    out.push(format!(".{sfx}{punct}"));
+                }
+                i += 2;
+                continue;
+            }
+        }
+        // "readme. MD" → "readme.md" (STT already wrote the period)
+        if toks[i].ends_with('.') && !toks[i].ends_with("..") && core.chars().all(|c| c.is_alphanumeric() || "_-.".contains(c)) && !core.is_empty() {
+            if let Some((sfx, punct)) = next_sfx.as_ref().filter(|(c, _)| SUFFIXES.contains(&c.as_str()) && !AMBIGUOUS.contains(&c.as_str())) {
+                out.push(format!("{core}.{sfx}{punct}"));
+                i += 2;
+                continue;
+            }
+        }
+        out.push(toks[i].to_string());
+        i += 1;
+    }
+    join_emails(out)
+}
+
+/// "<local> at <domain.tld>" → "local@domain.tld". The local part may be
+/// spoken in pieces: "john dot smith" / "john underscore smith".
+fn join_emails(toks: Vec<String>) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut i = 0;
+    while i < toks.len() {
+        let is_at = toks[i].eq_ignore_ascii_case("at");
+        let domain = toks.get(i + 1).map(|t| split_punct(t));
+        let is_domain = domain.map_or(false, |(c, _)| {
+            c.rsplit_once('.').map_or(false, |(host, tld)| {
+                !host.is_empty() && host.chars().all(|ch| ch.is_alphanumeric() || "-.".contains(ch))
+                    && SUFFIXES.contains(&tld.to_lowercase().as_str())
+            })
+        });
+        let local_ok = out.last().map_or(false, |p| p.chars().all(|c| c.is_alphanumeric() || "._-".contains(c)));
+        if is_at && is_domain && local_ok {
+            let mut local = out.pop().unwrap();
+            // Pull "john dot" / "john underscore" pieces back into the local part.
+            while out.len() >= 2 {
+                let sep = match out[out.len() - 1].to_lowercase().as_str() {
+                    "dot" => ".",
+                    "underscore" => "_",
+                    "dash" | "hyphen" => "-",
+                    _ => break,
+                };
+                if !out[out.len() - 2].chars().all(|c| c.is_alphanumeric()) { break; }
+                out.pop();
+                local = format!("{}{sep}{local}", out.pop().unwrap());
+            }
+            let (d, punct) = domain.unwrap();
+            out.push(format!("{}@{}{punct}", local.to_lowercase(), d.to_lowercase()));
+            i += 2;
+            continue;
+        }
+        out.push(toks[i].clone());
+        i += 1;
+    }
+    out.join(" ")
+}
+
 /// Collapse immediate consecutive duplicate words.
 /// Only collapses when the word is >= 2 chars and consists of letters (plus internal hyphens/apostrophes).
 /// Preserves casing of the first occurrence and spacing.
@@ -707,7 +830,24 @@ pub fn structure_text(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{collapse_repeated_words, format_numbers, strip_fillers, structure_text};
+    use super::{collapse_repeated_words, format_numbers, spoken_symbols, strip_fillers, structure_text};
+
+    #[test]
+    fn test_spoken_symbols() {
+        assert_eq!(spoken_symbols("open readme dot md please"), "open readme.md please");
+        assert_eq!(spoken_symbols("save it as a dot txt file"), "save it as a .txt file");
+        assert_eq!(spoken_symbols("Dot JSON files are fine"), ".json files are fine");
+        assert_eq!(spoken_symbols("go to google dot com."), "go to google.com.");
+        assert_eq!(spoken_symbols("Check notes. MD now"), "Check notes.md now");
+        assert_eq!(spoken_symbols("email john dot smith at gmail dot com today"), "email john.smith@gmail.com today");
+        assert_eq!(spoken_symbols("mail Zaid at Gmail.com"), "mail zaid@gmail.com");
+        assert_eq!(spoken_symbols("a red dot appeared"), "a red dot appeared");
+        assert_eq!(spoken_symbols("I was home. In the morning"), "I was home. In the morning");
+        assert_eq!(spoken_symbols("meet me at noon"), "meet me at noon");
+        assert_eq!(spoken_symbols("line one
+file dot py"), "line one
+file.py");
+    }
 
     #[test]
     fn small_numbers_become_digits_too() {
