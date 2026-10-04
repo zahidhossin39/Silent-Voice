@@ -74,7 +74,7 @@ After `cargo build`, whisper DLLs must be copied from `sidecars/` into
 - Release: bump version in `package.json` + `tauri.conf.json` + `Cargo.toml`,
   commit, `git tag vX.Y.Z`, push tag → CI builds draft release → set label
   "None" (not pre-release) → publish. Details in HANDBOOK §16.
-- Phase 5 (always-listening VAD/wake-word) is the only unbuilt phase.
+- Phase 5 (always-listening VAD/wake-word) was dropped by the user — do not build it.
 - macOS and Linux build, install, launch, and transcribe — gated by
   `cross-platform-build.yml` (boot + whisper smoke test + signing check).
   Untested there: hotkey/paste, TTS, per-app profiles, the updater. Inline

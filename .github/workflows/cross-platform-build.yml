@@ -20,6 +20,7 @@ on:
       - "src-tauri/src/system/squiggle_overlay.rs"
       - "src-tauri/tauri.macos.conf.json"
       - "src-tauri/tauri.linux.conf.json"
+      - ".github/workflows/release.yml"
       - ".github/workflows/cross-platform-build.yml"
 
 jobs:
@@ -102,12 +103,20 @@ jobs:
 
       # Collect and upload before deciding the job failed: a .deb is still
       # worth having when only the AppImage bundler falls over.
-      - name: Drop the bundled libwayland from the AppImage
+      # Same as the release job: repack, then re-sign (repacking breaks the
+      # updater signature, and an unsigned AppImage can never be updated).
+      - name: Drop the bundled libwayland from the AppImage, then re-sign it
         if: runner.os == 'Linux' && steps.build.outputs.code == '0'
         shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           for f in src-tauri/target/release/bundle/appimage/*.AppImage; do
             bash scripts/fix-appimage.sh "$f"
+            rm -f "$f.sig"
+            npx tauri signer sign "$f"
+            test -s "$f.sig"
           done
 
       - name: Collect the installers
@@ -116,7 +125,7 @@ jobs:
         run: |
           mkdir -p out
           find src-tauri/target/release/bundle -type f \
-            \( -name '*.dmg' -o -name '*.AppImage' -o -name '*.deb' \) \
+            \( -name '*.dmg' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.sig' -o -name '*.app.tar.gz' \) \
             -exec cp {} out/ \; 2>/dev/null || true
           ls -la out
 
@@ -127,10 +136,10 @@ jobs:
           path: out/*
           if-no-files-found: warn
 
-      # Updater artifacts are Windows-only for now, so there is nothing to sign
-      # here; kept as a guard in case that changes.
+      # macOS and Linux now auto-update too, so each must produce its signed
+      # update bundle (.app.tar.gz.sig / .AppImage.sig).
       - name: Every bundle must be signed
-        if: false
+        if: steps.build.outputs.code == '0'
         shell: bash
         run: |
           found=$(find src-tauri/target/release/bundle -name '*.sig')
