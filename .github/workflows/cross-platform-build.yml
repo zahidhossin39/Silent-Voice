@@ -12,6 +12,7 @@ on:
       - "scripts/smoke-test.sh"
       - "scripts/smoke-linux.sh"
       - "scripts/fix-appimage.sh"
+      - "scripts/macos-signing.sh"
       # Inline proofreading links glib/gobject and creates windows at startup;
       # only a full build and launch proves either still works.
       - "src-tauri/src/system/atspi.rs"
@@ -80,6 +81,16 @@ jobs:
         shell: bash
         run: find src-tauri/sidecars -type f \( -iname '*.dll' -o -iname '*.exe' \) -print -delete
 
+      # Same certificate every build, so macOS keeps the Accessibility grant
+      # across updates. See scripts/macos-signing.sh.
+      - name: Use the project's code-signing certificate (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: bash scripts/macos-signing.sh setup
+
       - name: Build the app
         id: build
         shell: bash
@@ -92,6 +103,8 @@ jobs:
           # workflow will produce signed bundles, without pushing a tag first.
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           # linuxdeploy resolves each bundled binary's dependencies against the
           # normal library path, where none of our sidecars live. Every sidecar
           # directory has to be listed or it fails on the first missing .so.
@@ -149,6 +162,11 @@ jobs:
             exit 1
           fi
           echo "signed:"; echo "$found"
+
+      - name: Check the macOS app is signed with that certificate
+        if: runner.os == 'macOS' && steps.build.outputs.code == '0'
+        shell: bash
+        run: bash scripts/macos-signing.sh verify "$(find src-tauri/target/release/bundle/macos -maxdepth 1 -name '*.app' | head -1)"
 
       - name: Smoke test - does it actually start
         id: smoke
