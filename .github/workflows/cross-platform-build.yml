@@ -210,7 +210,7 @@ jobs:
           } > body.md
           # Commit comments are public and NOT masked like job logs: tauri's
           # verbose output prints the keychain and certificate passwords.
-          sed -i.bak -E 's/(-[pP]) [^ ]+/\1 <REDACTED>/g' body.md
+          sed -i.bak -E 's/(-[pPk]) [^ ]+/\1 <REDACTED>/g' body.md
           if [ -n "$APPLE_CERTIFICATE_PASSWORD" ] && grep -qF "$APPLE_CERTIFICATE_PASSWORD" body.md; then
             echo "certificate password still in the log, not posting it"; exit 1
           fi
