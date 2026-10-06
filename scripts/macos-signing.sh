@@ -22,16 +22,28 @@ case "${1:-}" in
       echo "::error::APPLE_CERTIFICATE / APPLE_CERTIFICATE_PASSWORD secrets are missing. An unsigned macOS build loses its Accessibility permission on every update."
       exit 1
     fi
-    # tauri finds the identity via `security find-identity -v`, which lists
-    # only TRUSTED certificates; a self-signed one must be trusted for code
-    # signing on the build machine. Users' Macs never need to trust it: TCC
-    # matches the certificate's hash, not its trust.
+    # Import it ourselves. Given APPLE_CERTIFICATE, tauri imports it but only
+    # accepts Apple-issued names ("Developer ID Application: ..."), so a
+    # self-signed one fails with "failed to resolve signing identity". Given
+    # only APPLE_SIGNING_IDENTITY, tauri hands the name straight to codesign.
+    # So the build steps must NOT see APPLE_CERTIFICATE.
     tmp=$(mktemp -d)
+    kc="$HOME/Library/Keychains/silent-voice-signing.keychain-db"
+    kcpw=$(openssl rand -hex 16)
     echo "$APPLE_CERTIFICATE" | base64 --decode > "$tmp/cert.p12"
-    openssl pkcs12 -in "$tmp/cert.p12" -nokeys -clcerts -passin env:APPLE_CERTIFICATE_PASSWORD -out "$tmp/cert.pem" 2>/dev/null \
-      || openssl pkcs12 -legacy -in "$tmp/cert.p12" -nokeys -clcerts -passin env:APPLE_CERTIFICATE_PASSWORD -out "$tmp/cert.pem"
+    security create-keychain -p "$kcpw" "$kc"
+    security set-keychain-settings -t 3600 -u "$kc"
+    security unlock-keychain -p "$kcpw" "$kc"
+    security import "$tmp/cert.p12" -k "$kc" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+    security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$kcpw" "$kc" >/dev/null
+    security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+    # codesign also wants the certificate trusted for code signing on the
+    # build machine. Users' Macs never need to trust it: TCC matches the
+    # certificate's hash, not its trust.
+    security find-certificate -c "$IDENTITY" -p "$kc" > "$tmp/cert.pem"
     sudo security add-trusted-cert -d -r trustRoot -p codeSign -k /Library/Keychains/System.keychain "$tmp/cert.pem"
     rm -rf "$tmp"
+    security find-identity -p codesigning "$kc"
     echo "APPLE_SIGNING_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
     ;;
   verify)
