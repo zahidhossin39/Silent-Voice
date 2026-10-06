@@ -81,7 +81,7 @@ After `cargo build`, whisper DLLs must be copied from `sidecars/` into
   proofreading now exists on all three: UIA on Windows, Accessibility on macOS,
   AT-SPI on Linux (`inline_unix.rs` over `ax.rs` / `atspi.rs`). See `PORTING.md`.
 
-**Current state:** v0.1.12 released: macOS signed with the project's self-signed cert (Accessibility survives updates; `scripts/macos-signing.sh`), Cmd+V/Cmd+C sent on the main thread (fixed the post-dictation crash), AppImage keeps libwayland as a host fallback.
+**Current state:** v0.1.13 released (Settings > System > Logs: save/copy/open; one log line per paste). v0.1.12: macOS signed with the project's self-signed cert (Accessibility survives updates; `scripts/macos-signing.sh`), Cmd+V/Cmd+C sent on the main thread (fixed the post-dictation crash), AppImage keeps libwayland as a host fallback.
 Home gained a 12-week dictation strip in the Status panel (heatmap + days
 active / busiest day / words per dictation), the onboarding was rebuilt as a
 left-rail flow that downloads the model in the background, and spoken fillers
