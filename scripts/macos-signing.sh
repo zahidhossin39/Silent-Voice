@@ -52,11 +52,14 @@ case "${1:-}" in
     req=$(codesign -d -r- "$APP" 2>&1)
     echo "$req"
     # The stable parts TCC matches on. A cdhash-only requirement means ad-hoc.
-    if ! grep -q 'identifier "app.silentvoice.desktop"' <<<"$req" \
-       || ! grep -q 'certificate leaf = H"' <<<"$req"; then
-      echo "::error::$APP is not signed with the Silent Voice certificate (requirement above)."
+    # A self-signed cert is its own root, so codesign may pin it as "root".
+    dr=$(grep -o 'designated => .*' <<<"$req" || true)
+    if ! grep -q 'identifier "app.silentvoice.desktop"' <<<"$dr" \
+       || ! grep -qE 'certificate (leaf|root) = H"' <<<"$dr"; then
+      echo "::error::$APP is not signed with the Silent Voice certificate. Requirement: ${dr:-$req}"
       exit 1
     fi
+    echo "::notice title=macOS signature::$dr"
     echo "PASS: signed with a stable identity"
     ;;
   *) echo "usage: $0 setup | verify <app>"; exit 2 ;;
