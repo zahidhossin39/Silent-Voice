@@ -277,6 +277,18 @@ export async function copyDiagnostics(): Promise<string> {
   }
 }
 
+// Saves diagnostics + the full log to Downloads and shows the file. Returns
+// its path, or throws with the reason.
+export async function exportLogs(): Promise<string> {
+  if (!isTauri()) throw new Error("Needs the desktop app");
+  return await invoke<string>("export_logs");
+}
+
+export async function openLogsFolder(): Promise<void> {
+  if (!isTauri()) return;
+  await invoke("open_logs_folder").catch((e) => console.warn("open_logs_folder failed", e));
+}
+
 // Manual record → transcribe (returns the text, does NOT paste). Used by the
 // onboarding self-test.
 export async function startRecording(device: string | null): Promise<void> {

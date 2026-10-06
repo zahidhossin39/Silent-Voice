@@ -9,7 +9,7 @@ import Select from "../../shared/Select";
 import { useSettingsStore } from "../../../stores/settingsStore";
 import { useModelStore } from "../../../stores/modelStore";
 import { LANGUAGES, STT_MODELS, TTS_MODELS, TTS_SAMPLE_TEXT, honorsLanguage } from "../../../services/catalog";
-import { copyDiagnostics, copyToClipboard, ttsSpeakText } from "../../../services/tauriBridge";
+import { copyDiagnostics, copyToClipboard, exportLogs, openLogsFolder, ttsSpeakText } from "../../../services/tauriBridge";
 import { checkForUpdatesManual } from "../../../services/updater";
 import type { Settings } from "../../../types";
 import type { TopicId } from "./topics";
@@ -454,10 +454,10 @@ export const SETTINGS: SettingDef[] = [
   {
     id: "diagnostics",
     topic: "system",
-    tier: "advanced",
-    label: "Diagnostics",
-    info: "Copies app and system info plus recent logs, so you can paste them into a bug report.",
-    keywords: "logs debug support bug report",
+    tier: "basic",
+    label: "Logs",
+    info: "Something not working? Save the logs and send the file with your bug report. They hold app and system info and a record of what the app did.",
+    keywords: "logs diagnostics debug support bug report problem export",
     render: () => <CopyDiagnostics />,
   },
 ];
@@ -697,6 +697,18 @@ function CopyDiagnostics() {
       )}
       <GhostButton
         onClick={async () => {
+          try {
+            const path = await exportLogs();
+            setMsg(`Saved to ${path.split(/[\\/]/).slice(-2).join("/")}`);
+          } catch (e) {
+            setMsg(String(e).replace(/^Error: /, ""));
+          }
+        }}
+      >
+        Save to file
+      </GhostButton>
+      <GhostButton
+        onClick={async () => {
           const text = await copyDiagnostics();
           if (text) {
             await copyToClipboard(text);
@@ -708,6 +720,7 @@ function CopyDiagnostics() {
       >
         Copy
       </GhostButton>
+      <GhostButton onClick={() => openLogsFolder()}>Open folder</GhostButton>
     </span>
   );
 }

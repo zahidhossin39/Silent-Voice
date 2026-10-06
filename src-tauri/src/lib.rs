@@ -305,6 +305,23 @@ async fn recommend_device_defaults() -> hardware::DeviceRecommendation {
 /// non-technical user reporting a problem can share everything at once.
 #[tauri::command]
 fn copy_diagnostics(state: State<AppState>) -> String {
+    format!("{}--- recent log ---\n{}\n", diagnostics_header(&state), crate::logging::recent(400))
+}
+
+/// Save diagnostics + the whole log to Downloads and show the file.
+#[tauri::command]
+async fn export_logs(state: State<'_, AppState>) -> Result<String, String> {
+    let path = crate::logging::export(&diagnostics_header(&state))?;
+    crate::logging::reveal(&path);
+    Ok(path.display().to_string())
+}
+
+#[tauri::command]
+fn open_logs_folder() {
+    crate::logging::reveal(&crate::logging::logs_folder());
+}
+
+fn diagnostics_header(state: &AppState) -> String {
     let hw = hardware::detect();
     let (model, source, lang, gpu, hp, threads, mode) = state
         .config
@@ -337,7 +354,7 @@ fn copy_diagnostics(state: State<AppState>) -> String {
          use gpu: {gpu}\n\
          high performance: {hp} (threads: {threads})\n\
          active mode: {mode}\n\
-         --- recent log ---\n{log}\n",
+         accessibility trusted: {ax}\n",
         ver = env!("CARGO_PKG_VERSION"),
         os = hw.os,
         cpu = hw.cpu_brand,
@@ -356,7 +373,7 @@ fn copy_diagnostics(state: State<AppState>) -> String {
         hp = hp,
         threads = threads,
         mode = if mode.trim().is_empty() { "raw".to_string() } else { mode },
-        log = crate::logging::recent(60),
+        ax = crate::system::accessibility::is_trusted(),
     )
 }
 
@@ -1368,6 +1385,8 @@ pub fn run() {
             get_hardware_info,
             recommend_device_defaults,
             copy_diagnostics,
+            export_logs,
+            open_logs_folder,
             list_input_devices,
             start_mic_probe,
             stop_mic_probe,

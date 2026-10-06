@@ -67,6 +67,40 @@ pub fn recent(max_lines: usize) -> String {
     lines[start..].join("\n")
 }
 
+/// Write `header` plus the full log (previous rotated file first) to
+/// Downloads/silent-voice-logs-<time>.txt, the file a user sends with a bug
+/// report. Returns its path.
+pub fn export(header: &str) -> Result<PathBuf, String> {
+    let dir = dirs::download_dir()
+        .or_else(dirs::desktop_dir)
+        .ok_or("no Downloads folder found")?;
+    let path = dir.join(format!("silent-voice-logs-{}.txt", timestamp()));
+    let old = std::fs::read_to_string(log_dir().join("silent-voice.old.log")).unwrap_or_default();
+    let cur = std::fs::read_to_string(log_path()).unwrap_or_default();
+    std::fs::write(&path, format!("{header}\n--- full log ---\n{old}{cur}"))
+        .map_err(|e| format!("could not write {}: {e}", path.display()))?;
+    Ok(path)
+}
+
+/// Show `path` in the system file manager (selected, where supported).
+pub fn reveal(path: &std::path::Path) {
+    #[cfg(windows)]
+    let r = std::process::Command::new("explorer").arg(format!("/select,{}", path.display())).spawn();
+    #[cfg(target_os = "macos")]
+    let r = std::process::Command::new("open").arg("-R").arg(path).spawn();
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let r = std::process::Command::new("xdg-open")
+        .arg(if path.is_dir() { path } else { path.parent().unwrap_or(path) })
+        .spawn();
+    if let Err(e) = r {
+        log_error("logs", &format!("could not open file manager: {e}"));
+    }
+}
+
+pub fn logs_folder() -> PathBuf {
+    log_dir()
+}
+
 /// Human-readable message from a caught panic payload.
 pub fn panic_msg(p: &(dyn std::any::Any + Send)) -> String {
     if let Some(s) = p.downcast_ref::<&str>() {
