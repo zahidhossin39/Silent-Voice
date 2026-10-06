@@ -84,8 +84,15 @@ pub fn export(header: &str) -> Result<PathBuf, String> {
 
 /// Show `path` in the system file manager (selected, where supported).
 pub fn reveal(path: &std::path::Path) {
+    // raw_arg: Rust quotes the whole "/select,<path>" when the path has a
+    // space, and explorer then opens Documents instead of the file.
     #[cfg(windows)]
-    let r = std::process::Command::new("explorer").arg(format!("/select,{}", path.display())).spawn();
+    let r = {
+        use std::os::windows::process::CommandExt;
+        std::process::Command::new("explorer")
+            .raw_arg(format!("/select,\"{}\"", path.display()))
+            .spawn()
+    };
     #[cfg(target_os = "macos")]
     let r = std::process::Command::new("open").arg("-R").arg(path).spawn();
     #[cfg(all(unix, not(target_os = "macos")))]

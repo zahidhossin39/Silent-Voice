@@ -862,17 +862,6 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
         let window_changed =
             target_hwnd != 0 && current_hwnd != 0 && current_hwnd != target_hwnd;
         let secure = crate::system::secure_field::focused_is_password();
-        // Every fact needed to tell why a paste did not land, in one line
-        // (shared via Settings > Logs). No dictated text is logged.
-        crate::logging::log_info(
-            "paste",
-            &format!(
-                "chars={} trusted={} frontmost={:?} target={target_hwnd} now={current_hwnd} window_changed={window_changed} secure={secure}",
-                to_paste.chars().count(),
-                crate::system::accessibility::is_trusted(),
-                foreground::foreground_app(),
-            ),
-        );
         if secure || window_changed {
             if let Err(e) = paste::set_clipboard(&to_paste) {
                 report_error(&app, "paste", &e);
@@ -892,6 +881,18 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
         } else {
             pasted_ok = true;
         }
+        // After the paste, so the extra frontmost lookup (osascript on macOS)
+        // never delays it. Every fact needed to tell why a paste did not land, in one line
+        // (shared via Settings > Logs). No dictated text is logged.
+        crate::logging::log_info(
+            "paste",
+            &format!(
+                "chars={} trusted={} frontmost={:?} target={target_hwnd} now={current_hwnd} window_changed={window_changed} secure={secure} pasted_ok={pasted_ok}",
+                to_paste.chars().count(),
+                crate::system::accessibility::is_trusted(),
+                foreground::foreground_app(),
+            ),
+        );
     }
 
     let elapsed = started.elapsed().as_millis() as i64;
