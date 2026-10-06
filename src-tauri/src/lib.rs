@@ -1224,8 +1224,20 @@ pub fn run() {
             // CI smoke test (scripts/smoke-test.sh): paste once from a tokio
             // worker, the same thread a real dictation pastes from. macOS kills
             // the app if the paste touches main-thread-only APIs from there.
-            if std::env::var_os("SV_SELFTEST_PASTE").is_some() {
-                tauri::async_runtime::spawn(async {
+            // The value is a delay in seconds, so the test can focus a text
+            // editor first and then check the text really landed there.
+            if let Some(v) = std::env::var_os("SV_SELFTEST_PASTE") {
+                let delay = v.to_str().and_then(|s| s.parse::<u64>().ok()).unwrap_or(0);
+                tauri::async_runtime::spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_secs(delay)).await;
+                    logging::log_info(
+                        "selftest",
+                        &format!(
+                            "before paste: accessibility trusted={}, frontmost={:?}",
+                            system::accessibility::is_trusted(),
+                            system::foreground::foreground_app()
+                        ),
+                    );
                     let r = system::paste::paste_at_cursor("silent voice selftest");
                     logging::log_info("selftest", &format!("paste from worker thread: {r:?}"));
                 });

@@ -17,12 +17,20 @@ else
   BIN=$(find "$APP/Contents/MacOS" -maxdepth 1 -type f | head -1)
   LOGDIR="$HOME/Library/Application Support/SilentVoice/logs"
   rm -rf "$HOME/Library/Application Support/SilentVoice"
-  # Paste once at startup: the v0.1.11 dictation crash (keyboard-layout
-  # lookup off the main thread) killed the app right here.
-  SV_SELFTEST_PASTE=1 "$BIN" > app.log 2>&1 &
+  # Paste once, 20 s after startup, into a TextEdit window brought to the
+  # front at 10 s: the v0.1.11 crash (keyboard-layout lookup off the main
+  # thread) killed the app here, and v0.1.12 pasted nothing on real Macs.
+  SV_SELFTEST_PASTE=20 "$BIN" > app.log 2>&1 &
 fi
 PID=$!
-sleep 30
+if [ "$(uname -s)" = Darwin ]; then
+  sleep 10
+  : > "$PWD/paste-target.txt"
+  open -a TextEdit "$PWD/paste-target.txt"
+  sleep 20
+else
+  sleep 30
+fi
 
 echo "--- stdout/stderr ---"; cat app.log || true
 echo "--- app log ---"; cat "$LOGDIR/silent-voice.log" 2>/dev/null || echo "(no log file written)"
@@ -55,6 +63,17 @@ if [ "$(uname -s)" = Darwin ]; then
     exit 1
   fi
   echo "PASS: pastes from a worker thread without crashing"
+
+  # Did the text actually land at the cursor? System Events is the one app
+  # CI's osascript may drive without a permission prompt.
+  landed=$(osascript -e 'tell application "System Events" to tell process "TextEdit" to get value of text area 1 of scroll area 1 of window 1' 2>&1)
+  echo "::notice title=paste landed in TextEdit::[$landed] | $(grep 'before paste' "$LOGDIR/silent-voice.log" | tail -1)"
+  pkill -x TextEdit || true
+  if [[ "$landed" != *"silent voice selftest"* ]]; then
+    echo "FAIL: the paste did not land in the focused text field"
+    exit 1
+  fi
+  echo "PASS: the text was pasted at the cursor"
 fi
 
 # Booting only proves the GUI starts. This proves the actual feature: run the
