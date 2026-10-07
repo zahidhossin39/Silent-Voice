@@ -137,8 +137,21 @@ fn replace_case_insensitive(haystack: &str, needle: &str, replacement: &str) -> 
     let mut result = String::with_capacity(haystack.len());
     let mut last = 0usize;
     let mut search_from = 0usize;
+    // Whole words only: "unslop" must not fire inside "unsloppy", nor "tax"
+    // inside "taxes". Only checked where the trigger itself starts/ends with a
+    // letter or digit, so triggers like "c++" still match.
+    let word_char = |c: Option<char>| c.map_or(false, |c| c.is_alphanumeric());
+    let check_start = word_char(needle.chars().next());
+    let check_end = word_char(needle.chars().last());
     while let Some(rel) = hay_lower[search_from..].find(&need_lower) {
         let idx = search_from + rel;
+        let end = idx + need_lower.len();
+        if (check_start && word_char(haystack[..idx].chars().last()))
+            || (check_end && word_char(haystack[end..].chars().next()))
+        {
+            search_from = idx + haystack[idx..].chars().next().map_or(1, |c| c.len_utf8());
+            continue;
+        }
         result.push_str(&haystack[last..idx]);
         result.push_str(replacement);
         let mut after = idx + needle.len();
@@ -162,6 +175,17 @@ fn replace_case_insensitive(haystack: &str, needle: &str, replacement: &str) -> 
 #[cfg(test)]
 mod replacement_tests {
     use super::apply_replacements;
+
+    #[test]
+    fn whole_words_only() {
+        let p = vec![("unslop".to_string(), "/Unslop".to_string()), ("tax".to_string(), "task".to_string())];
+        assert_eq!(apply_replacements("Use unsloppy scale.", &p), "Use unsloppy scale.");
+        assert_eq!(apply_replacements("Use unslop now", &p), "Use /Unslop now");
+        assert_eq!(apply_replacements("Unslop.", &p), "/Unslop");
+        assert_eq!(apply_replacements("pay taxes, add tax", &p), "pay taxes, add task");
+        let c = vec![("c++".to_string(), "C++".to_string())];
+        assert_eq!(apply_replacements("I like c++ a lot", &c), "I like C++ a lot");
+    }
 
     fn pairs() -> Vec<(String, String)> {
         vec![("my email".into(), "a@b.com".into())]
