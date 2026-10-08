@@ -422,6 +422,23 @@ pub fn start_capture(app: &AppHandle) {
     }
 }
 
+/// `--start` / `--stop` / `--toggle` from the command line (a Hyprland or Sway
+/// keybind: `bind` → --start, `bindr` on release → --stop). Same path as the
+/// tray toggle, so it never touches the hotkey tap state machine.
+pub fn cli_record(app: &AppHandle, flag: &str) {
+    let recording = app
+        .state::<AppState>()
+        .recorder
+        .lock()
+        .map(|slot| slot.is_some())
+        .unwrap_or(false);
+    match (flag, recording) {
+        ("--start", false) | ("--toggle", false) => start_capture(app),
+        ("--stop", true) | ("--toggle", true) => stop_capture(app),
+        _ => {}
+    }
+}
+
 /// Stop the current recording and run the pipeline (no tap bookkeeping).
 /// Used by the tray-menu record toggle.
 pub fn stop_capture(app: &AppHandle) {

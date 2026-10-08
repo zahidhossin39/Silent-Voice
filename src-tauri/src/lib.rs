@@ -289,6 +289,14 @@ pub async fn run_local_llm(
     llm::openai::chat(&llm::llama::base_url(), "", model_id, system_prompt, text).await
 }
 
+/// True when a system package manager owns this install (the Arch/AUR
+/// package drops this marker). Its updates come from pacman/yay, so the
+/// built-in updater — which would try to install a .deb — stays off.
+#[tauri::command]
+fn package_managed() -> bool {
+    cfg!(target_os = "linux") && std::path::Path::new("/usr/lib/Silent Voice/.package-managed").exists()
+}
+
 // ---------------- Hardware ----------------
 
 #[tauri::command]
@@ -1176,7 +1184,14 @@ pub fn run() {
     );
 
     tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            // `silent-voice --start/--stop/--toggle` from a compositor keybind
+            // (Wayland gives apps no global hotkeys). Handled by the running
+            // instance; no window pops up.
+            if let Some(flag) = args.iter().find(|a| matches!(a.as_str(), "--start" | "--stop" | "--toggle")) {
+                system::hotkey::cli_record(app, flag);
+                return;
+            }
             if let Some(win) = app.get_webview_window("main") {
                 let _ = win.show();
                 let _ = win.unminimize();
@@ -1382,6 +1397,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            package_managed,
             get_hardware_info,
             recommend_device_defaults,
             copy_diagnostics,

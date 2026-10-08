@@ -46,6 +46,16 @@ export async function setOverlaySize(w: number, h: number): Promise<void> {
 
 /** Hide the overlay via the backend (sets the user-hidden flag so the
  * keep-alive loop won't bring it back). Re-show via the tray menu. */
+/** True when pacman/yay owns this install, so the built-in updater stays off. */
+export async function packageManaged(): Promise<boolean> {
+  if (!isTauri()) return false;
+  try {
+    return await invoke<boolean>("package_managed");
+  } catch {
+    return false;
+  }
+}
+
 export async function hideSelfWindow(): Promise<void> {
   if (!isTauri()) return;
   try {

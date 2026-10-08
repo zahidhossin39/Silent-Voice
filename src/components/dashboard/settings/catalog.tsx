@@ -676,6 +676,8 @@ function UpdateCheck() {
               ? "Couldn't check. Try again later."
               : r.status === "unsupported"
               ? "Updates need the desktop app"
+              : r.status === "managed"
+              ? "Update with your package manager (yay -Syu)"
               : "Installing the update…"
           );
         }}

@@ -61,6 +61,20 @@ fn on_main_thread<R>(f: impl FnOnce() -> R) -> R {
 ///
 /// Build plan §13 — Paste at Cursor.
 pub fn paste_at_cursor(text: &str) -> Result<(), String> {
+    // Wayland: the XTest Ctrl+V below can't reach native Wayland windows.
+    // `wtype` types through the virtual-keyboard protocol instead (Hyprland,
+    // Sway, other wlroots compositors). If it's missing or the compositor
+    // refuses it (GNOME, KDE), fall through to the old path, which still
+    // reaches XWayland windows — so nothing that worked before breaks.
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("WAYLAND_DISPLAY").is_some() {
+        match std::process::Command::new("wtype").arg("--").arg(text).status() {
+            Ok(s) if s.success() => return Ok(()),
+            Ok(_) => crate::logging::log_info("paste", "wtype failed; falling back to Ctrl+V"),
+            Err(_) => crate::logging::log_info("paste", "wtype not installed; falling back to Ctrl+V"),
+        }
+    }
+
     let mut clipboard = Clipboard::new().map_err(|e| e.to_string())?;
     let original = clipboard.get_text().ok();
 

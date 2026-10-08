@@ -1,9 +1,9 @@
 import { check } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
-import { isTauri } from "./tauriBridge";
+import { isTauri, packageManaged } from "./tauriBridge";
 
 export async function checkForUpdates(): Promise<{ available: boolean; version: string | null }> {
-  if (!isTauri()) return { available: false, version: null };
+  if (!isTauri() || (await packageManaged())) return { available: false, version: null };
 
   try {
     const update = await check();
@@ -21,13 +21,15 @@ export type UpdateCheckResult =
   | { status: "none" }
   | { status: "available"; version: string }
   | { status: "error"; message: string }
-  | { status: "unsupported" };
+  | { status: "unsupported" }
+  | { status: "managed" };
 
 // Manual "Check for updates" button: same install flow, but reports a
 // result so the UI can give feedback (checkForUpdates stays silent for the
 // automatic startup check).
 export async function checkForUpdatesManual(): Promise<UpdateCheckResult> {
   if (!isTauri()) return { status: "unsupported" };
+  if (await packageManaged()) return { status: "managed" };
   try {
     const update = await check();
     if (!update) return { status: "none" };

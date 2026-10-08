@@ -19,6 +19,8 @@ license=('MIT')
 depends=('alsa-lib' 'libx11' 'libxtst' 'libxinerama' 'libxkbcommon'
          'xorg-xprop' 'xorg-xwininfo'
          'libayatana-appindicator' 'webkit2gtk-4.1' 'gtk3')
+# wtype: pastes on Wayland (Hyprland/Omarchy, Sway).
+optdepends=('wtype: paste dictated text on Wayland (Hyprland, Sway)')
 makedepends=('patchelf')
 provides=('silent-voice')
 conflicts=('silent-voice')
@@ -36,6 +38,8 @@ package() {
   bsdtar -xOf "${_libxdo}" 'data.tar.*' | bsdtar -xf - -C "$srcdir" ./usr/lib/x86_64-linux-gnu/libxdo.so.3
   install -Dm644 "$srcdir/usr/lib/x86_64-linux-gnu/libxdo.so.3" "$app/libxdo.so.3"
   patchelf --add-rpath '/usr/lib/Silent Voice' "$pkgdir/usr/bin/silent-voice"
+  # Tells the app pacman owns it, so its own .deb updater stays off.
+  touch "$app/.package-managed"
   # Windows binaries shipped in older .debs can never run here.
   find "$pkgdir/usr/lib/Silent Voice" -type f \( -iname '*.dll' -o -iname '*.exe' \) -delete
 }
