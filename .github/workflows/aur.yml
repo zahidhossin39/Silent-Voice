@@ -1,0 +1,38 @@
+name: Publish to AUR
+
+# When a release is published, push packaging/arch/PKGBUILD (version bumped,
+# checksums filled in) to the AUR as `silent-voice-bin`, so Arch/Omarchy users
+# get it with `yay -S silent-voice-bin` and updates with `yay -Syu`.
+# Needs repo secrets AUR_USERNAME, AUR_EMAIL, AUR_SSH_PRIVATE_KEY; until they
+# exist this job does nothing.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  aur:
+    runs-on: ubuntu-latest
+    env:
+      HAS_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY != '' }}
+    steps:
+      - uses: actions/checkout@v4
+        if: env.HAS_KEY == 'true'
+
+      - name: Set version from the release tag
+        if: env.HAS_KEY == 'true'
+        run: |
+          tag="${{ github.event.release.tag_name || github.ref_name }}"
+          sed -i "s/^pkgver=.*/pkgver=${tag#v}/; s/^pkgrel=.*/pkgrel=1/" packaging/arch/PKGBUILD
+
+      - uses: KSXGitHub/github-actions-deploy-aur@v4.2.0
+        if: env.HAS_KEY == 'true'
+        with:
+          pkgname: silent-voice-bin
+          pkgbuild: packaging/arch/PKGBUILD
+          updpkgsums: true
+          commit_username: ${{ secrets.AUR_USERNAME }}
+          commit_email: ${{ secrets.AUR_EMAIL }}
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: Update to ${{ github.event.release.tag_name || github.ref_name }}

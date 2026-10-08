@@ -174,10 +174,24 @@ Gatekeeper refuses the `.dmg` until the user right-clicks → Open.
 
 ## Wayland
 
-Not viable. Wayland deliberately blocks one application from sending synthetic
-keystrokes to another, which is exactly what "hold a key, speak, paste at the
-cursor" requires. X11 is fine. This is a security boundary, not a missing
-feature, and it will not be lifted.
+Wayland gives apps no global hotkeys and blocks XTest from reaching native
+Wayland windows, so the X11 path can't work there. Supported on Hyprland
+(Omarchy) and Sway the way hyprwhspr does it:
+
+- **Hotkey:** the compositor runs the app. A second launch is forwarded to the
+  running instance (single-instance plugin), which handles `--start`,
+  `--stop`, `--toggle` through the tray-toggle path. Hyprland, hold-to-talk:
+
+  ```
+  bind  = SUPER, D, exec, silent-voice --start
+  bindr = SUPER, D, exec, silent-voice --stop
+  ```
+- **Paste:** `paste_at_cursor` types with `wtype` (virtual-keyboard protocol)
+  when `WAYLAND_DISPLAY` is set; if wtype is missing or refused it falls back
+  to the old Ctrl+V path, which still reaches XWayland windows.
+
+GNOME and KDE Wayland don't support wtype's protocol. They would need the
+GlobalShortcuts portal + libei (enigo's experimental Wayland backend). Not done.
 
 ## What is left
 

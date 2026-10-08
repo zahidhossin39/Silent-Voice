@@ -111,9 +111,10 @@ jobs:
             **Linux** — Ubuntu/Debian: `.deb`. Any other distro (Arch, Fedora…):
             `.AppImage` — `chmod +x` it and run; if it says FUSE is missing,
             install `fuse2` or run it with `--appimage-extract-and-run`.
-            Arch users can also build a native package from `packaging/arch/PKGBUILD`
-            in the repo (`makepkg -si`). X11 only; Wayland cannot allow
-            an app to type into another app. Inline proofreading additionally
+            Arch / Omarchy: `yay -S silent-voice-bin` (or Omarchy menu > Install > AUR).
+            Wayland (Hyprland/Omarchy, Sway): install `wtype`, then bind a key in
+            `hyprland.conf`: `bind = SUPER, D, exec, silent-voice --start` and
+            `bindr = SUPER, D, exec, silent-voice --stop` (hold to talk). Inline proofreading additionally
             needs `gsettings set org.gnome.desktop.interface toolkit-accessibility true`.
 
             All platforms update themselves (on Linux: the AppImage).
