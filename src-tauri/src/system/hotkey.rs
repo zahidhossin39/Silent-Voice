@@ -721,6 +721,11 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
     let trimmed = crate::audio::gate::trim_silence(remaining, input_sensitivity);
     if trimmed.is_none() && !chunked {
         crate::logging::log_info("gate", "clip below sensitivity threshold — skipped");
+        // Say so — otherwise the dictation just vanishes (no paste, no history).
+        let _ = app.emit(
+            "pipeline://error",
+            "Didn't catch any speech. Speak a bit louder, or lower Input sensitivity in Settings.",
+        );
         go_idle(&app);
         return;
     }
@@ -903,7 +908,25 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
         let window_changed =
             target_hwnd != 0 && current_hwnd != 0 && current_hwnd != target_hwnd;
         let secure = crate::system::secure_field::focused_is_password();
-        if secure || window_changed {
+        // macOS silently drops the synthetic Cmd+V without Accessibility, while
+        // the call still "succeeds" — the text would just disappear.
+        let no_access = !crate::system::accessibility::is_trusted();
+        if no_access {
+            match paste::set_clipboard(&to_paste) {
+                Err(e) => report_error(&app, "paste", &e),
+                Ok(()) => {
+                    report_error(
+                        &app,
+                        "paste",
+                        "Silent Voice needs Accessibility permission to paste — text copied, press Cmd+V. Turn it on in System Settings > Privacy & Security > Accessibility.",
+                    );
+                    static OPENED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+                    if !OPENED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                        crate::system::accessibility::open_settings();
+                    }
+                }
+            }
+        } else if secure || window_changed {
             if let Err(e) = paste::set_clipboard(&to_paste) {
                 report_error(&app, "paste", &e);
             } else {
