@@ -73,7 +73,12 @@ pub fn detect() -> HardwareInfo {
     let logical_cores = sys.cpus().len();
 
     let total_ram_gb = sys.total_memory() as f64 / BYTES_PER_GB;
-    let available_ram_gb = sys.available_memory() as f64 / BYTES_PER_GB;
+    // sysinfo reports 0 available on some macOS versions; fall back to total − used.
+    let available = match sys.available_memory() {
+        0 => sys.total_memory().saturating_sub(sys.used_memory()),
+        n => n,
+    };
+    let available_ram_gb = available as f64 / BYTES_PER_GB;
 
     // Free space on the disk holding the executable (fallback: largest disk).
     let disks = Disks::new_with_refreshed_list();
