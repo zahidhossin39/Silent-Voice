@@ -463,6 +463,7 @@ impl SherpaSttEngine {
             if stream.is_null() {
                 return Err("sherpa could not create an offline stream.".into());
             }
+            let samples = normalize_peak(samples);
             accept(stream, 16000, samples.as_ptr(), samples.len() as c_int);
             decode(self.recognizer, stream);
             let result = get_result(stream);
@@ -480,6 +481,20 @@ impl SherpaSttEngine {
             Ok(text.trim().to_string())
         }
     }
+}
+
+/// Scale so the loudest sample sits at 0.5. A quiet mic (peaks ~0.1) made
+/// Parakeet return "" or invent words ("Yeah.", "I'm sorry.") on short clips;
+/// normalized, the same clips transcribe correctly and normal-level clips are
+/// unchanged. Gain capped at 20x so near-silence isn't blown up into noise.
+// ponytail: peak-based, so one loud click limits the gain; switch to RMS if that bites.
+fn normalize_peak(samples: &[f32]) -> Vec<f32> {
+    let peak = samples.iter().fold(0f32, |m, x| m.max(x.abs()));
+    if peak <= 0.0 {
+        return samples.to_vec();
+    }
+    let gain = (0.5 / peak).min(20.0);
+    samples.iter().map(|x| x * gain).collect()
 }
 
 impl Drop for SherpaSttEngine {
@@ -915,6 +930,15 @@ mod seg_tests {
         for (s, e) in segs {
             assert!(e - s <= 3000, "segment exceeds cap: {}", e - s);
         }
+    }
+
+    #[test]
+    fn normalize_peak_lifts_quiet_and_caps_gain() {
+        let out = normalize_peak(&[0.05, -0.1]);
+        assert!((out[1] + 0.5).abs() < 1e-6);
+        let tiny = normalize_peak(&[0.001]);
+        assert!((tiny[0] - 0.02).abs() < 1e-6); // capped at 20x
+        assert_eq!(normalize_peak(&[0.0, 0.0]), vec![0.0, 0.0]);
     }
 
     #[test]
