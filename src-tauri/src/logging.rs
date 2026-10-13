@@ -28,6 +28,10 @@ fn timestamp() -> String {
 }
 
 fn write_line(level: &str, context: &str, msg: &str) {
+    // Unit tests share the user's real log path; keep their noise out of it.
+    if cfg!(test) {
+        return;
+    }
     let dir = log_dir();
     if std::fs::create_dir_all(&dir).is_err() {
         return; // never let logging failures affect the app
