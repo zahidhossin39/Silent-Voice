@@ -384,6 +384,16 @@ pub fn start_capture(app: &AppHandle) {
             *slot = Some(rec);
             grab_escape(app, true);
             beep(app, true);
+
+            // If idle-unload may have dropped the model, start reloading it now
+            // so it's warm by the time the key is released. A no-op when loaded.
+            let unload_on = state.config.lock().map_or(false, |c| c.model_unload_minutes > 0);
+            if unload_on {
+                let warm_app = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    let _ = whisper::preload(&warm_app).await;
+                });
+            }
             overlay::show_overlay(app);
             overlay::mark_active(app); // cancel any pending auto-hide from before
             emit_state(app, "recording");
