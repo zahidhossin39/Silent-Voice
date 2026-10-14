@@ -372,6 +372,15 @@ export async function openAccessibilitySettings(): Promise<void> {
 // ---------------- Read aloud (TTS) ----------------
 
 /** Push the active read-aloud voice + hotkey to Rust (registers the hotkey). */
+export async function setPasteLastHotkey(accelerator: string): Promise<void> {
+  if (!isTauri()) return;
+  try {
+    await invoke<void>("set_paste_last_hotkey", { accelerator });
+  } catch (e) {
+    console.warn("set_paste_last_hotkey failed", e);
+  }
+}
+
 export async function setTts(voiceId: string, hotkey: string, enabled: boolean): Promise<void> {
   if (!isTauri()) return;
   try {

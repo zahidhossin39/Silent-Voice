@@ -68,6 +68,7 @@ export const DEFAULT_SETTINGS: Settings = {
   pill_auto_hide: false,
   append_trailing_space: false,
   active_tts_voice: null,
+  paste_last_hotkey: "Alt+Shift+Z",
   tts_hotkey: "Ctrl+Alt+S",
   tts_enabled: true,
   onboarded: false,
@@ -266,6 +267,9 @@ export const useSettingsStore = create<SettingsState>()(
         // side forever with the same error banner on every launch.
         if (!isValidAccelerator(mergedSettings.hotkey)) {
           mergedSettings.hotkey = DEFAULT_SETTINGS.hotkey;
+        }
+        if (!isValidAccelerator(mergedSettings.paste_last_hotkey)) {
+          mergedSettings.paste_last_hotkey = DEFAULT_SETTINGS.paste_last_hotkey;
         }
         if (!isValidAccelerator(mergedSettings.tts_hotkey)) {
           mergedSettings.tts_hotkey = DEFAULT_SETTINGS.tts_hotkey;

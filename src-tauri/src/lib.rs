@@ -29,6 +29,8 @@ pub struct RuntimeConfig {
     pub language: String,
     pub audio_device: Option<String>,
     pub hotkey: String,
+    /// Pastes the last dictation again (Settings > Dictation > Advanced).
+    pub paste_last_hotkey: String,
     // When false, whisper.cpp gets `-ng` (force CPU). When true, the sidecar
     // uses its GPU backend if the bundled binary was built with one.
     pub use_gpu: bool,
@@ -127,6 +129,7 @@ impl Default for RuntimeConfig {
             language: "auto".into(),
             audio_device: None,
             hotkey: "Ctrl+Shift+Space".into(),
+            paste_last_hotkey: "Alt+Shift+Z".into(),
             use_gpu: false,
             vocabulary: String::new(),
             use_vocabulary: true,
@@ -598,6 +601,26 @@ fn set_hotkey(app: AppHandle, state: State<AppState>, accelerator: String) -> Re
         .register(shortcut)
         .map_err(|e| e.to_string())?;
     state.config.lock().map_err(|e| e.to_string())?.hotkey = accelerator;
+    Ok(())
+}
+
+#[tauri::command]
+fn set_paste_last_hotkey(app: AppHandle, state: State<AppState>, accelerator: String) -> Result<(), String> {
+    let prev = state.config.lock().map_err(|e| e.to_string())?.paste_last_hotkey.clone();
+    if prev == accelerator {
+        return Ok(());
+    }
+    let new = Shortcut::from_str(&accelerator).map_err(|_| format!("invalid hotkey: {accelerator}"))?;
+    if let Ok(s) = Shortcut::from_str(&prev) {
+        let _ = app.global_shortcut().unregister(s);
+    }
+    if let Err(e) = app.global_shortcut().register(new) {
+        if let Ok(s) = Shortcut::from_str(&prev) {
+            let _ = app.global_shortcut().register(s);
+        }
+        return Err(format!("Could not use '{accelerator}' ({e}) — keeping '{prev}'."));
+    }
+    state.config.lock().map_err(|e| e.to_string())?.paste_last_hotkey = accelerator;
     Ok(())
 }
 
@@ -1215,7 +1238,11 @@ pub fn run() {
                     let is_tts = Shortcut::from_str(&tts_hotkey)
                         .map(|s| s == *shortcut)
                         .unwrap_or(false);
-                    if *shortcut == hotkey::paste_last_shortcut() {
+                    let paste_last = app
+                        .try_state::<AppState>()
+                        .and_then(|s| s.config.lock().ok().map(|c| c.paste_last_hotkey.clone()))
+                        .unwrap_or_default();
+                    if Shortcut::from_str(&paste_last).map_or(false, |s| s == *shortcut) {
                         if let ShortcutState::Pressed = event.state() {
                             hotkey::paste_last();
                         }
@@ -1296,7 +1323,9 @@ pub fn run() {
                 let _ = app.global_shortcut().register(shortcut);
             }
             // Skipped quietly if another app already owns Alt+Shift+Z.
-            let _ = app.global_shortcut().register(hotkey::paste_last_shortcut());
+            if let Ok(s) = Shortcut::from_str(&defaults.paste_last_hotkey) {
+                let _ = app.global_shortcut().register(s);
+            }
             if defaults.tts_enabled {
                 if let Ok(shortcut) = Shortcut::from_str(&defaults.tts_hotkey) {
                     let _ = app.global_shortcut().register(shortcut);
@@ -1429,6 +1458,7 @@ pub fn run() {
             open_accessibility_settings,
             inline_fix,
             set_hotkey,
+            set_paste_last_hotkey,
             set_tts,
             tts_read_selection,
             tts_stop,

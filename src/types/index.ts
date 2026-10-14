@@ -221,6 +221,7 @@ export interface Settings {
   pill_auto_hide: boolean; // hide the recording pill ~5s after idle, reappear on next hotkey press
   append_trailing_space: boolean; // add a space after pasted text so the next dictation has a gap
   active_tts_voice: string | null; // Piper voice id for read-aloud; null = none selected
+  paste_last_hotkey: string; // global hotkey that pastes the last dictation again
   tts_hotkey: string; // global hotkey that reads the current text selection aloud
   tts_enabled: boolean; // read-aloud on/off; when false the hotkey is unregistered
   onboarded: boolean; // true once the first-launch setup wizard has been completed/skipped

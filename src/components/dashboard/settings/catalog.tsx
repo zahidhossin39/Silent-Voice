@@ -101,6 +101,16 @@ export const SETTINGS: SettingDef[] = [
     render: (c) => <VoiceModelLink c={c} />,
   },
   {
+    id: "paste_last",
+    topic: "dictation",
+    tier: "advanced",
+    label: "Paste last dictation",
+    info: "Press this anywhere to paste your last dictation again, for when it landed in the wrong place.",
+    keywords: "hotkey shortcut paste again last repeat",
+    wide: true,
+    render: (c) => <HotkeyRecorder value={c.s.paste_last_hotkey} onChange={(v) => c.set({ paste_last_hotkey: v })} />,
+  },
+  {
     id: "lock",
     topic: "dictation",
     tier: "advanced",

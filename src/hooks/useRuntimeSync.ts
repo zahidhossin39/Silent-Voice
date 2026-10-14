@@ -9,6 +9,7 @@ import {
   setAppProfiles,
   setAutostart,
   setTts,
+  setPasteLastHotkey,
   setPopupTheme,
   setPopupSurface,
   listenEvent,
@@ -74,6 +75,7 @@ export function useRuntimeSync() {
   const audioClipLimit = useSettingsStore((s) => s.settings.audio_clip_limit);
   const modelUnloadMinutes = useSettingsStore((s) => s.settings.model_unload_minutes);
   const ttsVoice = useSettingsStore((s) => s.settings.active_tts_voice);
+  const pasteLastHotkey = useSettingsStore((s) => s.settings.paste_last_hotkey);
   const ttsHotkey = useSettingsStore((s) => s.settings.tts_hotkey);
   const ttsEnabled = useSettingsStore((s) => s.settings.tts_enabled);
   const autoStart = useSettingsStore((s) => s.settings.auto_start);
@@ -171,6 +173,10 @@ export function useRuntimeSync() {
   useEffect(() => {
     setTts(ttsVoice ?? "", ttsHotkey, ttsEnabled);
   }, [ttsVoice, ttsHotkey, ttsEnabled]);
+
+  useEffect(() => {
+    setPasteLastHotkey(pasteLastHotkey);
+  }, [pasteLastHotkey]);
 
   useEffect(() => {
     setPopupTheme(popupTheme);
