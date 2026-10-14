@@ -97,7 +97,8 @@ pub struct RuntimeConfig {
     // next dictation doesn't butt up against this one. History stores the
     // clean text (no trailing space) — the space is a paste-time nicety only.
     pub append_trailing_space: bool,
-    pub dictation_sounds: bool,
+    /// Start/stop sound pack id ("off" = silent). See hotkey::sound_pack.
+    pub dictation_sound: String,
     pub save_audio: bool,
     pub audio_clip_limit: usize,
     pub model_unload_minutes: u32,
@@ -162,7 +163,7 @@ impl Default for RuntimeConfig {
             app_profiles: Vec::new(),
             pill_auto_hide: false,
             append_trailing_space: false,
-            dictation_sounds: false,
+            dictation_sound: "chorus".into(),
             save_audio: true,
             audio_clip_limit: 20,
             model_unload_minutes: 0,
@@ -479,7 +480,7 @@ fn set_behavior(
     save_audio: bool,
     audio_clip_limit: usize,
     model_unload_minutes: u32,
-    dictation_sounds: bool,
+    dictation_sound: String,
 ) -> Result<(), String> {
     let mut cfg = state.config.lock().map_err(|e| e.to_string())?;
     cfg.toggle_mode = toggle_mode;
@@ -497,7 +498,7 @@ fn set_behavior(
         .collect();
     cfg.pill_auto_hide = pill_auto_hide;
     cfg.append_trailing_space = append_trailing_space;
-    cfg.dictation_sounds = dictation_sounds;
+    cfg.dictation_sound = dictation_sound;
     let coedit_was_enabled = cfg.coedit_enabled;
     cfg.coedit_enabled = coedit_enabled;
     cfg.chunk_on_silence = chunk_on_silence;
@@ -606,6 +607,11 @@ fn set_hotkey(app: AppHandle, state: State<AppState>, accelerator: String) -> Re
         .map_err(|e| e.to_string())?;
     state.config.lock().map_err(|e| e.to_string())?.hotkey = accelerator;
     Ok(())
+}
+
+#[tauri::command]
+fn preview_dictation_sound(pack: String) {
+    hotkey::play_sound(&pack, true);
 }
 
 #[tauri::command]
@@ -1463,6 +1469,7 @@ pub fn run() {
             inline_fix,
             set_hotkey,
             set_paste_last_hotkey,
+            preview_dictation_sound,
             set_tts,
             tts_read_selection,
             tts_stop,

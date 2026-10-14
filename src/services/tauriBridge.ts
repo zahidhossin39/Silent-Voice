@@ -251,7 +251,7 @@ export async function setBehavior(
   saveAudio: boolean,
   audioClipLimit: number,
   modelUnloadMinutes: number,
-  dictationSounds: boolean
+  dictationSound: string
 ): Promise<void> {
   if (!isTauri()) return;
   try {
@@ -271,7 +271,7 @@ export async function setBehavior(
       saveAudio,
       audioClipLimit,
       modelUnloadMinutes,
-      dictationSounds,
+      dictationSound,
     });
   } catch (e) {
     console.warn("set_behavior failed", e);
@@ -374,6 +374,15 @@ export async function openAccessibilitySettings(): Promise<void> {
 // ---------------- Read aloud (TTS) ----------------
 
 /** Push the active read-aloud voice + hotkey to Rust (registers the hotkey). */
+export async function previewDictationSound(pack: string): Promise<void> {
+  if (!isTauri()) return;
+  try {
+    await invoke<void>("preview_dictation_sound", { pack });
+  } catch (e) {
+    console.warn("preview_dictation_sound failed", e);
+  }
+}
+
 export async function setPasteLastHotkey(accelerator: string): Promise<void> {
   if (!isTauri()) return;
   try {

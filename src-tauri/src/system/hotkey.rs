@@ -505,25 +505,55 @@ fn grab_escape(app: &AppHandle, on: bool) {
     });
 }
 
-/// Short beep when recording starts (high) or stops (low), if turned on.
-fn beep(app: &AppHandle, start: bool) {
-    let on = app.state::<AppState>().config.lock().map_or(false, |c| c.dictation_sounds);
-    if !on {
-        return;
+/// Start/stop sound packs, bundled into the binary (a few KB each).
+fn sound_pack(pack: &str) -> Option<(&'static [u8], &'static [u8])> {
+    macro_rules! pair {
+        ($n:literal) => {
+            (
+                &include_bytes!(concat!("../../sounds/", $n, "-start.wav"))[..],
+                &include_bytes!(concat!("../../sounds/", $n, "-stop.wav"))[..],
+            )
+        };
     }
+    Some(match pack {
+        "chorus" => pair!("chorus"),
+        "double-double" => pair!("double-double"),
+        "double-single" => pair!("double-single"),
+        "single-double" => pair!("single-double"),
+        _ => return None, // "off"
+    })
+}
+
+/// Play a pack's start or stop sound on its own thread (never blocks the hotkey).
+pub fn play_sound(pack: &str, start: bool) {
+    let Some((s, e)) = sound_pack(pack) else { return };
+    let bytes = if start { s } else { e };
     std::thread::spawn(move || {
-        use rodio::Source;
         let Ok((_stream, handle)) = rodio::OutputStream::try_default() else { return };
         let Ok(sink) = rodio::Sink::try_new(&handle) else { return };
-        let freq = if start { 880.0 } else { 600.0 };
-        sink.append(
-            rodio::source::SineWave::new(freq)
-                .take_duration(Duration::from_millis(70))
-                .fade_in(Duration::from_millis(8))
-                .amplify(0.15),
-        );
+        let Ok(src) = rodio::Decoder::new(std::io::Cursor::new(bytes)) else { return };
+        sink.append(src);
         sink.sleep_until_end();
     });
+}
+
+#[cfg(test)]
+mod sound_tests {
+    #[test]
+    fn every_pack_decodes() {
+        for pack in ["chorus", "double-double", "double-single", "single-double"] {
+            let (s, e) = super::sound_pack(pack).unwrap();
+            for b in [s, e] {
+                assert!(rodio::Decoder::new(std::io::Cursor::new(b)).is_ok(), "{pack}");
+            }
+        }
+        assert!(super::sound_pack("off").is_none());
+    }
+}
+
+fn beep(app: &AppHandle, start: bool) {
+    let pack = app.state::<AppState>().config.lock().map(|c| c.dictation_sound.clone()).unwrap_or_default();
+    play_sound(&pack, start);
 }
 
 /// Esc while recording: throw the audio away, paste nothing.

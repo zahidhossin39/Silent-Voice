@@ -9,7 +9,7 @@ import Select from "../../shared/Select";
 import { useSettingsStore } from "../../../stores/settingsStore";
 import { useModelStore } from "../../../stores/modelStore";
 import { LANGUAGES, STT_MODELS, TTS_MODELS, TTS_SAMPLE_TEXT, honorsLanguage } from "../../../services/catalog";
-import { copyDiagnostics, copyToClipboard, exportLogs, openLogsFolder, ttsSpeakText } from "../../../services/tauriBridge";
+import { copyDiagnostics, copyToClipboard, exportLogs, openLogsFolder, previewDictationSound, ttsSpeakText } from "../../../services/tauriBridge";
 import { checkForUpdatesManual } from "../../../services/updater";
 import type { Settings } from "../../../types";
 import type { TopicId } from "./topics";
@@ -54,7 +54,7 @@ const UNDERLINES = "Underline mistakes as I type";
 const READ_ALOUD = "Read selected text aloud";
 
 export const SETTINGS: SettingDef[] = [
-  // ── Dictation ────────────────────────────────────────────────────────────
+  // â”€â”€ Dictation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   {
     id: "hotkey",
     topic: "dictation",
@@ -144,10 +144,23 @@ export const SETTINGS: SettingDef[] = [
     topic: "dictation",
     tier: "advanced",
     label: "Start and stop sounds",
-    info: "A short beep when recording starts and a lower one when it stops.",
-    keywords: "sound beep audio chime feedback",
-    render: (c, label) => (
-      <Toggle label={label} checked={c.s.dictation_sounds} onChange={(v) => c.set({ dictation_sounds: v })} />
+    info: "A soft tick when recording starts and stops. Picking one plays its start sound.",
+    keywords: "sound beep audio chime feedback tick tap",
+    render: (c) => (
+      <Select
+        value={c.s.dictation_sound}
+        onChange={(v) => {
+          c.set({ dictation_sound: v });
+          void previewDictationSound(v);
+        }}
+        className="w-52 xl:w-60"
+      >
+        <option value="chorus">Chorus (default)</option>
+        <option value="double-double">Double tap</option>
+        <option value="double-single">Double start, single stop</option>
+        <option value="single-double">Single start, double stop</option>
+        <option value="off">Off</option>
+      </Select>
     ),
   },
   {
@@ -191,7 +204,7 @@ export const SETTINGS: SettingDef[] = [
     render: (c) => <CloudSourceSelect c={c} />,
   },
 
-  // ── Writing help ─────────────────────────────────────────────────────────
+  // â”€â”€ Writing help â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   {
     id: "proofread",
     topic: "writing",
@@ -315,7 +328,7 @@ export const SETTINGS: SettingDef[] = [
     render: () => <ProfilesEditor />,
   },
 
-  // ── Read aloud ───────────────────────────────────────────────────────────
+  // â”€â”€ Read aloud â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   {
     id: "tts",
     topic: "readaloud",
@@ -362,7 +375,7 @@ export const SETTINGS: SettingDef[] = [
     render: (c) => <PlaySample c={c} />,
   },
 
-  // ── Words ────────────────────────────────────────────────────────────────
+  // â”€â”€ Words â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   {
     id: "vocab",
     topic: "words",
@@ -432,7 +445,7 @@ export const SETTINGS: SettingDef[] = [
     ),
   },
 
-  // ── System ───────────────────────────────────────────────────────────────
+  // â”€â”€ System â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   {
     id: "startup",
     topic: "system",
@@ -483,11 +496,11 @@ export const SETTINGS: SettingDef[] = [
   },
 ];
 
-// ─── Controls with their own state ─────────────────────────────────────────
+// â”€â”€â”€ Controls with their own state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function LanguageControl({ c }: { c: Ctx }) {
   const model = STT_MODELS.find((m) => m.id === c.s.active_stt_model);
-  // A model that ignores the language setting must not show a live picker —
+  // A model that ignores the language setting must not show a live picker â€”
   // that silent mismatch is what made Bangla come back as English.
   if (!honorsLanguage(model))
     return (
@@ -512,7 +525,7 @@ function VoiceModelLink({ c }: { c: Ctx }) {
   const cloud = providers.find((p) => p.id === c.s.stt_cloud_provider_id);
   const model = STT_MODELS.find((m) => m.id === c.s.active_stt_model);
   const ready = !!model && downloaded.has(model.id);
-  const name = cloud ? `Cloud · ${cloud.name}` : model ? model.label : "None chosen";
+  const name = cloud ? `Cloud Â· ${cloud.name}` : model ? model.label : "None chosen";
   return (
     <span className="inline-flex items-center gap-3 text-[13px]">
       <span className={cloud || ready ? "text-sv-text" : "text-sv-muted"}>{name}</span>
@@ -563,7 +576,7 @@ function VoicePicker({ c }: { c: Ctx }) {
         v.voices
           ? v.voices.map((vo) => (
               <option key={`${v.id}#${vo.sid}`} value={`${v.id}#${vo.sid}`}>
-                {v.label} · {vo.label}
+                {v.label} Â· {vo.label}
               </option>
             ))
           : [
@@ -686,9 +699,9 @@ function UpdateCheck() {
         </span>
       )}
       <GhostButton
-        disabled={msg === "Checking…"}
+        disabled={msg === "Checkingâ€¦"}
         onClick={async () => {
-          setMsg("Checking…");
+          setMsg("Checkingâ€¦");
           const r = await checkForUpdatesManual();
           setMsg(
             r.status === "none"
@@ -699,7 +712,7 @@ function UpdateCheck() {
               ? "Updates need the desktop app"
               : r.status === "managed"
               ? "Update with your package manager (yay -Syu)"
-              : "Installing the update…"
+              : "Installing the updateâ€¦"
           );
         }}
       >
