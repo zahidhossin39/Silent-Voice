@@ -479,7 +479,7 @@ fn is_filler_token(token: &str) -> bool {
     FILLER_WORDS.contains(&bare.as_str())
 }
 
-fn capitalize_first(token: &str) -> String {
+pub(crate) fn capitalize_first(token: &str) -> String {
     let mut out = String::with_capacity(token.len());
     let mut done = false;
     for c in token.chars() {

@@ -151,7 +151,7 @@ impl Default for RuntimeConfig {
             input_sensitivity: 50,
             inline_proofread: false,
             coedit_enabled: false,
-            chunk_on_silence: false,
+            chunk_on_silence: true,
             high_performance: false,
             performance_threads: 0,
             proofread_disabled_rules: Vec::new(),

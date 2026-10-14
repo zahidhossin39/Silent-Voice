@@ -61,7 +61,7 @@ export const DEFAULT_SETTINGS: Settings = {
   input_sensitivity: 50,
   inline_proofread: INLINE_PROOFREAD_DEFAULT,
   coedit_enabled: false,
-  chunk_on_silence: false,
+  chunk_on_silence: true,
   proofread_disabled_rules: [],
   gector_sensitivity: "balanced",
   proofread_ignore_apps: "",
@@ -240,12 +240,17 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: "silent-voice-settings",
-      version: 1,
+      version: 2,
       migrate: (persistedState: any, fromVersion: number) => {
         // Chunked transcription shipped enabled and regressed quality on
         // 4-core laptops; force it off once for anyone who stored `true`.
         if (fromVersion < 1 && persistedState?.settings) {
           persistedState.settings.chunk_on_silence = false;
+        }
+        // Back on once: a punctuation model now repairs the pause-broken
+        // sentences that made it worse (23 vs 35 errors for a full pass).
+        if (fromVersion < 2 && persistedState?.settings) {
+          persistedState.settings.chunk_on_silence = true;
         }
         return persistedState;
       },

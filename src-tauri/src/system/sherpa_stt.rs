@@ -894,6 +894,165 @@ fn fixed_windows(len: usize, win: usize) -> Vec<(usize, usize)> {
     v
 }
 
+// ---- Punctuation repair for background (chunked) dictation ----
+//
+// Background mode decodes each pause-separated chunk on its own, so Parakeet
+// ends a sentence at every thinking pause. A small punctuation model
+// (sherpa-onnx-online-punct-en, CNN-BiLSTM int8, 7 MB) re-reads the joined text
+// and puts the punctuation back where the words, not the pauses, say it goes.
+// Measured on 321 words: 51 punctuation/casing errors -> 23. A 76 MB
+// CT-Transformer scored 27, so the small one stays (docs/research-punctuation-model.md).
+
+#[repr(C)]
+struct OnlinePunctuationModelConfig {
+    cnn_bilstm: *const c_char,
+    bpe_vocab: *const c_char,
+    num_threads: c_int,
+    debug: c_int,
+    provider: *const c_char,
+}
+#[repr(C)]
+struct OnlinePunctuationConfig {
+    model: OnlinePunctuationModelConfig,
+}
+
+type CreatePunctFn = unsafe extern "C" fn(*const OnlinePunctuationConfig) -> *const std::ffi::c_void;
+type AddPunctFn = unsafe extern "C" fn(*const std::ffi::c_void, *const c_char) -> *const c_char;
+type FreePunctTextFn = unsafe extern "C" fn(*const c_char);
+
+struct Punct(*const std::ffi::c_void);
+// One handle, only used behind the PUNCT mutex.
+unsafe impl Send for Punct {}
+
+/// Loaded on first use and kept: ~7 MB, and dictation pipelines are serialized.
+static PUNCT: std::sync::Mutex<Option<Punct>> = std::sync::Mutex::new(None);
+
+fn load_punct(dir: &Path) -> Result<Punct, String> {
+    let lib = super::sherpa::lib()?;
+    let c = |s: String| CString::new(s).map_err(|e| e.to_string());
+    let model = c(dir.join("model.int8.onnx").to_string_lossy().into_owned())?;
+    let vocab = c(dir.join("bpe.vocab").to_string_lossy().into_owned())?;
+    let provider = c("cpu".into())?;
+    let cfg = OnlinePunctuationConfig {
+        model: OnlinePunctuationModelConfig {
+            cnn_bilstm: model.as_ptr(),
+            bpe_vocab: vocab.as_ptr(),
+            num_threads: 1,
+            debug: 0,
+            provider: provider.as_ptr(),
+        },
+    };
+    let p = unsafe {
+        let create: Symbol<CreatePunctFn> = lib
+            .get(b"SherpaOnnxCreateOnlinePunctuation\0")
+            .map_err(|e| e.to_string())?;
+        create(&cfg)
+    };
+    if p.is_null() {
+        return Err("could not load the punctuation model".into());
+    }
+    Ok(Punct(p))
+}
+
+fn add_punct(text: &str) -> Result<String, String> {
+    let lib = super::sherpa::lib()?;
+    let mut slot = PUNCT.lock().map_err(|e| e.to_string())?;
+    if slot.is_none() {
+        *slot = Some(load_punct(&crate::models::registry::punct_dir())?);
+    }
+    let handle = slot.as_ref().unwrap().0;
+    let input = CString::new(text).map_err(|e| e.to_string())?;
+    unsafe {
+        let add: Symbol<AddPunctFn> = lib
+            .get(b"SherpaOnnxOnlinePunctuationAddPunct\0")
+            .map_err(|e| e.to_string())?;
+        let free: Symbol<FreePunctTextFn> = lib
+            .get(b"SherpaOnnxOnlinePunctuationFreeText\0")
+            .map_err(|e| e.to_string())?;
+        let out = add(handle, input.as_ptr());
+        if out.is_null() {
+            return Err("punctuation model returned nothing".into());
+        }
+        let s = std::ffi::CStr::from_ptr(out).to_string_lossy().into_owned();
+        free(out);
+        Ok(s)
+    }
+}
+
+const SENTENCE_END: [char; 3] = ['.', '?', '!'];
+const PUNCT_MARKS: [char; 4] = ['.', ',', '?', '!'];
+
+/// Re-punctuate English text that was stitched from background chunks.
+/// Returns the input unchanged when the model is missing or anything fails,
+/// so the user never loses words to this step.
+pub fn repunctuate(text: &str) -> String {
+    if text.trim().is_empty() || !crate::models::registry::punct_installed() {
+        return text.to_string();
+    }
+    let words: Vec<&str> = text.split_whitespace().collect();
+    let bare: Vec<String> = words
+        .iter()
+        .map(|w| w.chars().filter(|c| c.is_alphanumeric() || *c == '\'').collect::<String>().to_lowercase())
+        .collect();
+    // ponytail: a symbol-only word ("&") would break the word alignment, so that dictation skips the repair.
+    if bare.iter().any(|w| w.is_empty()) {
+        return text.to_string();
+    }
+    match add_punct(&bare.join(" ")) {
+        Ok(model) => merge_punct(&words, &model).unwrap_or_else(|| text.to_string()),
+        Err(e) => {
+            crate::logging::log_error("punct", &e);
+            text.to_string()
+        }
+    }
+}
+
+/// Take punctuation and sentence-start capitals from the model, and every
+/// other word's casing from the speech model: the punctuation model would turn
+/// "GitHub" into "Github". A word Parakeet capitalised only because it had
+/// ended a sentence right before it goes back to lowercase. None when the word
+/// counts differ (can't align safely).
+fn merge_punct(words: &[&str], model: &str) -> Option<String> {
+    let m: Vec<&str> = model.split_whitespace().collect();
+    if m.len() != words.len() {
+        return None;
+    }
+    let mut out: Vec<String> = Vec::with_capacity(words.len());
+    for (i, (w, mw)) in words.iter().zip(&m).enumerate() {
+        let core = w.trim_end_matches(PUNCT_MARKS);
+        let tail = &mw[mw.trim_end_matches(PUNCT_MARKS).len()..];
+        let starts_sentence = out.last().map_or(true, |p| p.ends_with(SENTENCE_END));
+        let core = if starts_sentence {
+            super::textfmt::capitalize_first(core)
+        } else if i > 0
+            && words[i - 1].ends_with(SENTENCE_END)
+            && is_title_case(core)
+            && !mw.starts_with(char::is_uppercase)
+        {
+            core.to_lowercase()
+        } else {
+            core.to_string()
+        };
+        out.push(core + tail);
+    }
+    let mut s = out.join(" ");
+    // The model often leaves the last word bare.
+    s.truncate(s.trim_end_matches(',').len());
+    if !s.ends_with(SENTENCE_END) {
+        s.push('.');
+    }
+    Some(s)
+}
+
+/// "Thursday" yes; "I", "I'm", "GitHub", "API" no: those keep their capitals.
+fn is_title_case(w: &str) -> bool {
+    let mut c = w.chars();
+    c.next().is_some_and(char::is_uppercase)
+        && w.chars().filter(|c| c.is_alphabetic()).count() > 1
+        && !w.starts_with("I'")
+        && c.all(|c| !c.is_uppercase())
+}
+
 #[cfg(test)]
 mod seg_tests {
     use super::*;
@@ -1061,4 +1220,40 @@ mod tests {
             eprintln!("run {i}: {} ms  |  \"{text}\"", t.elapsed().as_millis());
         }
     }
+
+    #[test]
+    fn merge_punct_fixes_pause_breaks_and_keeps_names() {
+        // Parakeet ended a sentence at a thinking pause ("is. The") and
+        // capitalised the next word; the model knows the sentence goes on.
+        let words: Vec<&str> = "The main thing left is. The export feature on GitHub, I think"
+            .split_whitespace()
+            .collect();
+        let model = "The main thing left is the export feature on github. I think";
+        assert_eq!(
+            merge_punct(&words, model).unwrap(),
+            "The main thing left is the export feature on GitHub. I think."
+        );
+    }
+
+    #[test]
+    fn merge_punct_keeps_i_and_acronyms_after_a_false_stop() {
+        let words: Vec<&str> = "Hey Sarah. I wanted the API. Docs".split_whitespace().collect();
+        let model = "hey, sarah, i wanted the api docs";
+        assert_eq!(merge_punct(&words, model).unwrap(), "Hey, Sarah, I wanted the API docs.");
+    }
+
+    #[test]
+    fn merge_punct_refuses_misaligned_output() {
+        let words: Vec<&str> = "one two three".split_whitespace().collect();
+        assert!(merge_punct(&words, "one two").is_none());
+    }
+
+    #[test]
+    #[ignore] // needs the downloaded punctuation model
+    fn repunctuate_with_real_model() {
+        let out = repunctuate("So I was thinking about. What we should build next for the app. Can we do that");
+        println!("{out}");
+        assert!(out.starts_with("So I was thinking about what we should build next for the app"), "{out}");
+    }
+
 }

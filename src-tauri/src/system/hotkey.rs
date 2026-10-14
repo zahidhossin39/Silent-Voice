@@ -962,6 +962,20 @@ pub async fn process_audio_pipeline(
     };
 
     let raw_text = join_parts(&prefix, &tail_text);
+    // Chunks were decoded alone, so every thinking pause became a full stop.
+    // The punctuation model is English-only.
+    let english = language.starts_with("en")
+        || model_id == "parakeet-tdt-0.6b-v2"
+        || model_id.starts_with("moonshine")
+        || model_id.ends_with(".en");
+    let raw_text = if chunked && english {
+        let t = std::time::Instant::now();
+        let fixed = crate::system::sherpa_stt::repunctuate(&raw_text);
+        crate::logging::log_info("punct", &format!("repunctuated in {}ms", t.elapsed().as_millis()));
+        fixed
+    } else {
+        raw_text
+    };
 
     let raw_text = textfmt::strip_fillers(&raw_text);
     let raw_text = textfmt::collapse_repeated_words(&raw_text);

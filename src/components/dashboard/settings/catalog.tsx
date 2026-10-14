@@ -188,7 +188,7 @@ export const SETTINGS: SettingDef[] = [
     topic: "dictation",
     tier: "advanced",
     label: "Transcribe while you speak",
-    info: "Transcribes finished sentences mid-recording. It rarely helps and can slow 4-core CPUs down. For faster dictation, pick a lighter voice model instead.",
+    info: "Transcribes while you talk, so long dictations paste in about a second instead of many. A small punctuation model fixes the sentence breaks at your pauses (English). Turn off if you prefer one full pass.",
     keywords: "chunk silence streaming",
     render: (c, label) => (
       <Toggle label={label} checked={c.s.chunk_on_silence} onChange={(v) => c.set({ chunk_on_silence: v })} />
