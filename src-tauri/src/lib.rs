@@ -1215,7 +1215,11 @@ pub fn run() {
                     let is_tts = Shortcut::from_str(&tts_hotkey)
                         .map(|s| s == *shortcut)
                         .unwrap_or(false);
-                    if is_tts {
+                    if hotkey::is_cancel_key(app, shortcut) {
+                        if let ShortcutState::Pressed = event.state() {
+                            hotkey::cancel_capture(app);
+                        }
+                    } else if is_tts {
                         if let ShortcutState::Pressed = event.state() {
                             system::tts::read_selection(app);
                         }

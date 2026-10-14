@@ -382,6 +382,7 @@ pub fn start_capture(app: &AppHandle) {
                 );
             }
             *slot = Some(rec);
+            grab_escape(app, true);
             overlay::show_overlay(app);
             overlay::mark_active(app); // cancel any pending auto-hide from before
             emit_state(app, "recording");
@@ -436,6 +437,51 @@ pub fn cli_record(app: &AppHandle, flag: &str) {
         ("--start", false) | ("--toggle", false) => start_capture(app),
         ("--stop", true) | ("--toggle", true) => stop_capture(app),
         _ => {}
+    }
+}
+
+pub fn escape_shortcut() -> Shortcut {
+    Shortcut::new(None, tauri_plugin_global_shortcut::Code::Escape)
+}
+
+/// True if the user made Esc one of their own hotkeys — then we leave it alone.
+fn escape_taken(app: &AppHandle) -> bool {
+    use std::str::FromStr;
+    app.state::<AppState>().config.lock().map_or(true, |c| {
+        [&c.hotkey, &c.tts_hotkey].iter().any(|h| Shortcut::from_str(h).map_or(false, |s| s == escape_shortcut()))
+    })
+}
+
+/// The fired shortcut is our recording-only Esc (not a user hotkey).
+pub fn is_cancel_key(app: &AppHandle, shortcut: &Shortcut) -> bool {
+    *shortcut == escape_shortcut() && !escape_taken(app)
+}
+
+/// Esc is grabbed globally only while recording, so it keeps working
+/// normally in every other app the rest of the time.
+fn grab_escape(app: &AppHandle, on: bool) {
+    use tauri_plugin_global_shortcut::GlobalShortcutExt;
+    if escape_taken(app) {
+        return;
+    }
+    let gs = app.global_shortcut();
+    let _ = if on { gs.register(escape_shortcut()) } else { gs.unregister(escape_shortcut()) };
+}
+
+/// Esc while recording: throw the audio away, paste nothing.
+pub fn cancel_capture(app: &AppHandle) {
+    grab_escape(app, false);
+    let state = app.state::<AppState>();
+    state.segmenter.stop.store(true, std::sync::atomic::Ordering::Relaxed);
+    if let Ok(mut tap) = state.tap.lock() {
+        tap.locked = false;
+        tap.last_tap_at = None;
+    }
+    let rec = state.recorder.lock().ok().and_then(|mut s| s.take());
+    if let Some(rec) = rec {
+        let _ = rec.stop();
+        crate::logging::log_info("pipeline", "dictation cancelled with Esc");
+        go_idle(app);
     }
 }
 
@@ -584,6 +630,7 @@ fn finalize_recording(app: AppHandle) {
         let Some(rec) = recorder else {
             return;
         };
+        grab_escape(&app, false);
 
         emit_state(&app, "processing");
         let samples = rec.stop();
