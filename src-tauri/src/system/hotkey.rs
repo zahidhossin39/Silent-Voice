@@ -910,11 +910,6 @@ pub async fn process_audio_pipeline(
     };
 
     let (raw_text, command) = textfmt::trailing_command(&raw_text);
-    if command == textfmt::VoiceCommand::Cancel {
-        logging::log_info("pipeline", "dictation cancelled by voice");
-        go_idle(&app);
-        return;
-    }
     let press_enter = command == textfmt::VoiceCommand::Enter;
 
     let will_run_llm = !raw_text.is_empty()
