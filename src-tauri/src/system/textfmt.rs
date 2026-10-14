@@ -985,6 +985,55 @@ pub fn structure_text(text: &str) -> String {
     cap_result
 }
 
+/// A spoken command at the very END of a dictation.
+#[derive(Debug, PartialEq)]
+pub enum VoiceCommand {
+    None,
+    /// "scratch that", "never mind", … → throw the whole dictation away.
+    Cancel,
+    /// "press enter" → paste the rest, then press Enter.
+    Enter,
+}
+
+/// Peel a trailing voice command off the transcript. Only the end counts, so
+/// "never mind the weather" mid-sentence is left alone.
+pub fn trailing_command(text: &str) -> (String, VoiceCommand) {
+    const CANCEL: [&str; 4] = ["scratch that", "never mind", "cancel that", "forget that"];
+    let body = text.trim_end_matches(|c: char| c.is_whitespace() || ".,!?;:".contains(c));
+    let lower = body.to_lowercase();
+    // Byte lengths match only for ASCII; anything else can't hold a command.
+    if lower.len() != body.len() {
+        return (text.to_string(), VoiceCommand::None);
+    }
+    let ends = |p: &str| {
+        lower.ends_with(p) && lower[..lower.len() - p.len()].chars().last().map_or(true, |c| !c.is_alphanumeric())
+    };
+    let strip = |p: &str| body[..body.len() - p.len()].trim_end_matches(|c: char| c.is_whitespace() || ",;:".contains(c)).to_string();
+    if CANCEL.iter().any(|p| ends(p)) {
+        return (String::new(), VoiceCommand::Cancel);
+    }
+    if ends("press enter") {
+        return (strip("press enter"), VoiceCommand::Enter);
+    }
+    (text.to_string(), VoiceCommand::None)
+}
+
+#[cfg(test)]
+mod command_tests {
+    use super::{trailing_command, VoiceCommand::*};
+
+    #[test]
+    fn trailing_commands() {
+        assert_eq!(trailing_command("Send it now. Scratch that."), (String::new(), Cancel));
+        assert_eq!(trailing_command("never mind"), (String::new(), Cancel));
+        assert_eq!(trailing_command("Never mind the weather."), ("Never mind the weather.".into(), None));
+        assert_eq!(trailing_command("Looks good, press enter."), ("Looks good".into(), Enter));
+        assert_eq!(trailing_command("Press Enter"), (String::new(), Enter));
+        assert_eq!(trailing_command("I'll repress enter"), ("I'll repress enter".into(), None));
+        assert_eq!(trailing_command("Hello there."), ("Hello there.".into(), None));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{collapse_repeated_words, format_numbers, spoken_symbols, strip_fillers, structure_text};

@@ -28,6 +28,14 @@ pub fn press_shortcut(letter: char) -> Result<(), String> {
     })
 }
 
+/// Press Enter (the "press enter" voice command).
+pub fn press_enter() -> Result<(), String> {
+    on_main_thread(|| {
+        let mut enigo = Enigo::new(&EnigoSettings::default()).map_err(|e| e.to_string())?;
+        enigo.key(Key::Return, Click).map_err(|e| e.to_string())
+    })
+}
+
 #[cfg(target_os = "macos")]
 fn on_main_thread<F: FnOnce() -> R, R>(f: F) -> R {
     use std::ffi::c_void;

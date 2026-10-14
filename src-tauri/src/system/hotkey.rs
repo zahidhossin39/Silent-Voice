@@ -909,6 +909,14 @@ pub async fn process_audio_pipeline(
         raw_text
     };
 
+    let (raw_text, command) = textfmt::trailing_command(&raw_text);
+    if command == textfmt::VoiceCommand::Cancel {
+        logging::log_info("pipeline", "dictation cancelled by voice");
+        go_idle(&app);
+        return;
+    }
+    let press_enter = command == textfmt::VoiceCommand::Enter;
+
     let will_run_llm = !raw_text.is_empty()
         && !mode_prompt.is_empty()
         && (mode_source == "local" || mode_source == "api");
@@ -1050,6 +1058,19 @@ pub async fn process_audio_pipeline(
                 foreground::foreground_app(),
             ),
         );
+    }
+
+    // "… press enter": only when the text really landed (or there was none),
+    // never into a window that changed or a password field.
+    let safe_target = || {
+        let target = app.state::<AppState>().target_hwnd.load(std::sync::atomic::Ordering::Relaxed);
+        foreground::foreground_hwnd() == target && !crate::system::secure_field::focused_is_password()
+    };
+    if press_enter && (pasted_ok || (processed_text.is_empty() && safe_target())) {
+        tokio::time::sleep(Duration::from_millis(120)).await;
+        if let Err(e) = paste::press_enter() {
+            report_error(&app, "paste", &e);
+        }
     }
 
     let elapsed = started.elapsed().as_millis() as i64;
