@@ -464,8 +464,13 @@ fn grab_escape(app: &AppHandle, on: bool) {
     if escape_taken(app) {
         return;
     }
-    let gs = app.global_shortcut();
-    let _ = if on { gs.register(escape_shortcut()) } else { gs.unregister(escape_shortcut()) };
+    // Off the hotkey callback's thread: registering a shortcut from inside the
+    // shortcut handler waits on that same thread and freezes the whole app.
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let gs = app.global_shortcut();
+        let _ = if on { gs.register(escape_shortcut()) } else { gs.unregister(escape_shortcut()) };
+    });
 }
 
 /// Esc while recording: throw the audio away, paste nothing.
