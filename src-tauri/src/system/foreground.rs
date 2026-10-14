@@ -85,6 +85,77 @@ pub fn foreground_hwnd() -> isize {
     unsafe { GetForegroundWindow().0 as isize }
 }
 
+/// Bring the window the dictation started in back to the front, so the text
+/// still lands there when something stole focus mid-processing. True only if
+/// it really is in front afterwards.
+#[cfg(windows)]
+pub fn refocus(hwnd: isize) -> bool {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId, IsIconic, IsWindow,
+        IsWindowVisible, SetForegroundWindow, ShowWindow, SW_RESTORE,
+    };
+    let h = HWND(hwnd as *mut _);
+    unsafe {
+        if hwnd == 0 || !IsWindow(h).as_bool() || !IsWindowVisible(h).as_bool() {
+            return false;
+        }
+        if IsIconic(h).as_bool() {
+            let _ = ShowWindow(h, SW_RESTORE);
+        }
+        if !SetForegroundWindow(h).as_bool() {
+            // Windows blocks background apps from taking the foreground. Sharing
+            // input with the current foreground thread for a moment lifts that.
+            let fg_thread = GetWindowThreadProcessId(GetForegroundWindow(), None);
+            let me = GetCurrentThreadId();
+            let attached = fg_thread != 0 && fg_thread != me && AttachThreadInput(me, fg_thread, true).as_bool();
+            let _ = BringWindowToTop(h);
+            let _ = SetForegroundWindow(h);
+            if attached {
+                let _ = AttachThreadInput(me, fg_thread, false);
+            }
+        }
+    }
+    std::thread::sleep(std::time::Duration::from_millis(80));
+    foreground_hwnd() == hwnd
+}
+
+/// Opens two real windows, so it's opt-in:
+/// `cargo test --lib refocus_brings_window_back -- --ignored`
+#[cfg(all(test, windows))]
+#[test]
+#[ignore]
+fn refocus_brings_window_back() {
+    use windows::core::w;
+    use windows::Win32::UI::WindowsAndMessaging::FindWindowW;
+    let form = |title: &str| {
+        std::process::Command::new("powershell")
+            .args(["-NoProfile", "-Command", &format!(
+                "Add-Type -A System.Windows.Forms; $f=New-Object Windows.Forms.Form; $f.Text='{title}'; $f.Add_Shown({{$f.Activate()}}); [void]$f.ShowDialog()"
+            )])
+            .spawn()
+            .unwrap()
+    };
+    let mut a = form("SVRefocusA");
+    std::thread::sleep(std::time::Duration::from_secs(4));
+    let mut b = form("SVRefocusB");
+    std::thread::sleep(std::time::Duration::from_secs(4));
+    let ha = unsafe { FindWindowW(None, w!("SVRefocusA")) }.unwrap().0 as isize;
+    let hb = unsafe { FindWindowW(None, w!("SVRefocusB")) }.unwrap().0 as isize;
+    let b_was_front = foreground_hwnd() == hb;
+    let ok = refocus(ha);
+    let _ = a.kill();
+    let _ = b.kill();
+    assert!(b_was_front, "setup: B should have been in front");
+    assert!(ok, "A did not come back to the front");
+}
+
+#[cfg(not(windows))]
+pub fn refocus(_hwnd: isize) -> bool {
+    false
+}
+
 #[cfg(target_os = "macos")]
 pub fn foreground_hwnd() -> isize {
     // Provides app-level, not window-level, granularity on macOS.

@@ -1063,7 +1063,14 @@ pub async fn process_audio_pipeline(
             .state::<AppState>()
             .target_hwnd
             .load(std::sync::atomic::Ordering::Relaxed);
-        let current_hwnd = foreground::foreground_hwnd();
+        let mut current_hwnd = foreground::foreground_hwnd();
+        // Focus moved while we were processing: bring the original window back
+        // first (Wispr does the same). Only if that fails do we fall back to
+        // leaving the text on the clipboard.
+        if target_hwnd != 0 && current_hwnd != 0 && current_hwnd != target_hwnd && foreground::refocus(target_hwnd) {
+            logging::log_info("paste", "focus had moved; restored the original window");
+            current_hwnd = target_hwnd;
+        }
         let window_changed =
             target_hwnd != 0 && current_hwnd != 0 && current_hwnd != target_hwnd;
         let secure = crate::system::secure_field::focused_is_password();
