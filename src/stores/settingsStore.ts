@@ -67,6 +67,7 @@ export const DEFAULT_SETTINGS: Settings = {
   proofread_ignore_apps: "",
   pill_auto_hide: false,
   append_trailing_space: false,
+  dictation_sounds: false,
   active_tts_voice: null,
   paste_last_hotkey: "Alt+Shift+Z",
   tts_hotkey: "Ctrl+Alt+S",

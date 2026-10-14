@@ -383,6 +383,7 @@ pub fn start_capture(app: &AppHandle) {
             }
             *slot = Some(rec);
             grab_escape(app, true);
+            beep(app, true);
             overlay::show_overlay(app);
             overlay::mark_active(app); // cancel any pending auto-hide from before
             emit_state(app, "recording");
@@ -501,6 +502,27 @@ fn grab_escape(app: &AppHandle, on: bool) {
     std::thread::spawn(move || {
         let gs = app.global_shortcut();
         let _ = if on { gs.register(escape_shortcut()) } else { gs.unregister(escape_shortcut()) };
+    });
+}
+
+/// Short beep when recording starts (high) or stops (low), if turned on.
+fn beep(app: &AppHandle, start: bool) {
+    let on = app.state::<AppState>().config.lock().map_or(false, |c| c.dictation_sounds);
+    if !on {
+        return;
+    }
+    std::thread::spawn(move || {
+        use rodio::Source;
+        let Ok((_stream, handle)) = rodio::OutputStream::try_default() else { return };
+        let Ok(sink) = rodio::Sink::try_new(&handle) else { return };
+        let freq = if start { 880.0 } else { 600.0 };
+        sink.append(
+            rodio::source::SineWave::new(freq)
+                .take_duration(Duration::from_millis(70))
+                .fade_in(Duration::from_millis(8))
+                .amplify(0.15),
+        );
+        sink.sleep_until_end();
     });
 }
 
@@ -667,6 +689,7 @@ fn finalize_recording(app: AppHandle) {
             return;
         };
         grab_escape(&app, false);
+        beep(&app, false);
 
         emit_state(&app, "processing");
         let samples = rec.stop();

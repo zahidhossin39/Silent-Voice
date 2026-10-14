@@ -140,6 +140,17 @@ export const SETTINGS: SettingDef[] = [
     ),
   },
   {
+    id: "sounds",
+    topic: "dictation",
+    tier: "advanced",
+    label: "Start and stop sounds",
+    info: "A short beep when recording starts and a lower one when it stops.",
+    keywords: "sound beep audio chime feedback",
+    render: (c, label) => (
+      <Toggle label={label} checked={c.s.dictation_sounds} onChange={(v) => c.set({ dictation_sounds: v })} />
+    ),
+  },
+  {
     id: "space",
     topic: "dictation",
     tier: "advanced",

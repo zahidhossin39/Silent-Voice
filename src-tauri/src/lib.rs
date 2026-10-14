@@ -97,6 +97,7 @@ pub struct RuntimeConfig {
     // next dictation doesn't butt up against this one. History stores the
     // clean text (no trailing space) — the space is a paste-time nicety only.
     pub append_trailing_space: bool,
+    pub dictation_sounds: bool,
     pub save_audio: bool,
     pub audio_clip_limit: usize,
     pub model_unload_minutes: u32,
@@ -161,6 +162,7 @@ impl Default for RuntimeConfig {
             app_profiles: Vec::new(),
             pill_auto_hide: false,
             append_trailing_space: false,
+            dictation_sounds: false,
             save_audio: true,
             audio_clip_limit: 20,
             model_unload_minutes: 0,
@@ -477,6 +479,7 @@ fn set_behavior(
     save_audio: bool,
     audio_clip_limit: usize,
     model_unload_minutes: u32,
+    dictation_sounds: bool,
 ) -> Result<(), String> {
     let mut cfg = state.config.lock().map_err(|e| e.to_string())?;
     cfg.toggle_mode = toggle_mode;
@@ -494,6 +497,7 @@ fn set_behavior(
         .collect();
     cfg.pill_auto_hide = pill_auto_hide;
     cfg.append_trailing_space = append_trailing_space;
+    cfg.dictation_sounds = dictation_sounds;
     let coedit_was_enabled = cfg.coedit_enabled;
     cfg.coedit_enabled = coedit_enabled;
     cfg.chunk_on_silence = chunk_on_silence;

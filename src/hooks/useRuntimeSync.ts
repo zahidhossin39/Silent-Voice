@@ -69,6 +69,7 @@ export function useRuntimeSync() {
   const proofreadIgnoreApps = useSettingsStore((s) => s.settings.proofread_ignore_apps);
   const pillAutoHide = useSettingsStore((s) => s.settings.pill_auto_hide);
   const appendTrailingSpace = useSettingsStore((s) => s.settings.append_trailing_space);
+  const dictationSounds = useSettingsStore((s) => s.settings.dictation_sounds);
   const coeditEnabled = useSettingsStore((s) => s.settings.coedit_enabled);
   const chunkOnSilence = useSettingsStore((s) => s.settings.chunk_on_silence);
   const saveAudio = useSettingsStore((s) => s.settings.save_audio);
@@ -160,11 +161,12 @@ export function useRuntimeSync() {
         chunkOnSilence,
         saveAudio,
         audioClipLimit,
-        modelUnloadMinutes
+        modelUnloadMinutes,
+        dictationSounds
       );
     }, 150);
     return () => clearTimeout(id);
-  }, [toggleMode, inputSensitivity, inlineProofread, highPerformance, performanceThreads, proofreadDisabledRules, gectorSensitivity, proofreadIgnoreApps, pillAutoHide, appendTrailingSpace, coeditEnabled, chunkOnSilence, saveAudio, audioClipLimit, modelUnloadMinutes]);
+  }, [toggleMode, inputSensitivity, inlineProofread, highPerformance, performanceThreads, proofreadDisabledRules, gectorSensitivity, proofreadIgnoreApps, pillAutoHide, appendTrailingSpace, coeditEnabled, chunkOnSilence, saveAudio, audioClipLimit, modelUnloadMinutes, dictationSounds]);
 
   useEffect(() => {
     setAutostart(autoStart);
