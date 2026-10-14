@@ -593,7 +593,16 @@ fn finalize_recording(app: AppHandle) {
             return;
         }
 
-        process_audio_pipeline(app, samples, started).await;
+        // Snapshot the background chunks now: a new recording may start (and
+        // reset the segmenter) while this one waits its turn below.
+        let prefix = app.state::<AppState>().segmenter.prefix();
+
+        // One pipeline at a time. Otherwise a dictation started while the last
+        // one is still transcribing overwrites the shared last.wav under it and
+        // the two pastes can land out of order.
+        static PIPELINE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+        let _turn = PIPELINE.lock().await;
+        process_audio_pipeline(app, samples, prefix, started).await;
     });
 }
 
@@ -611,7 +620,12 @@ fn join_parts(a: &str, b: &str) -> String {
 
 /// Core audio post-processing pipeline: writes WAV, transcribes via Whisper,
 /// runs active AI mode processing, pastes to active window, and records in history.
-pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: std::time::Instant) {
+pub async fn process_audio_pipeline(
+    app: AppHandle,
+    samples: Vec<f32>,
+    (prefix, tail_start): (String, usize),
+    started: std::time::Instant,
+) {
     // Read runtime config (STT model, language, active AI mode).
     let (
         model_id,
@@ -701,13 +715,9 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
         report_error(&app, "storage", &e.to_string());
     }
 
-    let seg = {
-        let state = app.state::<AppState>();
-        state.segmenter.clone()
-    };
-    // Sentences already transcribed in the background while the key was held,
-    // and how much of the clip they cover. Empty unless chunking actually fired.
-    let (prefix, tail_start) = seg.prefix();
+    // `prefix`: sentences already transcribed in the background while the key
+    // was held, and `tail_start`: how much of the clip they cover. Empty unless
+    // chunking actually fired.
     let t_pipeline = std::time::Instant::now();
     let chunked = !prefix.trim().is_empty();
 
