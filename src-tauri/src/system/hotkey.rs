@@ -440,6 +440,43 @@ pub fn cli_record(app: &AppHandle, flag: &str) {
     }
 }
 
+/// Alt+Shift+Z: paste the last dictation again (Wispr Flow's default), for
+/// when a paste landed in the wrong window.
+pub fn paste_last_shortcut() -> Shortcut {
+    use tauri_plugin_global_shortcut::Modifiers;
+    Shortcut::new(Some(Modifiers::ALT | Modifiers::SHIFT), tauri_plugin_global_shortcut::Code::KeyZ)
+}
+
+fn last_dictation() -> Option<String> {
+    history::load().into_iter().map(|e| e.processed_text).find(|t| !t.trim().is_empty())
+}
+
+pub fn paste_last() {
+    // Own thread: never paste from the hotkey callback (see grab_escape).
+    std::thread::spawn(|| {
+        let Some(text) = last_dictation() else { return };
+        // Wait for Alt/Shift to come up, or Ctrl+V lands as Ctrl+Alt+Shift+V.
+        #[cfg(windows)]
+        for _ in 0..40 {
+            use windows::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState;
+            let held = [0x10, 0x12].iter().any(|&vk| (unsafe { GetAsyncKeyState(vk) } as u16) & 0x8000 != 0);
+            if !held {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(25));
+        }
+        if let Err(e) = paste::paste_at_cursor(&text) {
+            logging::log_error("paste", &format!("paste last failed: {e}"));
+        }
+    });
+}
+
+pub fn copy_last() {
+    if let Some(text) = last_dictation() {
+        let _ = paste::set_clipboard(&text);
+    }
+}
+
 pub fn escape_shortcut() -> Shortcut {
     Shortcut::new(None, tauri_plugin_global_shortcut::Code::Escape)
 }

@@ -1215,7 +1215,11 @@ pub fn run() {
                     let is_tts = Shortcut::from_str(&tts_hotkey)
                         .map(|s| s == *shortcut)
                         .unwrap_or(false);
-                    if hotkey::is_cancel_key(app, shortcut) {
+                    if *shortcut == hotkey::paste_last_shortcut() {
+                        if let ShortcutState::Pressed = event.state() {
+                            hotkey::paste_last();
+                        }
+                    } else if hotkey::is_cancel_key(app, shortcut) {
                         if let ShortcutState::Pressed = event.state() {
                             hotkey::cancel_capture(app);
                         }
@@ -1291,6 +1295,8 @@ pub fn run() {
             if let Ok(shortcut) = Shortcut::from_str(&defaults.hotkey) {
                 let _ = app.global_shortcut().register(shortcut);
             }
+            // Skipped quietly if another app already owns Alt+Shift+Z.
+            let _ = app.global_shortcut().register(hotkey::paste_last_shortcut());
             if defaults.tts_enabled {
                 if let Ok(shortcut) = Shortcut::from_str(&defaults.tts_hotkey) {
                     let _ = app.global_shortcut().register(shortcut);

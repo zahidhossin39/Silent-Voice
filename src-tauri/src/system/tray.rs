@@ -11,13 +11,14 @@ pub fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let dashboard = MenuItem::with_id(app, "open_dashboard", "Open Dashboard", true, None::<&str>)?;
     let overlay_item = MenuItem::with_id(app, "toggle_overlay", "Show / Hide Overlay", true, None::<&str>)?;
     let history = MenuItem::with_id(app, "open_history", "History", true, None::<&str>)?;
+    let copy_last = MenuItem::with_id(app, "copy_last", "Copy last dictation", true, None::<&str>)?;
     let sep = PredefinedMenuItem::separator(app)?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
 
     let menu = Menu::with_items(
         app,
         &[
-            &toggle, &sep, &overlay_item, &sep, &dashboard, &history,
+            &toggle, &copy_last, &sep, &overlay_item, &sep, &dashboard, &history,
             &sep, &quit,
         ],
     )?;
@@ -43,6 +44,7 @@ pub fn build_tray(app: &AppHandle) -> tauri::Result<()> {
                     crate::system::hotkey::start_capture(app);
                 }
             }
+            "copy_last" => crate::system::hotkey::copy_last(),
             "toggle_overlay" => crate::system::overlay::toggle_overlay(app),
             "open_dashboard" | "open_history" => show_main(app),
             "quit" => app.exit(0),
