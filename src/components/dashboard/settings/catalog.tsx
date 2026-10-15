@@ -151,10 +151,7 @@ export const SETTINGS: SettingDef[] = [
       <div className="flex items-center gap-2">
         <Select
           value={c.s.dictation_sound}
-          onChange={(v) => {
-            c.set({ dictation_sound: v });
-            void previewDictationSound(v);
-          }}
+          onChange={(v) => c.set({ dictation_sound: v })}
           className="w-52 xl:w-60"
         >
           <option value="chorus">Chorus (default)</option>

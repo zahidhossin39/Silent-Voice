@@ -15,7 +15,7 @@ use std::collections::HashMap;
 
 /// Spoken fillers. Whisper omits these on its own; Parakeet/NeMo transcribe them
 /// verbatim, so the pipeline strips them to keep output the same across engines.
-pub const FILLER_WORDS: &[&str] = &["um", "umm", "uh", "uhh", "erm", "er", "ah", "ahh", "hmm", "hm", "mmm"]; // not "mm": "5 mm"
+pub const FILLER_WORDS: &[&str] = &["um", "umm", "uh", "uhh", "erm", "er", "ah", "ahh", "hmm", "hm", "mmm", "mm-hmm", "mm-hm", "mhm", "mmhmm"]; // not "mm": "5 mm"
 
 fn units_map() -> HashMap<&'static str, u64> {
     HashMap::from([
@@ -1277,6 +1277,8 @@ mod tests {
         // Real dictation: "I don't see that thing. Ah anymore."
         assert_eq!(strip_fillers("Ah, I see. Hmm, okay."), "I see. Okay.");
         assert_eq!(strip_fillers("Mmm, the er report"), "The report");
+        assert_eq!(strip_fillers("Mm-hmm."), "");
+        assert_eq!(strip_fillers("Mhm, sounds good."), "Sounds good.");
         assert_eq!(strip_fillers("A 5 mm screw. We took him to the ER, UM campus."), "A 5 mm screw. We took him to the ER, UM campus.");
         // A filler that ended the sentence hands its mark to the word before.
         assert_eq!(strip_fillers("I think so uh."), "I think so.");
