@@ -1035,6 +1035,79 @@ mod command_tests {
     }
 }
 
+/// Phrases the user typed over a dictated paste: "Cloud code" -> "Claude Code",
+/// "jet sap" -> "GSAP". Word-level diff of the pasted text against the
+/// field's current text; only small 1-3 word swaps count (bigger edits are
+/// rewrites, not spelling fixes). Returns the user's new wording, unfiltered.
+pub fn corrected_phrases(pasted: &str, field: &str) -> Vec<String> {
+    let bare = |w: &str| w.trim_matches(|c: char| !c.is_alphanumeric()).to_string();
+    let a: Vec<String> = pasted.split_whitespace().map(bare).filter(|w| !w.is_empty()).collect();
+    let all: Vec<String> = field.split_whitespace().map(bare).filter(|w| !w.is_empty()).collect();
+    if a.len() < 3 {
+        return Vec::new();
+    }
+    // Find the paste inside the field by its first or last three words (one
+    // end may itself have been edited), then diff only that window.
+    let low = |v: &[String]| v.iter().map(|w| w.to_lowercase()).collect::<Vec<_>>();
+    let (la, lall) = (low(&a), low(&all));
+    let find = |needle: &[String]| lall.windows(needle.len()).position(|w| w == needle);
+    let start = match (find(&la[..3]), find(&la[la.len() - 3..])) {
+        (Some(i), _) => i,
+        (None, Some(j)) => j.saturating_sub(a.len()),
+        _ => return Vec::new(),
+    };
+    let b = &all[start..(start + a.len() + 12).min(all.len())];
+    let lb = &lall[start..start + b.len()];
+
+    // LCS table on lowercase words; a case-only change is checked after.
+    let (n, m) = (a.len(), b.len());
+    let mut dp = vec![vec![0u16; m + 1]; n + 1];
+    for i in (0..n).rev() {
+        for j in (0..m).rev() {
+            dp[i][j] = if la[i] == lb[j] { dp[i + 1][j + 1] + 1 } else { dp[i + 1][j].max(dp[i][j + 1]) };
+        }
+    }
+    let mut out = Vec::new();
+    let (mut i, mut j) = (0, 0);
+    while i < n && j < m {
+        if la[i] == lb[j] {
+            // "github" -> "GitHub": same word, the user fixed its capitals.
+            if a[i] != b[j] && b[j].chars().skip(1).any(char::is_uppercase) {
+                out.push(b[j].clone());
+            }
+            i += 1;
+            j += 1;
+            continue;
+        }
+        // A changed block: advance both sides until they meet again.
+        let (i0, j0) = (i, j);
+        while i < n && j < m && la[i] != lb[j] {
+            if dp[i + 1][j] >= dp[i][j + 1] { i += 1 } else { j += 1 }
+        }
+        // One side ran out: the rest of the other side is part of the swap.
+        if i == n {
+            j = m;
+        } else if j == m {
+            i = n;
+        }
+        // "cloud code" -> "Claude Code": recapitalised words right after the
+        // swap belong to the same phrase.
+        while i < n && j < m && la[i] == lb[j] && a[i] != b[j] {
+            i += 1;
+            j += 1;
+        }
+        // Small swaps only: typing on after the paste makes the field side
+        // long, and a rewrite fails the sound check.
+        if (1..=3).contains(&(i - i0))
+            && (1..=3).contains(&(j - j0))
+            && crate::system::soundalike::roughly_alike(&a[i0..i].join(" "), &b[j0..j].join(" "))
+        {
+            out.push(b[j0..j].join(" "));
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::{collapse_repeated_words, format_numbers, spoken_symbols, strip_fillers, structure_text};
@@ -1245,4 +1318,21 @@ second line";
             "It's been a while. Yeah, that's all. Sometimes we do a lot of things. We can also make it"
         );
     }
+
+    #[test]
+    fn test_corrected_phrases() {
+        use super::corrected_phrases;
+        let pasted = "I asked cloud code to fix the jet sap animation on github today.";
+        let field = "Hey team, I asked Claude Code to fix the GSAP animation on GitHub today. Thanks";
+        assert_eq!(corrected_phrases(pasted, field), vec!["Claude Code", "GSAP", "GitHub"]);
+        // Untouched paste, or only typing after it: nothing learned.
+        assert!(corrected_phrases(pasted, &format!("{pasted} And more words here.")).is_empty());
+        // A rewrite of half the sentence is not a spelling fix.
+        assert!(corrected_phrases(pasted, "I asked someone else entirely to redo all of it on github today.").is_empty());
+        // The fix is the last word.
+        assert_eq!(corrected_phrases("please send it to cloud.", "please send it to Claude."), vec!["Claude"]);
+        // Paste no longer in the field at all.
+        assert!(corrected_phrases(pasted, "something else").is_empty());
+    }
+
 }

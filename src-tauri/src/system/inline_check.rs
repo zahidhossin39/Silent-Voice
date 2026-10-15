@@ -201,6 +201,7 @@ fn watcher(app: AppHandle) {
                         check_needed = true;
                     }
                     OverlayAction::Dismiss { word } => {
+                        forget_learned(&word);
                         crate::logging::log_info(
                             "inline_check",
                             &format!("dismiss request: {:?}", word),
@@ -209,6 +210,7 @@ fn watcher(app: AppHandle) {
                         check_needed = true;
                     }
                     OverlayAction::AddToVocab { word } => {
+                        forget_learned(&word);
                         crate::logging::log_info(
                             "inline_check",
                             &format!("add to vocab request: {:?}", word),
@@ -221,6 +223,9 @@ fn watcher(app: AppHandle) {
                         check_needed = true;
                     }
                 }
+            }
+            if LEARN_DIRTY.swap(false, std::sync::atomic::Ordering::Relaxed) {
+                check_needed = true;
             }
             if check_needed {
                 last_text.clear();
@@ -573,6 +578,7 @@ fn poll_once(
                 let _ = overlay_tx.send(Vec::new());
             }
             *issues = proofread::check(&text, vocabulary, disabled_rules, gector_sensitivity);
+            issues.extend(learned_issues(&text));
             *last_chars = text.chars().collect();
             *last_text = text;
         }
@@ -927,6 +933,56 @@ impl IUIAutomationFocusChangedEventHandler_Impl for FocusHandler_Impl {
 // When the focused element has no TextPattern (e.g. a WebView2/WinUI3 host
 // like WhatsApp), the real editable field is a descendant with keyboard
 // focus. Resolve to it; otherwise return the element itself.
+/// Phrases the user corrected in a dictated paste ("Claude Code"), waiting
+/// for their click. They show as underlines with the normal popup, whose
+/// "Add to Dictionary" adds them to the vocabulary. Never added on our own.
+static LEARNED: Mutex<Vec<(String, std::time::Instant)>> = Mutex::new(Vec::new());
+static LEARN_DIRTY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+const LEARN_TTL: Duration = Duration::from_secs(600);
+
+pub fn suggest_learned(phrase: &str) {
+    if let Ok(mut l) = LEARNED.lock() {
+        if !l.iter().any(|(w, _)| w.eq_ignore_ascii_case(phrase)) {
+            l.push((phrase.to_string(), std::time::Instant::now()));
+            LEARN_DIRTY.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+}
+
+fn forget_learned(word: &str) {
+    if let Ok(mut l) = LEARNED.lock() {
+        l.retain(|(w, _)| !w.eq_ignore_ascii_case(word));
+    }
+}
+
+/// Every whole-word occurrence of a pending learned phrase in `text`.
+fn learned_issues(text: &str) -> Vec<proofread::ProofIssue> {
+    let Ok(mut l) = LEARNED.lock() else { return Vec::new() };
+    l.retain(|(_, t)| t.elapsed() < LEARN_TTL);
+    let chars: Vec<char> = text.chars().collect();
+    let mut out = Vec::new();
+    for (w, _) in l.iter() {
+        let wc: Vec<char> = w.chars().collect();
+        if wc.is_empty() {
+            continue;
+        }
+        for p in 0..chars.len().saturating_sub(wc.len() - 1) {
+            let end = p + wc.len();
+            let edge = |i: Option<&char>| i.map_or(true, |c| !c.is_alphanumeric());
+            if chars[p..end] == wc[..] && edge(p.checked_sub(1).and_then(|i| chars.get(i))) && edge(chars.get(end)) {
+                out.push(proofread::ProofIssue {
+                    start: p,
+                    end,
+                    message: "You corrected this. Add it to your dictionary so dictation spells it right.".into(),
+                    kind: "Spelling".into(),
+                    suggestions: Vec::new(),
+                });
+            }
+        }
+    }
+    out
+}
+
 /// Whole text of the focused field, for paste verification. None when it
 /// can't be read (no UIA text support, Chromium with accessibility off, or
 /// bigger than the cap): callers must treat None as "unknown", never "failed".
@@ -979,4 +1035,39 @@ mod verify_tests {
         assert_eq!(before.as_deref(), Some("existing words "));
         assert!(after.unwrap().contains("Café test 42 landed."));
     }
+
+    /// #7 core, for real: paste a dictation into a throwaway text box, make the
+    /// user's correction, then read -> diff -> name/jargon filter -> underline.
+    #[test]
+    #[ignore] // opens a window and sends Ctrl+A / Ctrl+V
+    fn learns_a_corrected_word_from_a_real_field() {
+        let form = "Add-Type -A System.Windows.Forms; $f=New-Object Windows.Forms.Form; $t=New-Object Windows.Forms.RichTextBox; $t.Dock='Fill'; $f.Controls.Add($t); $f.TopMost=$true; $f.Add_Shown({$f.Activate(); $t.Focus()}); [void]$f.ShowDialog()";
+        let mut child = std::process::Command::new("powershell").args(["-NoProfile", "-Command", form]).spawn().unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(2500));
+        let pasted = "Please ask cloud code about the jet sap animation, it needs a fix.";
+        crate::system::paste::paste_at_cursor(pasted).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        // The user's edit: select all, paste their corrected version.
+        crate::system::paste::press_shortcut('a').unwrap();
+        crate::system::paste::paste_at_cursor("Please ask Claude Code about the GSAP animation, it needs a fix.").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        let field = super::focused_field_text();
+        let _ = child.kill();
+        let field = field.expect("field readable");
+        let learned: Vec<String> = crate::system::textfmt::corrected_phrases(pasted, &field)
+            .into_iter()
+            .filter(|p| !crate::system::sherpa_stt::hotword_phrases(p).is_empty())
+            .collect();
+        println!("field {field:?}\nlearned {learned:?}");
+        assert_eq!(learned, vec!["Claude Code", "GSAP"]);
+        for p in &learned {
+            super::suggest_learned(p);
+        }
+        let issues = super::learned_issues(&field);
+        let spans: Vec<String> = issues.iter().map(|i| field.chars().skip(i.start).take(i.end - i.start).collect()).collect();
+        assert_eq!(spans, vec!["Claude Code", "GSAP"]);
+        super::forget_learned("claude code");
+        assert_eq!(super::learned_issues(&field).len(), 1, "Add/Dismiss clears it");
+    }
+
 }

@@ -782,7 +782,43 @@ fn verify_paste(app: AppHandle, text: String, hwnd: isize) {
         if verdict == Some(false) && paste::set_clipboard(&text).is_ok() {
             report_error(&app, "paste", "Couldn't confirm the text landed here — it's on your clipboard (press Ctrl+V).");
         }
+        if verdict == Some(true) {
+            learn_from_edits(&app, &text, hwnd);
+        }
     });
+}
+
+/// #7: for a minute after a paste lands, re-read the field. A small
+/// sound-alike swap the user made ("cloud code" -> "Claude Code") that looks
+/// like a name or jargon gets an "add to dictionary" underline. Shown by the
+/// inline proofreader, so it only runs while that's on.
+#[cfg(windows)]
+fn learn_from_edits(app: &AppHandle, pasted: &str, hwnd: isize) {
+    let (on, vocab) = match app.state::<AppState>().config.lock() {
+        Ok(c) => (c.inline_proofread, c.vocabulary.clone()),
+        Err(_) => return,
+    };
+    if !on {
+        return;
+    }
+    let mut seen: Vec<String> = Vec::new();
+    for _ in 0..20 {
+        std::thread::sleep(Duration::from_secs(3));
+        if foreground::foreground_hwnd() != hwnd {
+            break;
+        }
+        let Some(field) = crate::system::inline_check::focused_field_text() else { continue };
+        for p in textfmt::corrected_phrases(pasted, &field) {
+            let known = vocab.split([',', '\n']).any(|v| v.trim().eq_ignore_ascii_case(&p));
+            // Same "is it a name or jargon?" rule the vocabulary boost uses.
+            if known || seen.contains(&p) || crate::system::sherpa_stt::hotword_phrases(&p).is_empty() {
+                continue;
+            }
+            logging::log_info("learn", "offering a corrected word for the dictionary");
+            crate::system::inline_check::suggest_learned(&p);
+            seen.push(p);
+        }
+    }
 }
 
 /// Some(true) landed, Some(false) the readable field lacks it, None unknown

@@ -590,7 +590,7 @@ fn ensure_bpe_vocab(model_id: &str, dir: &Path) -> Option<std::path::PathBuf> {
 /// spells them, and boosting them made it insert them into unrelated speech
 /// ("could you call me" → "could you Claude me"). Measured with
 /// scripts/vocab_bench.py. Duplicates are dropped.
-fn hotword_phrases(vocabulary: &str) -> Vec<&str> {
+pub(crate) fn hotword_phrases(vocabulary: &str) -> Vec<&str> {
     use harper_core::spell::{Dictionary, FstDictionary};
     let dict = FstDictionary::curated();
     let mut out: Vec<&str> = Vec::new();
