@@ -611,7 +611,12 @@ fn set_hotkey(app: AppHandle, state: State<AppState>, accelerator: String) -> Re
 
 #[tauri::command]
 fn preview_dictation_sound(pack: String) {
+    // Start, then stop, so the pair can be judged without dictating.
     hotkey::play_sound(&pack, true);
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(700));
+        hotkey::play_sound(&pack, false);
+    });
 }
 
 #[tauri::command]

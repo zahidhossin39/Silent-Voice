@@ -145,23 +145,29 @@ export const SETTINGS: SettingDef[] = [
     topic: "dictation",
     tier: "advanced",
     label: "Start and stop sounds",
-    info: "A soft tick when recording starts and stops. Picking one plays its start sound.",
-    keywords: "sound beep audio chime feedback tick tap",
+    info: "A soft tick when recording starts and stops. Play lets you hear the start and stop sound before you dictate.",
+    keywords: "sound beep audio chime feedback tick tap preview play",
     render: (c) => (
-      <Select
-        value={c.s.dictation_sound}
-        onChange={(v) => {
-          c.set({ dictation_sound: v });
-          void previewDictationSound(v);
-        }}
-        className="w-52 xl:w-60"
-      >
-        <option value="chorus">Chorus (default)</option>
-        <option value="double-double">Double tap</option>
-        <option value="double-single">Double start, single stop</option>
-        <option value="single-double">Single start, double stop</option>
-        <option value="off">Off</option>
-      </Select>
+      <div className="flex items-center gap-2">
+        <Select
+          value={c.s.dictation_sound}
+          onChange={(v) => {
+            c.set({ dictation_sound: v });
+            void previewDictationSound(v);
+          }}
+          className="w-52 xl:w-60"
+        >
+          <option value="chorus">Chorus (default)</option>
+          <option value="double-double">Double tap</option>
+          <option value="double-single">Double start, single stop</option>
+          <option value="single-double">Single start, double stop</option>
+          <option value="off">Off</option>
+        </Select>
+        <GhostButton disabled={c.s.dictation_sound === "off"} onClick={() => void previewDictationSound(c.s.dictation_sound)}>
+          <PlayIcon />
+          Play
+        </GhostButton>
+      </div>
     ),
   },
   {
