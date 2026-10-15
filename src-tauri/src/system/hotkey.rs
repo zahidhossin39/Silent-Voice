@@ -48,10 +48,11 @@ fn report_error(app: &AppHandle, context: &str, msg: &str) {
     let _ = app.emit("pipeline://error", msg.to_string());
     // Also on screen: the dashboard is usually closed to the tray. Paste
     // messages already say what to do (press Ctrl+V); real failures offer the logs.
-    if context == "paste" {
-        crate::system::notice::show(app, "Text copied instead", msg, "");
-    } else {
-        crate::system::notice::show(app, "Dictation didn't work", msg, "logs");
+    match context {
+        "copied" => crate::system::notice::show(app, "Text copied instead", msg, ""),
+        // The raw text still pasted; only the AI step was skipped.
+        "ai-mode" => crate::system::notice::show(app, "Pasted without AI mode", msg, "logs"),
+        _ => crate::system::notice::show(app, "Dictation didn't work", msg, "logs"),
     }
 }
 
@@ -520,10 +521,21 @@ fn grab_escape(app: &AppHandle, on: bool) {
     }
     // Off the hotkey callback's thread: registering a shortcut from inside the
     // shortcut handler waits on that same thread and freezes the whole app.
+    // The on/off threads can finish out of order on a quick tap; each one
+    // applies the LATEST wish, so Esc can't stay grabbed after recording.
+    static WANT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    static TURN: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    WANT.store(on, std::sync::atomic::Ordering::SeqCst);
     let app = app.clone();
     std::thread::spawn(move || {
+        let _turn = TURN.lock();
         let gs = app.global_shortcut();
-        let _ = if on { gs.register(escape_shortcut()) } else { gs.unregister(escape_shortcut()) };
+        let (want, have) = (WANT.load(std::sync::atomic::Ordering::SeqCst), gs.is_registered(escape_shortcut()));
+        let _ = match (want, have) {
+            (true, false) => gs.register(escape_shortcut()),
+            (false, true) => gs.unregister(escape_shortcut()),
+            _ => Ok(()),
+        };
     });
 }
 
@@ -787,7 +799,7 @@ fn verify_paste(app: AppHandle, text: String, hwnd: isize) {
         }
         logging::log_info("paste", &format!("verify: {}", match verdict { Some(true) => "landed", Some(false) => "missing", None => "unknown" }));
         if verdict == Some(false) && paste::set_clipboard(&text).is_ok() {
-            report_error(&app, "paste", "Couldn't confirm the text landed here — it's on your clipboard (press Ctrl+V).");
+            report_error(&app, "copied", "Couldn't confirm the text landed here — it's on your clipboard (press Ctrl+V).");
         }
         if verdict == Some(true) {
             learn_from_edits(&app, &text, hwnd);
@@ -1248,7 +1260,7 @@ pub async fn process_audio_pipeline(
                 Ok(()) => {
                     report_error(
                         &app,
-                        "paste",
+                        "copied",
                         "Silent Voice needs Accessibility permission to paste — text copied, press Cmd+V. Turn it on in System Settings > Privacy & Security > Accessibility.",
                     );
                     static OPENED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -1263,7 +1275,7 @@ pub async fn process_audio_pipeline(
             } else {
                 report_error(
                     &app,
-                    "paste",
+                    "copied",
                     if secure {
                         "Protected field detected — text copied to clipboard (press Ctrl+V to paste it)."
                     } else {
