@@ -84,7 +84,7 @@ After `cargo build`, whisper DLLs must be copied from `sidecars/` into
   (forwarded via single-instance), paste via `wtype`. AUR `silent-voice-bin` is
   published by `aur.yml` on release; it drops `.package-managed` so the in-app updater stays off.
 
-**Current state:** v0.1.13 released (Settings > System > Logs: save/copy/open; one log line per paste). v0.1.12: macOS signed with the project's self-signed cert (Accessibility survives updates; `scripts/macos-signing.sh`), Cmd+V/Cmd+C sent on the main thread (fixed the post-dictation crash), AppImage keeps libwayland as a host fallback.
+**Current state:** v0.1.14 released (background transcription on by default with a 7 MB punctuation-repair model, paste verification, learn-from-edits underlines, on-screen problem card, start/stop sounds, Esc cancel, Alt+Shift+Z paste-last). v0.1.13 (Settings > System > Logs: save/copy/open; one log line per paste). v0.1.12: macOS signed with the project's self-signed cert (Accessibility survives updates; `scripts/macos-signing.sh`), Cmd+V/Cmd+C sent on the main thread (fixed the post-dictation crash), AppImage keeps libwayland as a host fallback.
 Home gained a 12-week dictation strip in the Status panel (heatmap + days
 active / busiest day / words per dictation), the onboarding was rebuilt as a
 left-rail flow that downloads the model in the background, and spoken fillers
