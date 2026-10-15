@@ -16,6 +16,12 @@ pub struct HistoryEntry {
     pub audio_ms: Option<i64>,
     #[serde(default)]
     pub audio_file: Option<String>,
+    /// How long the key was held (the whole recording), for speaking speed.
+    #[serde(default)]
+    pub speak_ms: Option<i64>,
+    /// The app dictated into (exe name, lowercase), for the Progress page.
+    #[serde(default)]
+    pub app: Option<String>,
 }
 
 const MAX_ENTRIES: usize = 1000;
@@ -154,6 +160,8 @@ mod tests {
             duration_ms: 10,
             audio_ms: Some(1500),
             audio_file: Some("rec-1.wav".into()),
+            speak_ms: Some(1500),
+            app: Some("code.exe".into()),
         };
         let json = serde_json::to_string(&entry).unwrap();
         let back: HistoryEntry = serde_json::from_str(&json).unwrap();

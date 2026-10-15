@@ -184,6 +184,8 @@ export interface HistoryEntry {
   duration_ms: number;
   audio_ms?: number;
   audio_file?: string;
+  speak_ms?: number;
+  app?: string;
 }
 
 // ---------- App settings ----------

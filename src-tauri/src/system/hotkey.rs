@@ -234,6 +234,8 @@ pub struct PipelineResult {
     pub duration_ms: i64,
     pub audio_ms: Option<i64>,
     pub audio_file: Option<String>,
+    pub speak_ms: Option<i64>,
+    pub app: Option<String>,
 }
 
 fn emit_state(app: &AppHandle, state: &str) {
@@ -912,6 +914,9 @@ pub async fn process_audio_pipeline(
     (chunks, tail_start): (Vec<String>, usize),
     started: std::time::Instant,
 ) {
+    // For the Progress page: the app being dictated into, and how long the key was held.
+    let target_app = foreground::foreground_app();
+    let speak_ms = Some(samples.len() as i64 * 1000 / crate::audio::capture::WHISPER_SAMPLE_RATE as i64);
     // Read runtime config (STT model, language, active AI mode).
     let (
         model_id,
@@ -1361,6 +1366,8 @@ pub async fn process_audio_pipeline(
         duration_ms: elapsed,
         audio_ms,
         audio_file: audio_file.clone(),
+        speak_ms,
+        app: target_app.clone(),
     };
     let _ = history::append(entry);
 
@@ -1375,6 +1382,8 @@ pub async fn process_audio_pipeline(
             duration_ms: elapsed,
             audio_ms,
             audio_file,
+            speak_ms,
+            app: target_app.clone(),
         },
     );
 

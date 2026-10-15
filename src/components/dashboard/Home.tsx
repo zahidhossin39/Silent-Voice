@@ -10,7 +10,7 @@ import { useSettingsStore } from "../../stores/settingsStore";
 import { useModelStore } from "../../stores/modelStore";
 import { useUiStore } from "../../stores/uiStore";
 import { useHistoryStore } from "../../stores/historyStore";
-import { useStatsStore, type DayStat } from "../../stores/statsStore";
+import { useStatsStore, savedMinutes, type DayStat } from "../../stores/statsStore";
 import { isTauri, listenEvent, accessibilityGranted, openAccessibilitySettings } from "../../services/tauriBridge";
 import { formatGB } from "../../services/format";
 
@@ -554,20 +554,13 @@ function StatusCheck({
 // history — so the calendar and totals stay correct after old history entries
 // are pruned or the history is cleared. Keys are local day-start ms.
 // "Time saved" = how long those words would take to type minus the time spent
-// speaking them.
-// ponytail: 40 wpm is a fixed average-typing baseline; make it a setting only if
-// someone actually asks to tune it.
-const TYPING_WPM = 40;
-
+// speaking them (statsStore.savedMinutes).
 function useTodayStats(daily: Record<number, DayStat>) {
   return useMemo(() => {
     const start = new Date();
     start.setHours(0, 0, 0, 0);
     const d = daily[start.getTime()] ?? { words: 0, dictations: 0, speakMs: 0 };
-
-    const typeMs = (d.words / TYPING_WPM) * 60_000;
-    const savedMin = Math.max(0, Math.round((typeMs - d.speakMs) / 60_000));
-    return { words: d.words, count: d.dictations, savedMin: String(savedMin) };
+    return { words: d.words, count: d.dictations, savedMin: String(Math.round(savedMinutes([d]))) };
   }, [daily]);
 }
 

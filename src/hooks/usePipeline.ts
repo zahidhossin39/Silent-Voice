@@ -17,6 +17,8 @@ interface PipelineResult {
   duration_ms: number;
   audio_ms?: number;
   audio_file?: string;
+  speak_ms?: number;
+  app?: string;
 }
 
 /**
@@ -51,10 +53,12 @@ export function usePipeline() {
           duration_ms: r.duration_ms,
           audio_ms: r.audio_ms,
           audio_file: r.audio_file,
+          speak_ms: r.speak_ms,
+          app: r.app,
         });
         const words = r.processed_text.trim().split(/\s+/).filter(Boolean).length;
         // Durable per-day tally so the Home calendar/stats outlive history pruning.
-        recordStat(words, r.duration_ms, r.id);
+        recordStat(words, r.speak_ms, r.id, r.app);
         announce(`Dictation done — ${words} ${words === 1 ? "word" : "words"} ready at the cursor.`);
       }),
       listenEvent<string>("pipeline://error", (e) => {

@@ -108,6 +108,17 @@ export function ThemeIcon({ className }: IconProps) {
   );
 }
 
+export function ProgressIcon({ className }: IconProps) {
+  // A rising trend line over a baseline: "how you're doing over time".
+  return (
+    <svg {...base} className={className}>
+      <path d="M3.5 20.5h17" />
+      <path d="m4.5 15.5 4.5-4.5 3.5 3 7-7" />
+      <path d="M15 7h4.5v4.5" />
+    </svg>
+  );
+}
+
 export function HistoryIcon({ className }: IconProps) {
   // A clean clock face with a small "rewind" notch at the top-left — reads
   // clearly as recents/history, classy rather than busy.

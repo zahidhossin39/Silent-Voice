@@ -35,12 +35,15 @@ import {
   HistoryIcon,
   GuideIcon,
   ThemeIcon,
+  ProgressIcon,
 } from "./components/shared/NavIcons";
+import Progress from "./components/dashboard/Progress";
 import { Titlebar } from "./components/shared/Titlebar";
 import ThemeSwitch from "./components/shared/ThemeSwitch";
 
 const NAV = [
   { to: "/home", label: "Home", Icon: HomeIcon },
+  { to: "/progress", label: "Progress", Icon: ProgressIcon },
   { to: "/models", label: "Model Store", Icon: StoreIcon },
   { to: "/modes", label: "Writing styles", Icon: ModesIcon },
   { to: "/theme", label: "Theme", Icon: ThemeIcon },
@@ -273,6 +276,7 @@ function Dashboard() {
         <Routes>
           <Route path="/" element={<Navigate to="/home" replace />} />
           <Route path="/home" element={<Home />} />
+          <Route path="/progress" element={<Progress />} />
           <Route path="/models" element={<ModelStore />} />
           <Route path="/modes" element={<Modes />} />
           <Route path="/theme" element={<Theme />} />
