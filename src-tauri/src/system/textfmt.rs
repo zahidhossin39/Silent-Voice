@@ -1331,6 +1331,14 @@ second line";
         assert!(corrected_phrases(pasted, "I asked someone else entirely to redo all of it on github today.").is_empty());
         // The fix is the last word.
         assert_eq!(corrected_phrases("please send it to cloud.", "please send it to Claude."), vec!["Claude"]);
+        // Real case: "Claude Court" fixed by hand to "Claude code".
+        assert_eq!(
+            corrected_phrases(
+                "That's why Claude Court seems much more better harnessed than others.",
+                "I've been making motion graphics with GSAP for a long time. That's why Claude code seems much more better harnessed than others."
+            ),
+            vec!["code"]
+        );
         // Paste no longer in the field at all.
         assert!(corrected_phrases(pasted, "something else").is_empty());
     }
