@@ -927,6 +927,26 @@ impl IUIAutomationFocusChangedEventHandler_Impl for FocusHandler_Impl {
 // When the focused element has no TextPattern (e.g. a WebView2/WinUI3 host
 // like WhatsApp), the real editable field is a descendant with keyboard
 // focus. Resolve to it; otherwise return the element itself.
+/// Whole text of the focused field, for paste verification. None when it
+/// can't be read (no UIA text support, Chromium with accessibility off, or
+/// bigger than the cap): callers must treat None as "unknown", never "failed".
+pub fn focused_field_text() -> Option<String> {
+    const CAP: i32 = 200_000;
+    unsafe {
+        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+        let automation: IUIAutomation = CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER).ok()?;
+        let el = automation.GetFocusedElement().ok()?;
+        let text = if let Some(t) = resolve_text_element(&automation, &el) {
+            let p: IUIAutomationTextPattern = t.GetCurrentPattern(UIA_TextPatternId).ok()?.cast().ok()?;
+            p.DocumentRange().ok()?.GetText(CAP).ok()?.to_string()
+        } else {
+            let v: IUIAutomationValuePattern = el.GetCurrentPattern(UIA_ValuePatternId).ok()?.cast().ok()?;
+            v.CurrentValue().ok()?.to_string()
+        };
+        (text.chars().count() < CAP as usize).then_some(text)
+    }
+}
+
 unsafe fn resolve_text_element(automation: &IUIAutomation, el: &IUIAutomationElement) -> Option<IUIAutomationElement> {
     if el.GetCurrentPattern(UIA_TextPatternId).and_then(|u| u.cast::<IUIAutomationTextPattern>()).is_ok() {
         return Some(el.clone());
@@ -938,4 +958,25 @@ unsafe fn resolve_text_element(automation: &IUIAutomation, el: &IUIAutomationEle
     if found.GetCurrentPattern(UIA_TextPatternId).and_then(|u| u.cast::<IUIAutomationTextPattern>()).is_ok() {
         Some(found)
     } else { None }
+}
+
+
+#[cfg(test)]
+mod verify_tests {
+    /// Real paste into a throwaway WinForms text box, then read it back.
+    #[test]
+    #[ignore] // opens a window and sends Ctrl+V
+    fn focused_field_text_sees_a_real_paste() {
+        let form = "Add-Type -A System.Windows.Forms; $f=New-Object Windows.Forms.Form; $t=New-Object Windows.Forms.TextBox; $t.Multiline=$true; $t.Dock='Fill'; $t.Text='existing words '; $f.Controls.Add($t); $f.TopMost=$true; $f.Add_Shown({$f.Activate(); $t.Focus(); $t.SelectionStart=$t.Text.Length}); [void]$f.ShowDialog()";
+        let mut child = std::process::Command::new("powershell").args(["-NoProfile", "-Command", form]).spawn().unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(2500));
+        let before = super::focused_field_text();
+        crate::system::paste::paste_at_cursor("Café test 42 landed.").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        let after = super::focused_field_text();
+        let _ = child.kill();
+        println!("before {before:?}\nafter  {after:?}");
+        assert_eq!(before.as_deref(), Some("existing words "));
+        assert!(after.unwrap().contains("Café test 42 landed."));
+    }
 }

@@ -757,6 +757,58 @@ fn finalize_recording(app: AppHandle) {
     });
 }
 
+/// Ctrl+V "succeeds" even when nothing editable took it. Re-read the field
+/// off the critical path; if it's readable, non-empty and lacks the end of
+/// the dictation, the paste didn't land: put the text back on the clipboard
+/// and say so. An unreadable field is trusted, so this never false-alarms
+/// in apps UIA can't see (terminals, games, Electron with accessibility off).
+#[cfg(windows)]
+fn verify_paste(app: AppHandle, text: String, hwnd: isize) {
+    std::thread::spawn(move || {
+        let mut verdict = None;
+        for wait_ms in [300, 600] {
+            std::thread::sleep(Duration::from_millis(wait_ms));
+            // The user may have moved on to another window: then the focused
+            // field isn't ours to judge.
+            if foreground::foreground_hwnd() != hwnd {
+                break;
+            }
+            verdict = paste_verdict(crate::system::inline_check::focused_field_text().as_deref(), &text).or(verdict);
+            if verdict == Some(true) {
+                break;
+            }
+        }
+        logging::log_info("paste", &format!("verify: {}", match verdict { Some(true) => "landed", Some(false) => "missing", None => "unknown" }));
+        if verdict == Some(false) && paste::set_clipboard(&text).is_ok() {
+            report_error(&app, "paste", "Couldn't confirm the text landed here — it's on your clipboard (press Ctrl+V).");
+        }
+    });
+}
+
+/// Some(true) landed, Some(false) the readable field lacks it, None unknown
+/// (unreadable or empty field: Chromium can report "" when it can't see).
+/// Matches the last 24 letters/digits, since apps re-flow spaces and quotes.
+fn paste_verdict(field: Option<&str>, text: &str) -> Option<bool> {
+    let field = field.filter(|f| !f.trim().is_empty())?;
+    let key = |s: &str| -> Vec<char> { s.chars().filter(|c| c.is_alphanumeric()).flat_map(char::to_lowercase).collect() };
+    let want = key(text);
+    let want: String = want[want.len().saturating_sub(24)..].iter().collect();
+    Some(key(field).into_iter().collect::<String>().contains(&want))
+}
+
+#[cfg(test)]
+mod paste_verdict_tests {
+    use super::paste_verdict;
+    #[test]
+    fn verdicts() {
+        let t = "Send the “café” report — today, please.";
+        assert_eq!(paste_verdict(Some("Hi,\r\nsend the \"Café\" report, today please. "), t), Some(true));
+        assert_eq!(paste_verdict(Some("Hi, older text only"), t), Some(false));
+        assert_eq!(paste_verdict(Some("  "), t), None);
+        assert_eq!(paste_verdict(None, t), None);
+    }
+}
+
 /// The punctuation model is English-only.
 fn english_text(language: &str, model_id: &str) -> bool {
     language.starts_with("en")
@@ -1135,6 +1187,8 @@ pub async fn process_audio_pipeline(
             report_error(&app, "paste", &e);
         } else {
             pasted_ok = true;
+            #[cfg(windows)]
+            verify_paste(app.clone(), to_paste.clone(), current_hwnd);
         }
         // After the paste, so the extra frontmost lookup (osascript on macOS)
         // never delays it. Every fact needed to tell why a paste did not land, in one line
