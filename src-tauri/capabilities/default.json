@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Default capabilities for Silent Voice",
-  "windows": ["main", "overlay"],
+  "windows": ["main", "overlay", "notice"],
   "permissions": [
     "core:default",
     "core:window:allow-create",

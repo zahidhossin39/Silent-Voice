@@ -22,6 +22,7 @@ pub mod hotkey;
 #[cfg(windows)]
 pub mod inline_check;
 pub mod job;
+pub mod notice;
 pub mod overlay;
 pub mod paste;
 pub mod secure_field;

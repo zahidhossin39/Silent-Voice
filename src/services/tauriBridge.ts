@@ -784,3 +784,20 @@ export async function deleteGectorModel(): Promise<void> {
   await invoke<void>("delete_gector_model");
 }
 
+
+// ---------------- On-screen notice (system/notice.rs) ----------------
+
+export type Notice = { title: string; body: string; action: "mic" | "settings" | "logs" | "" };
+
+export async function noticeCurrent(): Promise<Notice | null> {
+  if (!isTauri()) return null;
+  return invoke<Notice | null>("notice_current");
+}
+
+export async function noticeHide(): Promise<void> {
+  if (isTauri()) await invoke<void>("notice_hide");
+}
+
+export async function noticeOpenSettings(): Promise<void> {
+  if (isTauri()) await invoke<void>("notice_open_settings");
+}

@@ -1137,6 +1137,28 @@ fn hide_overlay(app: AppHandle) {
 }
 
 #[tauri::command]
+fn notice_current() -> Option<system::notice::Notice> {
+    system::notice::current()
+}
+
+#[tauri::command]
+fn notice_hide(app: AppHandle) {
+    system::notice::hide(&app);
+}
+
+/// The notice's "Select microphone" / "Open settings" button.
+#[tauri::command]
+fn notice_open_settings(app: AppHandle) {
+    system::notice::hide(&app);
+    if let Some(win) = app.get_webview_window("main") {
+        let _ = win.show();
+        let _ = win.unminimize();
+        let _ = win.set_focus();
+        let _ = win.emit("nav://to", "/settings");
+    }
+}
+
+#[tauri::command]
 fn show_overlay(app: AppHandle) {
     system::overlay::show_overlay(&app);
 }
@@ -1512,6 +1534,9 @@ pub fn run() {
             copy_to_clipboard,
             quit_app,
             hide_overlay,
+            notice_current,
+            notice_hide,
+            notice_open_settings,
             show_overlay,
             set_overlay_size,
             hf::hf_search_models,

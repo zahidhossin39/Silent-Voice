@@ -46,6 +46,13 @@ pub fn resolve_thread_count(high_performance: bool, performance_threads: u32) ->
 fn report_error(app: &AppHandle, context: &str, msg: &str) {
     logging::log_error(context, msg);
     let _ = app.emit("pipeline://error", msg.to_string());
+    // Also on screen: the dashboard is usually closed to the tray. Paste
+    // messages already say what to do (press Ctrl+V); real failures offer the logs.
+    if context == "paste" {
+        crate::system::notice::show(app, "Text copied instead", msg, "");
+    } else {
+        crate::system::notice::show(app, "Dictation didn't work", msg, "logs");
+    }
 }
 
 #[derive(Serialize, Clone)]
@@ -1002,8 +1009,33 @@ pub async fn process_audio_pipeline(
         // Say so — otherwise the dictation just vanishes (no paste, no history).
         let _ = app.emit(
             "pipeline://error",
-            "Didn't catch any speech. Speak a bit louder, or lower Input sensitivity in Settings.",
+            "Didn't catch any speech. Speak a bit louder, or move Background noise filter toward Sensitive in Settings.",
         );
+        // A muted mic (Windows mute, privacy switch, hardware key) records
+        // exact digital silence; a live mic always has some room noise.
+        let peak = remaining.iter().fold(0f32, |m, x| m.max(x.abs()));
+        if peak < 1e-4 {
+            let mic = app
+                .state::<AppState>()
+                .config
+                .lock()
+                .ok()
+                .and_then(|c| c.audio_device.clone())
+                .unwrap_or_else(|| "your default microphone".into());
+            crate::system::notice::show(
+                &app,
+                "Is your microphone muted?",
+                &format!("We didn't pick up any audio from {mic}."),
+                "mic",
+            );
+        } else {
+            crate::system::notice::show(
+                &app,
+                "Didn't catch any speech",
+                "Speak a bit louder, or move Background noise filter toward Sensitive.",
+                "settings",
+            );
+        }
         go_idle(&app);
         return;
     }
