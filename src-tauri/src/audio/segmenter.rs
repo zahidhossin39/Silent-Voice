@@ -220,17 +220,26 @@ pub fn spawn(app: AppHandle, seg: Arc<Segmenter>, cfg: ChunkCfg, generation: usi
     });
 }
 
-/// Frame index to cut at, or None when this isn't a real pause yet.
+/// Frame index to cut at, or None when there is no real pause yet.
+///
+/// Takes the LATEST real pause anywhere in the buffer, not only one at its end:
+/// the user keeps talking while a chunk decodes, and a pause made then must
+/// still count, or everything after it piles into one slow tail (a 14 s tail
+/// cost 6.9 s after release in the logs).
 fn find_boundary(mask: &[bool]) -> Option<usize> {
-    let last_speech = mask.iter().rposition(|&s| s)?;
-    if (mask.len() - 1 - last_speech) * FRAME_MS < SILENCE_MS {
-        return None;
+    let mut end = mask.len();
+    while end > 0 {
+        let start = mask[..end].iter().rposition(|&s| s)? + 1;
+        if (end - start) * FRAME_MS >= SILENCE_MS
+            && mask[..start].iter().filter(|&&s| s).count() * FRAME_MS >= MIN_SPEECH_MS
+        {
+            // Middle of the silence: far from any word on either side.
+            return Some((start + end) / 2);
+        }
+        // Step back over this run of speech to the silence before it.
+        end = mask[..start].iter().rposition(|&s| !s).map_or(0, |i| i + 1);
     }
-    if mask[..=last_speech].iter().filter(|&&s| s).count() * FRAME_MS < MIN_SPEECH_MS {
-        return None;
-    }
-    // Middle of the trailing silence — far from any word on either side.
-    Some((last_speech + 1 + mask.len()) / 2)
+    None
 }
 
 async fn transcribe_chunk(
@@ -314,6 +323,23 @@ mod tests {
         let cut = find_boundary(&frames(speech, silence)).expect("boundary");
         assert!(cut > speech, "cut landed in speech at {cut} (speech ends {speech})");
         assert!(cut < speech + silence, "cut ran past the silence at {cut}");
+    }
+
+    #[test]
+    fn pause_made_while_busy_still_cuts() {
+        // Speech, a real pause, then more speech still going: the pause was
+        // missed at the live edge (a chunk was decoding) but must still cut.
+        let first = ms_to_frames(3000);
+        let pause = ms_to_frames(900);
+        let mut m = frames(first, pause);
+        m.extend(vec![true; ms_to_frames(4000)]);
+        let cut = find_boundary(&m).expect("boundary");
+        assert!(cut > first && cut < first + pause, "cut at {cut}");
+        // The latest qualifying pause wins.
+        let mut later = m.clone();
+        later.extend(vec![false; pause]);
+        later.extend(vec![true; 10]);
+        assert!(find_boundary(&later).unwrap() > m.len());
     }
 
     #[test]

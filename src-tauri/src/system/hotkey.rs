@@ -340,8 +340,11 @@ pub fn start_capture(app: &AppHandle) {
     let (device, chunk_cfg) = match state.config.lock() {
         Ok(cfg) => {
             let dev = cfg.audio_device.clone();
+            // English only: elsewhere no punctuation model repairs the
+            // pause-broken sentences, so one full pass reads better.
             let should_spawn = cfg.chunk_on_silence
                 && cfg.stt_source == "local"
+                && english_text(&cfg.language, &cfg.model_id)
                 && registry::vad_dir().join("silero_vad.onnx").exists();
             let chunk_cfg = if should_spawn {
                 let threads = resolve_thread_count(cfg.high_performance, cfg.performance_threads);
@@ -374,6 +377,8 @@ pub fn start_capture(app: &AppHandle) {
             let level = rec.level_handle();
             let generation = state.segmenter.reset();
             if let Some(cfg) = chunk_cfg {
+                // Load it now (~400 ms cold) so release doesn't pay for it.
+                std::thread::spawn(crate::system::sherpa_stt::warm_punct);
                 crate::audio::segmenter::spawn(
                     app.clone(),
                     state.segmenter.clone(),
@@ -752,6 +757,14 @@ fn finalize_recording(app: AppHandle) {
     });
 }
 
+/// The punctuation model is English-only.
+fn english_text(language: &str, model_id: &str) -> bool {
+    language.starts_with("en")
+        || model_id == "parakeet-tdt-0.6b-v2"
+        || model_id.starts_with("moonshine")
+        || model_id.ends_with(".en")
+}
+
 fn join_parts(a: &str, b: &str) -> String {
     let a_trim = a.trim();
     let b_trim = b.trim();
@@ -964,11 +977,7 @@ pub async fn process_audio_pipeline(
     let raw_text = join_parts(&prefix, &tail_text);
     // Chunks were decoded alone, so every thinking pause became a full stop.
     // The punctuation model is English-only.
-    let english = language.starts_with("en")
-        || model_id == "parakeet-tdt-0.6b-v2"
-        || model_id.starts_with("moonshine")
-        || model_id.ends_with(".en");
-    let raw_text = if chunked && english {
+    let raw_text = if chunked && english_text(&language, &model_id) {
         let t = std::time::Instant::now();
         let fixed = crate::system::sherpa_stt::repunctuate(&raw_text);
         crate::logging::log_info("punct", &format!("repunctuated in {}ms", t.elapsed().as_millis()));

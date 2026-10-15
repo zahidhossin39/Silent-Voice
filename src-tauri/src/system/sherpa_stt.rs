@@ -954,6 +954,18 @@ fn load_punct(dir: &Path) -> Result<Punct, String> {
     Ok(Punct(p))
 }
 
+/// Load the punctuation model if it isn't yet. Errors surface on real use.
+pub fn warm_punct() {
+    if !crate::models::registry::punct_installed() {
+        return;
+    }
+    if let Ok(mut slot) = PUNCT.lock() {
+        if slot.is_none() {
+            *slot = load_punct(&crate::models::registry::punct_dir()).ok();
+        }
+    }
+}
+
 fn add_punct(text: &str) -> Result<String, String> {
     let lib = super::sherpa::lib()?;
     let mut slot = PUNCT.lock().map_err(|e| e.to_string())?;
@@ -1018,10 +1030,18 @@ fn merge_punct(words: &[&str], model: &str) -> Option<String> {
         return None;
     }
     let mut out: Vec<String> = Vec::with_capacity(words.len());
+    let mut starts_sentence = true;
     for (i, (w, mw)) in words.iter().zip(&m).enumerate() {
+        let mut tail = &mw[mw.trim_end_matches(PUNCT_MARKS).len()..];
+        // No chunk join follows the last word, so Parakeet's own ? or ! there
+        // is trustworthy (it hears the intonation; the text model can't).
+        // Everywhere else it isn't: keeping them all scored 25 vs 22 errors.
+        if i + 1 == words.len() && w.ends_with(['?', '!']) {
+            tail = &w[w.len() - 1..];
+        }
         let core = w.trim_end_matches(PUNCT_MARKS);
-        let tail = &mw[mw.trim_end_matches(PUNCT_MARKS).len()..];
-        let starts_sentence = out.last().map_or(true, |p| p.ends_with(SENTENCE_END));
+        // "a.m." and "e.g." keep their own final dot.
+        let abbrev = is_abbreviation(core) && w[core.len()..].starts_with('.');
         let core = if starts_sentence {
             super::textfmt::capitalize_first(core)
         } else if i > 0
@@ -1033,7 +1053,8 @@ fn merge_punct(words: &[&str], model: &str) -> Option<String> {
         } else {
             core.to_string()
         };
-        out.push(core + tail);
+        out.push(if abbrev { core + "." + tail.trim_start_matches('.') } else { core + tail });
+        starts_sentence = tail.ends_with(SENTENCE_END);
     }
     let mut s = out.join(" ");
     // The model often leaves the last word bare.
@@ -1042,6 +1063,12 @@ fn merge_punct(words: &[&str], model: &str) -> Option<String> {
         s.push('.');
     }
     Some(s)
+}
+
+/// "a.m", "e.g", "U.S" (final dot already stripped); not "3.5" or "node.js".
+fn is_abbreviation(w: &str) -> bool {
+    w.contains('.')
+        && w.split('.').all(|p| (1..=2).contains(&p.chars().count()) && p.chars().all(char::is_alphabetic))
 }
 
 /// "Thursday" yes; "I", "I'm", "GitHub", "API" no: those keep their capitals.
@@ -1243,6 +1270,17 @@ mod tests {
     }
 
     #[test]
+    fn merge_punct_keeps_abbreviations_and_a_final_question() {
+        let words: Vec<&str> = "It opens at 9 a.m. Then. Can we go?".split_whitespace().collect();
+        let model = "it opens at 9 am. then can we go.";
+        assert_eq!(merge_punct(&words, model).unwrap(), "It opens at 9 a.m. Then can we go?");
+        // A mid-text ? is a chunk-join guess: the model decides there.
+        let words: Vec<&str> = "Can we do that? Without the cloud".split_whitespace().collect();
+        let model = "can we do that without the cloud";
+        assert_eq!(merge_punct(&words, model).unwrap(), "Can we do that without the cloud.");
+    }
+
+    #[test]
     fn merge_punct_refuses_misaligned_output() {
         let words: Vec<&str> = "one two three".split_whitespace().collect();
         assert!(merge_punct(&words, "one two").is_none());
@@ -1254,6 +1292,29 @@ mod tests {
         let out = repunctuate("So I was thinking about. What we should build next for the app. Can we do that");
         println!("{out}");
         assert!(out.starts_with("So I was thinking about what we should build next for the app"), "{out}");
+    }
+
+
+    #[test]
+    #[ignore] // needs the downloaded punctuation model
+    fn repunctuate_never_changes_words() {
+        let bare = |t: &str| -> Vec<String> {
+            t.split_whitespace().map(|w| w.trim_end_matches(PUNCT_MARKS).to_lowercase()).collect()
+        };
+        for input in [
+            "So I was thinking about. What we should build next for the app. Can we do that",
+            "I paid $20 for 3.5 GB on GitHub. Then Claude said it's fine, e.g. the API. Works",
+            "Um, so the café in São Paulo. Opens at 9 a.m. I think",
+            "Send it to bob@example.com & then. Press enter.",
+            "don't won't can't I'm I'll. You're",
+            "one",
+            "ok? ok! ok, ok.",
+            "The meeting is on Thursday. Afternoon. Which works for me",
+        ] {
+            let out = repunctuate(input);
+            println!("{input}\n  -> {out}");
+            assert_eq!(bare(&out), bare(input), "words changed: {input} -> {out}");
+        }
     }
 
 }
