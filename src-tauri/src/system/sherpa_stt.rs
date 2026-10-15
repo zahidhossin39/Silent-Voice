@@ -1317,4 +1317,62 @@ mod tests {
         }
     }
 
+
+    /// Repro for "pressed the hotkey, said nothing, got 'Mm-hmm.'": the quiet
+    /// head and tail of the user's real saved clips (mic noise, key clicks, the
+    /// start sound) go through the app's real gate at the user's sensitivity,
+    /// then Parakeet. Any text out of that is a phantom.
+    #[test]
+    #[ignore] // needs the user's clips + Parakeet + VAD on disk
+    fn phantom_text_on_silence() {
+        let sens: u32 = std::env::var("SV_SENS").ok().and_then(|v| v.parse().ok()).unwrap_or(100);
+        let dir = crate::models::registry::stt_model_dir("parakeet-tdt-0.6b-v2");
+        let eng = SherpaSttEngine::load_transducer(&dir, 4, None, 1.5).unwrap();
+        let clips = dirs::data_dir().unwrap().join("SilentVoice").join("audio").join("clips");
+        let mut phantoms = 0;
+        let mut tried = 0;
+        for e in std::fs::read_dir(clips).unwrap().flatten() {
+            let x = read_wav_mono_f32(&e.path()).unwrap();
+            // Where the user's speech starts/ends, by a strict VAD threshold.
+            let Some(mask) = crate::audio::vad::speech_mask(&x, 0.5) else { panic!("no VAD") };
+            let f = crate::audio::vad::FRAME;
+            let first = mask.iter().position(|&v| v).unwrap_or(mask.len()) * f;
+            let last = (mask.iter().rposition(|&v| v).map_or(0, |i| i + 1)) * f;
+            for (name, piece) in [("head", &x[..first.saturating_sub(1600)]), ("tail", &x[(last + 4800).min(x.len())..])] {
+                for secs in [0.4f32, 0.8, 1.2] {
+                    let n = (secs * 16000.0) as usize;
+                    if piece.len() < n { continue; }
+                    let clip = if name == "head" { &piece[..n] } else { &piece[piece.len() - n..] };
+                    tried += 1;
+                    let Some(trimmed) = crate::audio::gate::trim_silence(clip, sens) else { continue };
+                    let text = eng.transcribe(&trimmed).unwrap();
+                    println!("{:?} {name} {secs}s -> gate kept {:.2}s -> {text:?}", e.file_name(), trimmed.len() as f32 / 16000.0);
+                    if !text.is_empty() { phantoms += 1; }
+                }
+            }
+        }
+        println!("sensitivity {sens}: {phantoms} phantom(s) from {tried} silent clips");
+        assert!(tried > 0);
+        assert_eq!(phantoms, 0);
+    }
+
+
+    /// The other side of phantom_text_on_silence: short, quiet real words
+    /// (TTS "Yes." / "No." mixed into the user's mic noise, in SV_SHORTWORDS)
+    /// must still get through the gate and transcribe.
+    #[test]
+    #[ignore] // needs SV_SHORTWORDS clips + Parakeet + VAD on disk
+    fn short_quiet_words_survive_the_gate() {
+        let dir = crate::models::registry::stt_model_dir("parakeet-tdt-0.6b-v2");
+        let eng = SherpaSttEngine::load_transducer(&dir, 4, None, 1.5).unwrap();
+        let mut lost = Vec::new();
+        for e in std::fs::read_dir(std::env::var("SV_SHORTWORDS").unwrap()).unwrap().flatten() {
+            let x = read_wav_mono_f32(&e.path()).unwrap();
+            let text = crate::audio::gate::trim_silence(&x, 100).map(|c| eng.transcribe(&c).unwrap()).unwrap_or_default();
+            println!("{:?} -> {text:?}", e.file_name());
+            if text.is_empty() { lost.push(e.file_name()); }
+        }
+        assert!(lost.is_empty(), "real words dropped: {lost:?}");
+    }
+
 }
