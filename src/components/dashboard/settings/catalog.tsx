@@ -16,6 +16,7 @@ import type { TopicId } from "./topics";
 import { GhostButton, IconButton, Segmented, Slider, Toggle, inputCls } from "./parts";
 import { ArrowIcon, PlayIcon, PlusIcon, XIcon } from "./icons";
 import { CoeditControl, GectorControl } from "./downloads";
+import { useHardwareInfo } from "../../../hooks/useHardwareInfo";
 
 export interface Ctx {
   s: Settings;
@@ -474,6 +475,15 @@ export const SETTINGS: SettingDef[] = [
     render: (c) => <UnloadSelect c={c} />,
   },
   {
+    id: "threads",
+    topic: "system",
+    tier: "advanced",
+    label: "CPU cores for speech",
+    info: "How many CPU cores turn your voice into text. Auto uses all your real cores, which is fastest. Pick fewer to leave room for other apps; dictation gets a little slower.",
+    keywords: "cpu cores threads performance speed high performance",
+    render: (c) => <ThreadsSelect c={c} />,
+  },
+  {
     id: "gpu",
     topic: "system",
     tier: "advanced",
@@ -780,6 +790,30 @@ function UnloadSelect({ c }: { c: Ctx }) {
   );
 }
 
+// Never more than the real cores: hyper-threads made Parakeet 2x slower on a
+// 4-core/8-thread laptop (801 ms vs 385 ms for a 1 s clip), so the backend
+// caps there anyway.
+function ThreadsSelect({ c }: { c: Ctx }) {
+  const { hardware } = useHardwareInfo();
+  const cores = Math.max(hardware?.physical_cores ?? 4, 1);
+  const n = c.s.performance_threads;
+  const value = c.s.high_performance && n >= 2 && n < cores ? n : 0;
+  return (
+    <Select
+      value={String(value)}
+      onChange={(v) => c.set(v === "0" ? { high_performance: false, performance_threads: 0 } : { high_performance: true, performance_threads: Number(v) })}
+      className="w-52 xl:w-60"
+    >
+      <option value="0">Auto, all {cores} cores</option>
+      {Array.from({ length: Math.max(cores - 2, 0) }, (_, i) => cores - 1 - i).map((k) => (
+        <option key={k} value={String(k)}>
+          {k} cores
+        </option>
+      ))}
+    </Select>
+  );
+}
+
 // What the page no longer asks about, because the app handles it.
 export const AUTOMATIC: { label: string; detail: string }[] = [
   {
@@ -788,6 +822,6 @@ export const AUTOMATIC: { label: string; detail: string }[] = [
   },
   {
     label: "Tuned for this PC",
-    detail: "Graphics card, CPU threads and grammar defaults are picked for your hardware when you first set up Silent Voice.",
+    detail: "Graphics card and grammar defaults are picked for your hardware when you first set up Silent Voice.",
   },
 ];
