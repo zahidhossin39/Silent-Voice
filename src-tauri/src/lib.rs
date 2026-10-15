@@ -29,6 +29,8 @@ pub struct RuntimeConfig {
     pub language: String,
     pub audio_device: Option<String>,
     pub hotkey: String,
+    /// Pastes the last dictation again (Settings > Dictation > Advanced).
+    pub paste_last_hotkey: String,
     // When false, whisper.cpp gets `-ng` (force CPU). When true, the sidecar
     // uses its GPU backend if the bundled binary was built with one.
     pub use_gpu: bool,
@@ -95,6 +97,8 @@ pub struct RuntimeConfig {
     // next dictation doesn't butt up against this one. History stores the
     // clean text (no trailing space) — the space is a paste-time nicety only.
     pub append_trailing_space: bool,
+    /// Start/stop sound pack id ("off" = silent). See hotkey::sound_pack.
+    pub dictation_sound: String,
     pub save_audio: bool,
     pub audio_clip_limit: usize,
     pub model_unload_minutes: u32,
@@ -127,6 +131,7 @@ impl Default for RuntimeConfig {
             language: "auto".into(),
             audio_device: None,
             hotkey: "Ctrl+Shift+Space".into(),
+            paste_last_hotkey: "Alt+Shift+Z".into(),
             use_gpu: false,
             vocabulary: String::new(),
             use_vocabulary: true,
@@ -146,7 +151,7 @@ impl Default for RuntimeConfig {
             input_sensitivity: 50,
             inline_proofread: false,
             coedit_enabled: false,
-            chunk_on_silence: false,
+            chunk_on_silence: true,
             high_performance: false,
             performance_threads: 0,
             proofread_disabled_rules: Vec::new(),
@@ -158,6 +163,7 @@ impl Default for RuntimeConfig {
             app_profiles: Vec::new(),
             pill_auto_hide: false,
             append_trailing_space: false,
+            dictation_sound: "chorus".into(),
             save_audio: true,
             audio_clip_limit: 20,
             model_unload_minutes: 0,
@@ -474,6 +480,7 @@ fn set_behavior(
     save_audio: bool,
     audio_clip_limit: usize,
     model_unload_minutes: u32,
+    dictation_sound: String,
 ) -> Result<(), String> {
     let mut cfg = state.config.lock().map_err(|e| e.to_string())?;
     cfg.toggle_mode = toggle_mode;
@@ -491,6 +498,7 @@ fn set_behavior(
         .collect();
     cfg.pill_auto_hide = pill_auto_hide;
     cfg.append_trailing_space = append_trailing_space;
+    cfg.dictation_sound = dictation_sound;
     let coedit_was_enabled = cfg.coedit_enabled;
     cfg.coedit_enabled = coedit_enabled;
     cfg.chunk_on_silence = chunk_on_silence;
@@ -598,6 +606,36 @@ fn set_hotkey(app: AppHandle, state: State<AppState>, accelerator: String) -> Re
         .register(shortcut)
         .map_err(|e| e.to_string())?;
     state.config.lock().map_err(|e| e.to_string())?.hotkey = accelerator;
+    Ok(())
+}
+
+#[tauri::command]
+fn preview_dictation_sound(pack: String) {
+    // Start, then stop, so the pair can be judged without dictating.
+    hotkey::play_sound(&pack, true);
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(700));
+        hotkey::play_sound(&pack, false);
+    });
+}
+
+#[tauri::command]
+fn set_paste_last_hotkey(app: AppHandle, state: State<AppState>, accelerator: String) -> Result<(), String> {
+    let prev = state.config.lock().map_err(|e| e.to_string())?.paste_last_hotkey.clone();
+    if prev == accelerator {
+        return Ok(());
+    }
+    let new = Shortcut::from_str(&accelerator).map_err(|_| format!("invalid hotkey: {accelerator}"))?;
+    if let Ok(s) = Shortcut::from_str(&prev) {
+        let _ = app.global_shortcut().unregister(s);
+    }
+    if let Err(e) = app.global_shortcut().register(new) {
+        if let Ok(s) = Shortcut::from_str(&prev) {
+            let _ = app.global_shortcut().register(s);
+        }
+        return Err(format!("Could not use '{accelerator}' ({e}) — keeping '{prev}'."));
+    }
+    state.config.lock().map_err(|e| e.to_string())?.paste_last_hotkey = accelerator;
     Ok(())
 }
 
@@ -1099,6 +1137,28 @@ fn hide_overlay(app: AppHandle) {
 }
 
 #[tauri::command]
+fn notice_current() -> Option<system::notice::Notice> {
+    system::notice::current()
+}
+
+#[tauri::command]
+fn notice_hide(app: AppHandle) {
+    system::notice::hide(&app);
+}
+
+/// The notice's "Select microphone" / "Open settings" button.
+#[tauri::command]
+fn notice_open_settings(app: AppHandle) {
+    system::notice::hide(&app);
+    if let Some(win) = app.get_webview_window("main") {
+        let _ = win.show();
+        let _ = win.unminimize();
+        let _ = win.set_focus();
+        let _ = win.emit("nav://to", "/settings");
+    }
+}
+
+#[tauri::command]
 fn show_overlay(app: AppHandle) {
     system::overlay::show_overlay(&app);
 }
@@ -1215,7 +1275,19 @@ pub fn run() {
                     let is_tts = Shortcut::from_str(&tts_hotkey)
                         .map(|s| s == *shortcut)
                         .unwrap_or(false);
-                    if is_tts {
+                    let paste_last = app
+                        .try_state::<AppState>()
+                        .and_then(|s| s.config.lock().ok().map(|c| c.paste_last_hotkey.clone()))
+                        .unwrap_or_default();
+                    if Shortcut::from_str(&paste_last).map_or(false, |s| s == *shortcut) {
+                        if let ShortcutState::Pressed = event.state() {
+                            hotkey::paste_last();
+                        }
+                    } else if hotkey::is_cancel_key(app, shortcut) {
+                        if let ShortcutState::Pressed = event.state() {
+                            hotkey::cancel_capture(app);
+                        }
+                    } else if is_tts {
                         if let ShortcutState::Pressed = event.state() {
                             system::tts::read_selection(app);
                         }
@@ -1286,6 +1358,10 @@ pub fn run() {
             let defaults = RuntimeConfig::default();
             if let Ok(shortcut) = Shortcut::from_str(&defaults.hotkey) {
                 let _ = app.global_shortcut().register(shortcut);
+            }
+            // Skipped quietly if another app already owns Alt+Shift+Z.
+            if let Ok(s) = Shortcut::from_str(&defaults.paste_last_hotkey) {
+                let _ = app.global_shortcut().register(s);
             }
             if defaults.tts_enabled {
                 if let Ok(shortcut) = Shortcut::from_str(&defaults.tts_hotkey) {
@@ -1419,6 +1495,8 @@ pub fn run() {
             open_accessibility_settings,
             inline_fix,
             set_hotkey,
+            set_paste_last_hotkey,
+            preview_dictation_sound,
             set_tts,
             tts_read_selection,
             tts_stop,
@@ -1456,6 +1534,9 @@ pub fn run() {
             copy_to_clipboard,
             quit_app,
             hide_overlay,
+            notice_current,
+            notice_hide,
+            notice_open_settings,
             show_overlay,
             set_overlay_size,
             hf::hf_search_models,

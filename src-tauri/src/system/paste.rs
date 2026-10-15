@@ -28,6 +28,14 @@ pub fn press_shortcut(letter: char) -> Result<(), String> {
     })
 }
 
+/// Press Enter (the "press enter" voice command).
+pub fn press_enter() -> Result<(), String> {
+    on_main_thread(|| {
+        let mut enigo = Enigo::new(&EnigoSettings::default()).map_err(|e| e.to_string())?;
+        enigo.key(Key::Return, Click).map_err(|e| e.to_string())
+    })
+}
+
 #[cfg(target_os = "macos")]
 fn on_main_thread<F: FnOnce() -> R, R>(f: F) -> R {
     use std::ffi::c_void;
@@ -75,7 +83,12 @@ pub fn paste_at_cursor(text: &str) -> Result<(), String> {
         }
     }
 
+    // Windows: snapshot EVERY format (images, copied files, rich text), not just
+    // text, so a dictation never wipes a copied screenshot or file.
+    #[cfg(windows)]
+    let original = win_clip::save();
     let mut clipboard = Clipboard::new().map_err(|e| e.to_string())?;
+    #[cfg(not(windows))]
     let original = clipboard.get_text().ok();
 
     clipboard
@@ -88,15 +101,131 @@ pub fn paste_at_cursor(text: &str) -> Result<(), String> {
     // Restore the user's original clipboard after the paste lands — but only if
     // the clipboard still holds OUR text. If the user copied something new during
     // the paste window, restoring our saved copy would clobber their fresh one.
-    if let Some(original_text) = original {
-        thread::sleep(Duration::from_millis(250));
-        let still_ours = clipboard.get_text().ok().as_deref() == Some(text);
-        if still_ours {
-            let _ = clipboard.set_text(original_text);
+    thread::sleep(Duration::from_millis(250));
+    let still_ours = clipboard.get_text().ok().as_deref() == Some(text);
+    drop(clipboard);
+    if still_ours {
+        #[cfg(windows)]
+        if !original.is_empty() {
+            win_clip::restore(&original);
+        }
+        #[cfg(not(windows))]
+        if let Some(original_text) = original {
+            let _ = Clipboard::new().and_then(|mut c| c.set_text(original_text));
         }
     }
 
     Ok(())
+}
+
+/// Raw save/restore of every clipboard format, so non-text content survives.
+#[cfg(windows)]
+mod win_clip {
+    use windows::Win32::Foundation::{GlobalFree, HANDLE, HGLOBAL, HWND};
+    use windows::Win32::System::DataExchange::{
+        CloseClipboard, EmptyClipboard, EnumClipboardFormats, GetClipboardData, OpenClipboard,
+        SetClipboardData,
+    };
+    use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalSize, GlobalUnlock, GMEM_MOVEABLE};
+
+    /// GDI-handle formats aren't memory blocks; Windows re-creates them from
+    /// their memory twins (CF_DIB → CF_BITMAP), so skipping them loses nothing.
+    const HANDLE_FORMATS: [u32; 8] = [2, 3, 9, 14, 0x80, 0x82, 0x83, 0x8E];
+    /// Past this the snapshot isn't worth the memory; the clipboard keeps our text.
+    const MAX_BYTES: usize = 64 << 20;
+
+    fn open() -> bool {
+        // Another app can hold the clipboard for a moment; retry briefly.
+        for _ in 0..10 {
+            if unsafe { OpenClipboard(HWND::default()) }.is_ok() {
+                return true;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        false
+    }
+
+    pub fn save() -> Vec<(u32, Vec<u8>)> {
+        let mut out = Vec::new();
+        if !open() {
+            return out;
+        }
+        let mut total = 0usize;
+        let mut fmt = 0u32;
+        unsafe {
+            loop {
+                fmt = EnumClipboardFormats(fmt);
+                if fmt == 0 {
+                    break;
+                }
+                if HANDLE_FORMATS.contains(&fmt) {
+                    continue;
+                }
+                let Ok(h) = GetClipboardData(fmt) else { continue };
+                let g = HGLOBAL(h.0);
+                let size = GlobalSize(g);
+                let ptr = GlobalLock(g);
+                if ptr.is_null() || size == 0 {
+                    continue;
+                }
+                total += size;
+                if total > MAX_BYTES {
+                    let _ = GlobalUnlock(g);
+                    out.clear();
+                    break;
+                }
+                out.push((fmt, std::slice::from_raw_parts(ptr as *const u8, size).to_vec()));
+                let _ = GlobalUnlock(g);
+            }
+            let _ = CloseClipboard();
+        }
+        out
+    }
+
+    /// Touches the real system clipboard, so it's opt-in:
+    /// `cargo test --lib clipboard_roundtrip -- --ignored`
+    #[test]
+    #[ignore]
+    fn clipboard_roundtrip() {
+        let users = save(); // put the developer's clipboard back afterwards
+        // A tiny 1×1 CF_DIB image (format 8) plus an app-private format.
+        let mut dib = vec![0u8; 44];
+        dib[0] = 40; dib[4] = 1; dib[8] = 1; dib[12] = 1; dib[14] = 24; dib[40] = 0xAB;
+        let image = vec![(8u32, dib.clone()), (0xC123, b"private".to_vec())];
+        restore(&image);
+        let snap = save();
+        arboard::Clipboard::new().unwrap().set_text("dictated").unwrap();
+        restore(&snap);
+        let back = save();
+        restore(&users);
+        let get = |f| back.iter().find(|(x, _)| *x == f).map(|(_, b)| b.clone());
+        assert_eq!(get(8).as_deref().map(|b| &b[..44]), Some(&dib[..]));
+        assert_eq!(get(0xC123).as_deref().map(|b| &b[..7]), Some(&b"private"[..]));
+    }
+
+    pub fn restore(saved: &[(u32, Vec<u8>)]) {
+        if !open() {
+            return;
+        }
+        unsafe {
+            let _ = EmptyClipboard();
+            for (fmt, bytes) in saved {
+                let Ok(g) = GlobalAlloc(GMEM_MOVEABLE, bytes.len()) else { continue };
+                let ptr = GlobalLock(g);
+                if ptr.is_null() {
+                    let _ = GlobalFree(g);
+                    continue;
+                }
+                std::ptr::copy_nonoverlapping(bytes.as_ptr(), ptr as *mut u8, bytes.len());
+                let _ = GlobalUnlock(g);
+                // On success the clipboard owns the memory; free it only on failure.
+                if SetClipboardData(*fmt, HANDLE(g.0)).is_err() {
+                    let _ = GlobalFree(g);
+                }
+            }
+            let _ = CloseClipboard();
+        }
+    }
 }
 
 /// Put text on the clipboard WITHOUT pasting. Used when a safety guard blocks

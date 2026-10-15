@@ -113,6 +113,16 @@ fn distance(a: &str, b: &str) -> usize {
     d[a.len()][b.len()]
 }
 
+/// Loose sound match for learning from the user's edits: "cloud code" ~
+/// "Claude Code", "jet sap" ~ "GSAP", but not "redo all of it" ~ "fix the".
+/// Looser than `close_enough`: the user's own correction is already strong
+/// evidence, this only rules out rewrites.
+pub fn roughly_alike(a: &str, b: &str) -> bool {
+    let sk = |s: &str| skeleton(&s.split_whitespace().map(spoken).collect::<String>());
+    let (x, y) = (sk(a), sk(b));
+    !x.is_empty() && !y.is_empty() && distance(&x, &y) <= x.len().max(y.len()) / 2
+}
+
 /// Short skeletons must match exactly; longer ones may be off by a sound or two.
 fn close_enough(heard: &str, want: &str) -> bool {
     let allowed = match want.len() {

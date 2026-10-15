@@ -8,6 +8,7 @@ use tauri::{AppHandle, Emitter};
 // CoEdIT-large grammar model, INT8 ONNX. Hosted on Hugging Face — upload the
 // three files from coedit-work/coedit_onnx/ to this repo (see release notes).
 // If the HF username differs from the GitHub one, update the repo path here.
+const PUNCT_URL: &str = "https://github.com/k2-fsa/sherpa-onnx/releases/download/punctuation-models/sherpa-onnx-online-punct-en-2024-08-06.tar.bz2";
 const VAD_URL: &str =
     "https://huggingface.co/onnx-community/silero-vad/resolve/main/onnx/model.onnx";
 const COEDIT_ENCODER_URL: &str = "https://huggingface.co/Zaid-Hossain/coedit-large-int8-onnx/resolve/main/encoder_model_int8.onnx";
@@ -215,7 +216,12 @@ async fn extract_tar_bz2(
             let path = entry.path().map_err(|e| format!("invalid entry path: {e}"))?.into_owned();
 
             let rel = if strip_top_folder {
+                // Some archives prefix every entry with "./"; skip it so the
+                // real top folder is the one stripped.
                 let mut components = path.components();
+                if path.starts_with(".") {
+                    components.next();
+                }
                 components.next();
                 let subpath = components.as_path();
                 if subpath.as_os_str().is_empty() {
@@ -283,14 +289,28 @@ pub async fn download_vad_model(app: AppHandle, stop_flag: Option<&DownloadStopF
     registry::ensure_dirs().map_err(|e| e.to_string())?;
     let dir = registry::vad_dir();
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    download_to(
-        app,
-        "vad".into(),
-        VAD_URL.into(),
-        dir.join("silero_vad.onnx"),
-        stop_flag,
-    )
-    .await
+    if !dir.join("silero_vad.onnx").exists()
+        && !download_to(app.clone(), "vad".into(), VAD_URL.into(), dir.join("silero_vad.onnx"), stop_flag).await?
+    {
+        return Ok(false);
+    }
+    if registry::punct_installed() {
+        return Ok(true);
+    }
+    // The archive also carries the fp32 model (30 MB); only int8 + vocab are used.
+    let archive = dir.join("punct.tar.bz2");
+    if !download_to(app, "vad".into(), PUNCT_URL.into(), archive.clone(), stop_flag).await? {
+        return Ok(false);
+    }
+    let punct = registry::punct_dir();
+    let _ = std::fs::remove_dir_all(&punct); // leftovers of a failed extract
+    std::fs::create_dir_all(&punct).map_err(|e| e.to_string())?;
+    extract_tar_bz2(archive, punct.clone(), true).await?;
+    let _ = std::fs::remove_file(punct.join("model.onnx"));
+    if !registry::punct_installed() {
+        return Err("punctuation archive did not contain the expected files".into());
+    }
+    Ok(true)
 }
 
 pub fn delete_vad_model() -> Result<(), String> {
@@ -872,6 +892,21 @@ mod tests {
 
         // Verify model.txt extracted directly to dest and archive was deleted
         assert_eq!(std::fs::read(dest.join("model.txt")).unwrap(), data);
+
+        // Same archive shape but every entry under "./" (the punctuation model's
+        // archive): the real top folder must still be stripped.
+        let mut tar_builder = tar::Builder::new(Vec::new());
+        let mut header = tar::Header::new_gnu();
+        header.set_size(data.len() as u64);
+        header.set_mode(0o644);
+        header.as_gnu_mut().unwrap().name[..23].copy_from_slice(b"./top_folder/dotted.txt");
+        header.set_cksum();
+        tar_builder.append(&header, &data[..]).unwrap();
+        let mut encoder = BzEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(&tar_builder.into_inner().unwrap()).unwrap();
+        std::fs::write(&archive_path, encoder.finish().unwrap()).unwrap();
+        extract_tar_bz2(archive_path.clone(), dest.clone(), true).await.unwrap();
+        assert_eq!(std::fs::read(dest.join("dotted.txt")).unwrap(), data);
         assert!(!archive_path.exists(), "archive should be deleted after extraction");
 
         let _ = std::fs::remove_dir_all(&tmp);

@@ -61,13 +61,15 @@ export const DEFAULT_SETTINGS: Settings = {
   input_sensitivity: 50,
   inline_proofread: INLINE_PROOFREAD_DEFAULT,
   coedit_enabled: false,
-  chunk_on_silence: false,
+  chunk_on_silence: true,
   proofread_disabled_rules: [],
   gector_sensitivity: "balanced",
   proofread_ignore_apps: "",
   pill_auto_hide: false,
   append_trailing_space: false,
+  dictation_sound: "chorus",
   active_tts_voice: null,
+  paste_last_hotkey: "Alt+Shift+Z",
   tts_hotkey: "Ctrl+Alt+S",
   tts_enabled: true,
   onboarded: false,
@@ -238,12 +240,17 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: "silent-voice-settings",
-      version: 1,
+      version: 2,
       migrate: (persistedState: any, fromVersion: number) => {
         // Chunked transcription shipped enabled and regressed quality on
         // 4-core laptops; force it off once for anyone who stored `true`.
         if (fromVersion < 1 && persistedState?.settings) {
           persistedState.settings.chunk_on_silence = false;
+        }
+        // Back on once: a punctuation model now repairs the pause-broken
+        // sentences that made it worse (23 vs 35 errors for a full pass).
+        if (fromVersion < 2 && persistedState?.settings) {
+          persistedState.settings.chunk_on_silence = true;
         }
         return persistedState;
       },
@@ -266,6 +273,9 @@ export const useSettingsStore = create<SettingsState>()(
         // side forever with the same error banner on every launch.
         if (!isValidAccelerator(mergedSettings.hotkey)) {
           mergedSettings.hotkey = DEFAULT_SETTINGS.hotkey;
+        }
+        if (!isValidAccelerator(mergedSettings.paste_last_hotkey)) {
+          mergedSettings.paste_last_hotkey = DEFAULT_SETTINGS.paste_last_hotkey;
         }
         if (!isValidAccelerator(mergedSettings.tts_hotkey)) {
           mergedSettings.tts_hotkey = DEFAULT_SETTINGS.tts_hotkey;

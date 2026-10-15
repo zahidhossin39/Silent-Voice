@@ -17,6 +17,10 @@ const FRAME_MS: usize = 30;
 // speech is exactly what Whisper hallucinates extra words on.
 const PAD_FRAMES_LEAD: usize = 14; // ~420ms before speech
 const PAD_FRAMES_TAIL: usize = 8; // ~240ms after speech
+/// Silero frames (32 ms each) of speech a clip needs to count as speech.
+const MIN_SPEECH_FRAMES: usize = 3;
+/// Silero's own default speech threshold.
+const CONFIDENT: f32 = 0.5;
 
 /// Map the 0–100 sensitivity slider to an RMS threshold (log scale).
 /// 100 = very sensitive (whispers count as speech, threshold ~0.0015)
@@ -60,6 +64,20 @@ pub fn trim_silence(samples: &[f32], sensitivity: u32) -> Option<Vec<f32>> {
         // verdict. Falling back to RMS on an empty mask would re-admit exactly
         // the loud non-speech (fan, keyboard, music) it just rejected.
         Some(mask) => {
+            // One or two stray frames are mic noise or a key click, not a
+            // word: at high sensitivity they passed, got padded to 0.3 s, and
+            // Parakeet turned them into "Mm-hmm." / "Okay.". Measured on the
+            // user's mic: phantoms had 1-2 speech frames, the quietest real
+            // "Hi." had 5.
+            if mask.iter().filter(|&&s| s).count() < MIN_SPEECH_FRAMES {
+                return None;
+            }
+            // And at least one frame the VAD is sure about: a silent press
+            // ("Yeah.") had 3 frames just over the 0.15 sensitivity threshold
+            // and none over 0.5; every real word, even a whispered "Hi.", has some.
+            if !vad::speech_mask(samples, CONFIDENT).is_some_and(|m| m.contains(&true)) {
+                return None;
+            }
             let first = mask.iter().position(|&s| s)?;
             let last = mask.iter().rposition(|&s| s)?;
             (first * vad::FRAME, (last + 1) * vad::FRAME)
@@ -129,3 +147,4 @@ mod tests {
         assert!(trim_silence(&tone(100, 0.5), 50).is_none());
     }
 }
+

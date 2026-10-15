@@ -271,8 +271,19 @@ pub fn vad_dir() -> PathBuf {
     models_dir().join("vad")
 }
 
+/// The punctuation model rides in the VAD folder: both exist only to make
+/// background (chunked) transcription work, so they download and delete together.
+pub fn punct_dir() -> PathBuf {
+    vad_dir().join("punct")
+}
+
+pub fn punct_installed() -> bool {
+    let d = punct_dir();
+    d.join("model.int8.onnx").exists() && d.join("bpe.vocab").exists()
+}
+
 pub fn vad_installed() -> bool {
-    vad_dir().join("silero_vad.onnx").exists()
+    vad_dir().join("silero_vad.onnx").exists() && punct_installed()
 }
 
 pub fn coedit_dir() -> PathBuf {

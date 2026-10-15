@@ -9,13 +9,14 @@ import Select from "../../shared/Select";
 import { useSettingsStore } from "../../../stores/settingsStore";
 import { useModelStore } from "../../../stores/modelStore";
 import { LANGUAGES, STT_MODELS, TTS_MODELS, TTS_SAMPLE_TEXT, honorsLanguage } from "../../../services/catalog";
-import { copyDiagnostics, copyToClipboard, exportLogs, openLogsFolder, ttsSpeakText } from "../../../services/tauriBridge";
+import { copyDiagnostics, copyToClipboard, exportLogs, openLogsFolder, previewDictationSound, ttsSpeakText } from "../../../services/tauriBridge";
 import { checkForUpdatesManual } from "../../../services/updater";
 import type { Settings } from "../../../types";
 import type { TopicId } from "./topics";
 import { GhostButton, IconButton, Segmented, Slider, Toggle, inputCls } from "./parts";
 import { ArrowIcon, PlayIcon, PlusIcon, XIcon } from "./icons";
 import { CoeditControl, GectorControl } from "./downloads";
+import { useHardwareInfo } from "../../../hooks/useHardwareInfo";
 
 export interface Ctx {
   s: Settings;
@@ -54,7 +55,7 @@ const UNDERLINES = "Underline mistakes as I type";
 const READ_ALOUD = "Read selected text aloud";
 
 export const SETTINGS: SettingDef[] = [
-  // ── Dictation ────────────────────────────────────────────────────────────
+  // â”€â”€ Dictation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   {
     id: "hotkey",
     topic: "dictation",
@@ -101,6 +102,16 @@ export const SETTINGS: SettingDef[] = [
     render: (c) => <VoiceModelLink c={c} />,
   },
   {
+    id: "paste_last",
+    topic: "dictation",
+    tier: "advanced",
+    label: "Paste last dictation",
+    info: "Press this anywhere to paste your last dictation again, for when it landed in the wrong place.",
+    keywords: "hotkey shortcut paste again last repeat",
+    wide: true,
+    render: (c) => <HotkeyRecorder value={c.s.paste_last_hotkey} onChange={(v) => c.set({ paste_last_hotkey: v })} />,
+  },
+  {
     id: "lock",
     topic: "dictation",
     tier: "advanced",
@@ -130,6 +141,33 @@ export const SETTINGS: SettingDef[] = [
     ),
   },
   {
+    id: "sounds",
+    topic: "dictation",
+    tier: "advanced",
+    label: "Start and stop sounds",
+    info: "A soft tick when recording starts and stops. Play lets you hear the start and stop sound before you dictate.",
+    keywords: "sound beep audio chime feedback tick tap preview play",
+    render: (c) => (
+      <div className="flex items-center gap-2">
+        <Select
+          value={c.s.dictation_sound}
+          onChange={(v) => c.set({ dictation_sound: v })}
+          className="w-52 xl:w-60"
+        >
+          <option value="chorus">Chorus (default)</option>
+          <option value="double-double">Double tap</option>
+          <option value="double-single">Double start, single stop</option>
+          <option value="single-double">Single start, double stop</option>
+          <option value="off">Off</option>
+        </Select>
+        <GhostButton disabled={c.s.dictation_sound === "off"} onClick={() => void previewDictationSound(c.s.dictation_sound)}>
+          <PlayIcon />
+          Play
+        </GhostButton>
+      </div>
+    ),
+  },
+  {
     id: "space",
     topic: "dictation",
     tier: "advanced",
@@ -154,7 +192,7 @@ export const SETTINGS: SettingDef[] = [
     topic: "dictation",
     tier: "advanced",
     label: "Transcribe while you speak",
-    info: "Transcribes finished sentences mid-recording. It rarely helps and can slow 4-core CPUs down. For faster dictation, pick a lighter voice model instead.",
+    info: "Transcribes while you talk, so long dictations paste in about a second instead of many. A small punctuation model fixes the sentence breaks at your pauses (English). Turn off if you prefer one full pass.",
     keywords: "chunk silence streaming",
     render: (c, label) => (
       <Toggle label={label} checked={c.s.chunk_on_silence} onChange={(v) => c.set({ chunk_on_silence: v })} />
@@ -170,7 +208,7 @@ export const SETTINGS: SettingDef[] = [
     render: (c) => <CloudSourceSelect c={c} />,
   },
 
-  // ── Writing help ─────────────────────────────────────────────────────────
+  // â”€â”€ Writing help â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   {
     id: "proofread",
     topic: "writing",
@@ -294,7 +332,7 @@ export const SETTINGS: SettingDef[] = [
     render: () => <ProfilesEditor />,
   },
 
-  // ── Read aloud ───────────────────────────────────────────────────────────
+  // â”€â”€ Read aloud â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   {
     id: "tts",
     topic: "readaloud",
@@ -341,7 +379,7 @@ export const SETTINGS: SettingDef[] = [
     render: (c) => <PlaySample c={c} />,
   },
 
-  // ── Words ────────────────────────────────────────────────────────────────
+  // â”€â”€ Words â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   {
     id: "vocab",
     topic: "words",
@@ -411,7 +449,7 @@ export const SETTINGS: SettingDef[] = [
     ),
   },
 
-  // ── System ───────────────────────────────────────────────────────────────
+  // â”€â”€ System â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   {
     id: "startup",
     topic: "system",
@@ -440,6 +478,15 @@ export const SETTINGS: SettingDef[] = [
     render: (c) => <UnloadSelect c={c} />,
   },
   {
+    id: "threads",
+    topic: "system",
+    tier: "advanced",
+    label: "CPU cores for speech",
+    info: "How many CPU cores turn your voice into text. Auto uses all your real cores, which is fastest. Pick fewer to leave room for other apps; dictation gets a little slower.",
+    keywords: "cpu cores threads performance speed high performance",
+    render: (c) => <ThreadsSelect c={c} />,
+  },
+  {
     id: "gpu",
     topic: "system",
     tier: "advanced",
@@ -462,11 +509,11 @@ export const SETTINGS: SettingDef[] = [
   },
 ];
 
-// ─── Controls with their own state ─────────────────────────────────────────
+// â”€â”€â”€ Controls with their own state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function LanguageControl({ c }: { c: Ctx }) {
   const model = STT_MODELS.find((m) => m.id === c.s.active_stt_model);
-  // A model that ignores the language setting must not show a live picker —
+  // A model that ignores the language setting must not show a live picker â€”
   // that silent mismatch is what made Bangla come back as English.
   if (!honorsLanguage(model))
     return (
@@ -491,7 +538,7 @@ function VoiceModelLink({ c }: { c: Ctx }) {
   const cloud = providers.find((p) => p.id === c.s.stt_cloud_provider_id);
   const model = STT_MODELS.find((m) => m.id === c.s.active_stt_model);
   const ready = !!model && downloaded.has(model.id);
-  const name = cloud ? `Cloud · ${cloud.name}` : model ? model.label : "None chosen";
+  const name = cloud ? `Cloud Â· ${cloud.name}` : model ? model.label : "None chosen";
   return (
     <span className="inline-flex items-center gap-3 text-[13px]">
       <span className={cloud || ready ? "text-sv-text" : "text-sv-muted"}>{name}</span>
@@ -542,7 +589,7 @@ function VoicePicker({ c }: { c: Ctx }) {
         v.voices
           ? v.voices.map((vo) => (
               <option key={`${v.id}#${vo.sid}`} value={`${v.id}#${vo.sid}`}>
-                {v.label} · {vo.label}
+                {v.label} Â· {vo.label}
               </option>
             ))
           : [
@@ -665,9 +712,9 @@ function UpdateCheck() {
         </span>
       )}
       <GhostButton
-        disabled={msg === "Checking…"}
+        disabled={msg === "Checkingâ€¦"}
         onClick={async () => {
-          setMsg("Checking…");
+          setMsg("Checkingâ€¦");
           const r = await checkForUpdatesManual();
           setMsg(
             r.status === "none"
@@ -678,7 +725,7 @@ function UpdateCheck() {
               ? "Updates need the desktop app"
               : r.status === "managed"
               ? "Update with your package manager (yay -Syu)"
-              : "Installing the update…"
+              : "Installing the updateâ€¦"
           );
         }}
       >
@@ -746,6 +793,30 @@ function UnloadSelect({ c }: { c: Ctx }) {
   );
 }
 
+// Never more than the real cores: hyper-threads made Parakeet 2x slower on a
+// 4-core/8-thread laptop (801 ms vs 385 ms for a 1 s clip), so the backend
+// caps there anyway.
+function ThreadsSelect({ c }: { c: Ctx }) {
+  const { hardware } = useHardwareInfo();
+  const cores = Math.max(hardware?.physical_cores ?? 4, 1);
+  const n = c.s.performance_threads;
+  const value = c.s.high_performance && n >= 2 && n < cores ? n : 0;
+  return (
+    <Select
+      value={String(value)}
+      onChange={(v) => c.set(v === "0" ? { high_performance: false, performance_threads: 0 } : { high_performance: true, performance_threads: Number(v) })}
+      className="w-52 xl:w-60"
+    >
+      <option value="0">Auto, all {cores} cores</option>
+      {Array.from({ length: Math.max(cores - 2, 0) }, (_, i) => cores - 1 - i).map((k) => (
+        <option key={k} value={String(k)}>
+          {k} cores
+        </option>
+      ))}
+    </Select>
+  );
+}
+
 // What the page no longer asks about, because the app handles it.
 export const AUTOMATIC: { label: string; detail: string }[] = [
   {
@@ -754,6 +825,6 @@ export const AUTOMATIC: { label: string; detail: string }[] = [
   },
   {
     label: "Tuned for this PC",
-    detail: "Graphics card, CPU threads and grammar defaults are picked for your hardware when you first set up Silent Voice.",
+    detail: "Graphics card and grammar defaults are picked for your hardware when you first set up Silent Voice.",
   },
 ];

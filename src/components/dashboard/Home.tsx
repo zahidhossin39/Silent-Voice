@@ -43,15 +43,6 @@ export default function Home() {
   const daily = useStatsStore((s) => s.daily);
   const today = useTodayStats(daily);
   const strip = useStripStats(daily);
-  const lastError = useUiStore((s) => s.lastError);
-  const setError = useUiStore((s) => s.setError);
-
-  useEffect(() => {
-    if (lastError) {
-      const timeout = setTimeout(() => setError(null), 8000);
-      return () => clearTimeout(timeout);
-    }
-  }, [lastError, setError]);
 
   const [micLevel, setMicLevel] = useState(0);
   useEffect(() => {
@@ -120,18 +111,6 @@ export default function Home() {
         </div>
       )}
 
-      {lastError && (
-        <div className="flex shrink-0 flex-row items-start justify-between rounded-lg border border-sv-bad/30 bg-sv-bad/10 px-4 py-2 text-xs text-sv-bad">
-          <div>{lastError}</div>
-          <button
-            aria-label="Dismiss"
-            onClick={() => setError(null)}
-            className="ml-3 shrink-0 p-0.5 text-sv-bad/60 hover:text-sv-bad"
-          >
-            ×
-          </button>
-        </div>
-      )}
 
       {/* ── Split Cockpit: live console on the left, modules on the right ──
            The grid fills the remaining viewport height; the right column is the

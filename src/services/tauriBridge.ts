@@ -250,7 +250,8 @@ export async function setBehavior(
   chunkOnSilence: boolean,
   saveAudio: boolean,
   audioClipLimit: number,
-  modelUnloadMinutes: number
+  modelUnloadMinutes: number,
+  dictationSound: string
 ): Promise<void> {
   if (!isTauri()) return;
   try {
@@ -270,6 +271,7 @@ export async function setBehavior(
       saveAudio,
       audioClipLimit,
       modelUnloadMinutes,
+      dictationSound,
     });
   } catch (e) {
     console.warn("set_behavior failed", e);
@@ -372,6 +374,24 @@ export async function openAccessibilitySettings(): Promise<void> {
 // ---------------- Read aloud (TTS) ----------------
 
 /** Push the active read-aloud voice + hotkey to Rust (registers the hotkey). */
+export async function previewDictationSound(pack: string): Promise<void> {
+  if (!isTauri()) return;
+  try {
+    await invoke<void>("preview_dictation_sound", { pack });
+  } catch (e) {
+    console.warn("preview_dictation_sound failed", e);
+  }
+}
+
+export async function setPasteLastHotkey(accelerator: string): Promise<void> {
+  if (!isTauri()) return;
+  try {
+    await invoke<void>("set_paste_last_hotkey", { accelerator });
+  } catch (e) {
+    console.warn("set_paste_last_hotkey failed", e);
+  }
+}
+
 export async function setTts(voiceId: string, hotkey: string, enabled: boolean): Promise<void> {
   if (!isTauri()) return;
   try {
@@ -764,3 +784,20 @@ export async function deleteGectorModel(): Promise<void> {
   await invoke<void>("delete_gector_model");
 }
 
+
+// ---------------- On-screen notice (system/notice.rs) ----------------
+
+export type Notice = { title: string; body: string; action: "mic" | "settings" | "logs" | "" };
+
+export async function noticeCurrent(): Promise<Notice | null> {
+  if (!isTauri()) return null;
+  return invoke<Notice | null>("notice_current");
+}
+
+export async function noticeHide(): Promise<void> {
+  if (isTauri()) await invoke<void>("notice_hide");
+}
+
+export async function noticeOpenSettings(): Promise<void> {
+  if (isTauri()) await invoke<void>("notice_open_settings");
+}

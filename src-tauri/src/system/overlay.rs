@@ -130,7 +130,7 @@ pub fn create_overlay(app: &AppHandle) -> tauri::Result<()> {
 /// corners — so fall back to a classic rounded window region. The region is
 /// fixed to one size, so apply_size re-invokes this after every resize.
 #[cfg(windows)]
-fn round_corners(win: &tauri::WebviewWindow, w: i32, h: i32) {
+pub(crate) fn round_corners(win: &tauri::WebviewWindow, w: i32, h: i32) {
     use windows::Win32::Foundation::HWND;
     use windows::Win32::Graphics::Dwm::{
         DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND,
@@ -167,7 +167,7 @@ fn round_corners(win: &tauri::WebviewWindow, w: i32, h: i32) {
 }
 
 #[cfg(not(windows))]
-fn round_corners(_win: &tauri::WebviewWindow, _w: i32, _h: i32) {}
+pub(crate) fn round_corners(_win: &tauri::WebviewWindow, _w: i32, _h: i32) {}
 
 /// Position the window at bottom-center of the primary monitor (bottom edge
 /// fixed, so growing for the menu extends upward).

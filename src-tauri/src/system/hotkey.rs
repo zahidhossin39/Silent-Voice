@@ -46,6 +46,14 @@ pub fn resolve_thread_count(high_performance: bool, performance_threads: u32) ->
 fn report_error(app: &AppHandle, context: &str, msg: &str) {
     logging::log_error(context, msg);
     let _ = app.emit("pipeline://error", msg.to_string());
+    // Also on screen: the dashboard is usually closed to the tray. Paste
+    // messages already say what to do (press Ctrl+V); real failures offer the logs.
+    match context {
+        "copied" => crate::system::notice::show(app, "Text copied instead", msg, ""),
+        // The raw text still pasted; only the AI step was skipped.
+        "ai-mode" => crate::system::notice::show(app, "Pasted without AI mode", msg, "logs"),
+        _ => crate::system::notice::show(app, "Dictation didn't work", msg, "logs"),
+    }
 }
 
 #[derive(Serialize, Clone)]
@@ -340,8 +348,11 @@ pub fn start_capture(app: &AppHandle) {
     let (device, chunk_cfg) = match state.config.lock() {
         Ok(cfg) => {
             let dev = cfg.audio_device.clone();
+            // English only: elsewhere no punctuation model repairs the
+            // pause-broken sentences, so one full pass reads better.
             let should_spawn = cfg.chunk_on_silence
                 && cfg.stt_source == "local"
+                && english_text(&cfg.language, &cfg.model_id)
                 && registry::vad_dir().join("silero_vad.onnx").exists();
             let chunk_cfg = if should_spawn {
                 let threads = resolve_thread_count(cfg.high_performance, cfg.performance_threads);
@@ -374,6 +385,8 @@ pub fn start_capture(app: &AppHandle) {
             let level = rec.level_handle();
             let generation = state.segmenter.reset();
             if let Some(cfg) = chunk_cfg {
+                // Load it now (~400 ms cold) so release doesn't pay for it.
+                std::thread::spawn(crate::system::sherpa_stt::warm_punct);
                 crate::audio::segmenter::spawn(
                     app.clone(),
                     state.segmenter.clone(),
@@ -382,6 +395,18 @@ pub fn start_capture(app: &AppHandle) {
                 );
             }
             *slot = Some(rec);
+            grab_escape(app, true);
+            beep(app, true);
+
+            // If idle-unload may have dropped the model, start reloading it now
+            // so it's warm by the time the key is released. A no-op when loaded.
+            let unload_on = state.config.lock().map_or(false, |c| c.model_unload_minutes > 0);
+            if unload_on {
+                let warm_app = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    let _ = whisper::preload(&warm_app).await;
+                });
+            }
             overlay::show_overlay(app);
             overlay::mark_active(app); // cancel any pending auto-hide from before
             emit_state(app, "recording");
@@ -436,6 +461,149 @@ pub fn cli_record(app: &AppHandle, flag: &str) {
         ("--start", false) | ("--toggle", false) => start_capture(app),
         ("--stop", true) | ("--toggle", true) => stop_capture(app),
         _ => {}
+    }
+}
+
+fn last_dictation() -> Option<String> {
+    history::load().into_iter().map(|e| e.processed_text).find(|t| !t.trim().is_empty())
+}
+
+pub fn paste_last() {
+    // Own thread: never paste from the hotkey callback (see grab_escape).
+    std::thread::spawn(|| {
+        let Some(text) = last_dictation() else { return };
+        logging::log_info("paste", &format!("paste last: {} chars", text.chars().count()));
+        // Wait for Alt/Shift to come up, or Ctrl+V lands as Ctrl+Alt+Shift+V.
+        #[cfg(windows)]
+        for _ in 0..40 {
+            use windows::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState;
+            let held = [0x10, 0x12].iter().any(|&vk| (unsafe { GetAsyncKeyState(vk) } as u16) & 0x8000 != 0);
+            if !held {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(25));
+        }
+        if let Err(e) = paste::paste_at_cursor(&text) {
+            logging::log_error("paste", &format!("paste last failed: {e}"));
+        }
+    });
+}
+
+pub fn copy_last() {
+    if let Some(text) = last_dictation() {
+        let _ = paste::set_clipboard(&text);
+    }
+}
+
+pub fn escape_shortcut() -> Shortcut {
+    Shortcut::new(None, tauri_plugin_global_shortcut::Code::Escape)
+}
+
+/// True if the user made Esc one of their own hotkeys — then we leave it alone.
+fn escape_taken(app: &AppHandle) -> bool {
+    use std::str::FromStr;
+    app.state::<AppState>().config.lock().map_or(true, |c| {
+        [&c.hotkey, &c.tts_hotkey].iter().any(|h| Shortcut::from_str(h).map_or(false, |s| s == escape_shortcut()))
+    })
+}
+
+/// The fired shortcut is our recording-only Esc (not a user hotkey).
+pub fn is_cancel_key(app: &AppHandle, shortcut: &Shortcut) -> bool {
+    *shortcut == escape_shortcut() && !escape_taken(app)
+}
+
+/// Esc is grabbed globally only while recording, so it keeps working
+/// normally in every other app the rest of the time.
+fn grab_escape(app: &AppHandle, on: bool) {
+    use tauri_plugin_global_shortcut::GlobalShortcutExt;
+    if escape_taken(app) {
+        return;
+    }
+    // Off the hotkey callback's thread: registering a shortcut from inside the
+    // shortcut handler waits on that same thread and freezes the whole app.
+    // The on/off threads can finish out of order on a quick tap; each one
+    // applies the LATEST wish, so Esc can't stay grabbed after recording.
+    static WANT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    static TURN: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    WANT.store(on, std::sync::atomic::Ordering::SeqCst);
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let _turn = TURN.lock();
+        let gs = app.global_shortcut();
+        let (want, have) = (WANT.load(std::sync::atomic::Ordering::SeqCst), gs.is_registered(escape_shortcut()));
+        let _ = match (want, have) {
+            (true, false) => gs.register(escape_shortcut()),
+            (false, true) => gs.unregister(escape_shortcut()),
+            _ => Ok(()),
+        };
+    });
+}
+
+/// Start/stop sound packs, bundled into the binary (a few KB each).
+fn sound_pack(pack: &str) -> Option<(&'static [u8], &'static [u8])> {
+    macro_rules! pair {
+        ($n:literal) => {
+            (
+                &include_bytes!(concat!("../../sounds/", $n, "-start.wav"))[..],
+                &include_bytes!(concat!("../../sounds/", $n, "-stop.wav"))[..],
+            )
+        };
+    }
+    Some(match pack {
+        "chorus" => pair!("chorus"),
+        "double-double" => pair!("double-double"),
+        "double-single" => pair!("double-single"),
+        "single-double" => pair!("single-double"),
+        _ => return None, // "off"
+    })
+}
+
+/// Play a pack's start or stop sound on its own thread (never blocks the hotkey).
+pub fn play_sound(pack: &str, start: bool) {
+    let Some((s, e)) = sound_pack(pack) else { return };
+    let bytes = if start { s } else { e };
+    std::thread::spawn(move || {
+        let Ok((_stream, handle)) = rodio::OutputStream::try_default() else { return };
+        let Ok(sink) = rodio::Sink::try_new(&handle) else { return };
+        let Ok(src) = rodio::Decoder::new(std::io::Cursor::new(bytes)) else { return };
+        sink.append(src);
+        sink.sleep_until_end();
+    });
+}
+
+#[cfg(test)]
+mod sound_tests {
+    #[test]
+    fn every_pack_decodes() {
+        for pack in ["chorus", "double-double", "double-single", "single-double"] {
+            let (s, e) = super::sound_pack(pack).unwrap();
+            for b in [s, e] {
+                assert!(rodio::Decoder::new(std::io::Cursor::new(b)).is_ok(), "{pack}");
+            }
+        }
+        assert!(super::sound_pack("off").is_none());
+    }
+}
+
+fn beep(app: &AppHandle, start: bool) {
+    let pack = app.state::<AppState>().config.lock().map(|c| c.dictation_sound.clone()).unwrap_or_default();
+    play_sound(&pack, start);
+}
+
+/// Esc while recording: throw the audio away, paste nothing.
+pub fn cancel_capture(app: &AppHandle) {
+    grab_escape(app, false);
+    let state = app.state::<AppState>();
+    state.segmenter.stop.store(true, std::sync::atomic::Ordering::Relaxed);
+    if let Ok(mut tap) = state.tap.lock() {
+        tap.locked = false;
+        tap.last_tap_at = None;
+    }
+    let rec = state.recorder.lock().ok().and_then(|mut s| s.take());
+    if let Some(rec) = rec {
+        let _ = rec.stop();
+        crate::logging::log_info("pipeline", "dictation cancelled with Esc");
+        go_idle(app);
     }
 }
 
@@ -584,6 +752,8 @@ fn finalize_recording(app: AppHandle) {
         let Some(rec) = recorder else {
             return;
         };
+        grab_escape(&app, false);
+        beep(&app, false);
 
         emit_state(&app, "processing");
         let samples = rec.stop();
@@ -593,8 +763,133 @@ fn finalize_recording(app: AppHandle) {
             return;
         }
 
-        process_audio_pipeline(app, samples, started).await;
+        // Snapshot the background chunks now: a new recording may start (and
+        // reset the segmenter) while this one waits its turn below.
+        let prefix = app.state::<AppState>().segmenter.prefix();
+
+        // One pipeline at a time. Otherwise a dictation started while the last
+        // one is still transcribing overwrites the shared last.wav under it and
+        // the two pastes can land out of order.
+        static PIPELINE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+        let _turn = PIPELINE.lock().await;
+        process_audio_pipeline(app, samples, prefix, started).await;
     });
+}
+
+/// Ctrl+V "succeeds" even when nothing editable took it. Re-read the field
+/// off the critical path; if it's readable, non-empty and lacks the end of
+/// the dictation, the paste didn't land: put the text back on the clipboard
+/// and say so. An unreadable field is trusted, so this never false-alarms
+/// in apps UIA can't see (terminals, games, Electron with accessibility off).
+#[cfg(windows)]
+fn verify_paste(app: AppHandle, text: String, hwnd: isize) {
+    std::thread::spawn(move || {
+        let mut verdict = None;
+        for wait_ms in [300, 600] {
+            std::thread::sleep(Duration::from_millis(wait_ms));
+            // The user may have moved on to another window: then the focused
+            // field isn't ours to judge.
+            if foreground::foreground_hwnd() != hwnd {
+                break;
+            }
+            verdict = paste_verdict(crate::system::inline_check::focused_field_text().as_deref(), &text).or(verdict);
+            if verdict == Some(true) {
+                break;
+            }
+        }
+        logging::log_info("paste", &format!("verify: {}", match verdict { Some(true) => "landed", Some(false) => "missing", None => "unknown" }));
+        if verdict == Some(false) && paste::set_clipboard(&text).is_ok() {
+            report_error(&app, "copied", "Couldn't confirm the text landed here — it's on your clipboard (press Ctrl+V).");
+        }
+        if verdict == Some(true) {
+            learn_from_edits(&app, &text, hwnd);
+        }
+    });
+}
+
+/// #7: for a minute after a paste lands, re-read the field. A small
+/// sound-alike swap the user made ("cloud code" -> "Claude Code") that looks
+/// like a name or jargon gets an "add to dictionary" underline. Shown by the
+/// inline proofreader, so it only runs while that's on.
+#[cfg(windows)]
+fn learn_from_edits(app: &AppHandle, pasted: &str, hwnd: isize) {
+    let (on, vocab) = match app.state::<AppState>().config.lock() {
+        Ok(c) => (c.inline_proofread, c.vocabulary.clone()),
+        Err(_) => return,
+    };
+    if !on {
+        return;
+    }
+    let mut seen: Vec<String> = Vec::new();
+    for _ in 0..20 {
+        std::thread::sleep(Duration::from_secs(3));
+        if foreground::foreground_hwnd() != hwnd {
+            break;
+        }
+        let Some(field) = crate::system::inline_check::focused_field_text() else { continue };
+        for p in textfmt::corrected_phrases(pasted, &field) {
+            let known = vocab.split([',', '\n']).any(|v| v.trim().eq_ignore_ascii_case(&p));
+            // Same "is it a name or jargon?" rule the vocabulary boost uses.
+            if known || seen.contains(&p) || crate::system::sherpa_stt::hotword_phrases(&p).is_empty() {
+                continue;
+            }
+            logging::log_info("learn", "offering a corrected word for the dictionary");
+            crate::system::inline_check::suggest_learned(&p);
+            seen.push(p);
+        }
+    }
+}
+
+/// Some(true) landed, Some(false) the readable field lacks it, None unknown
+/// (unreadable or empty field: Chromium can report "" when it can't see).
+/// Matches the last 24 letters/digits, since apps re-flow spaces and quotes.
+fn paste_verdict(field: Option<&str>, text: &str) -> Option<bool> {
+    let field = field.filter(|f| !f.trim().is_empty())?;
+    let key = |s: &str| -> Vec<char> { s.chars().filter(|c| c.is_alphanumeric()).flat_map(char::to_lowercase).collect() };
+    let want = key(text);
+    let want: String = want[want.len().saturating_sub(24)..].iter().collect();
+    Some(key(field).into_iter().collect::<String>().contains(&want))
+}
+
+#[cfg(test)]
+mod paste_verdict_tests {
+    use super::paste_verdict;
+    #[test]
+    fn verdicts() {
+        let t = "Send the “café” report — today, please.";
+        assert_eq!(paste_verdict(Some("Hi,\r\nsend the \"Café\" report, today please. "), t), Some(true));
+        assert_eq!(paste_verdict(Some("Hi, older text only"), t), Some(false));
+        assert_eq!(paste_verdict(Some("  "), t), None);
+        assert_eq!(paste_verdict(None, t), None);
+    }
+}
+
+/// Background chunks -> one text with repaired punctuation. Fillers go first:
+/// the punctuation model saw "thing ah anymore" and put a full stop before
+/// the "ah", which stayed behind after the filler was removed.
+fn repunctuate_chunks(parts: &[&str]) -> String {
+    let cleaned: Vec<String> = parts.iter().map(|p| textfmt::strip_fillers(p)).collect();
+    crate::system::sherpa_stt::repunctuate(&cleaned.iter().map(String::as_str).collect::<Vec<_>>())
+}
+
+#[cfg(test)]
+mod chunk_tests {
+    /// Real dictation: Parakeet ended a chunk at "thing." and began the next
+    /// with "Ah". Must read "that thing anymore", no stray full stop.
+    #[test]
+    #[ignore] // needs the downloaded punctuation model
+    fn filler_at_a_seam_leaves_no_stray_stop() {
+        let out = super::repunctuate_chunks(&["but I don't see that thing.", "Ah anymore. So could you check it out?"]);
+        assert!(out.contains("that thing anymore"), "{out}");
+    }
+}
+
+/// The punctuation model is English-only.
+fn english_text(language: &str, model_id: &str) -> bool {
+    language.starts_with("en")
+        || model_id == "parakeet-tdt-0.6b-v2"
+        || model_id.starts_with("moonshine")
+        || model_id.ends_with(".en")
 }
 
 fn join_parts(a: &str, b: &str) -> String {
@@ -611,7 +906,12 @@ fn join_parts(a: &str, b: &str) -> String {
 
 /// Core audio post-processing pipeline: writes WAV, transcribes via Whisper,
 /// runs active AI mode processing, pastes to active window, and records in history.
-pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: std::time::Instant) {
+pub async fn process_audio_pipeline(
+    app: AppHandle,
+    samples: Vec<f32>,
+    (chunks, tail_start): (Vec<String>, usize),
+    started: std::time::Instant,
+) {
     // Read runtime config (STT model, language, active AI mode).
     let (
         model_id,
@@ -701,14 +1001,11 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
         report_error(&app, "storage", &e.to_string());
     }
 
-    let seg = {
-        let state = app.state::<AppState>();
-        state.segmenter.clone()
-    };
-    // Sentences already transcribed in the background while the key was held,
-    // and how much of the clip they cover. Empty unless chunking actually fired.
-    let (prefix, tail_start) = seg.prefix();
+    // `prefix`: sentences already transcribed in the background while the key
+    // was held, and `tail_start`: how much of the clip they cover. Empty unless
+    // chunking actually fired.
     let t_pipeline = std::time::Instant::now();
+    let prefix = chunks.join(" ");
     let chunked = !prefix.trim().is_empty();
 
     // Only the audio nobody has transcribed yet. Without chunking that is the
@@ -724,8 +1021,33 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
         // Say so — otherwise the dictation just vanishes (no paste, no history).
         let _ = app.emit(
             "pipeline://error",
-            "Didn't catch any speech. Speak a bit louder, or lower Input sensitivity in Settings.",
+            "Didn't catch any speech. Speak a bit louder, or move Background noise filter toward Sensitive in Settings.",
         );
+        // A muted mic (Windows mute, privacy switch, hardware key) records
+        // exact digital silence; a live mic always has some room noise.
+        let peak = remaining.iter().fold(0f32, |m, x| m.max(x.abs()));
+        if peak < 1e-4 {
+            let mic = app
+                .state::<AppState>()
+                .config
+                .lock()
+                .ok()
+                .and_then(|c| c.audio_device.clone())
+                .unwrap_or_else(|| "your default microphone".into());
+            crate::system::notice::show(
+                &app,
+                "Is your microphone muted?",
+                &format!("We didn't pick up any audio from {mic}."),
+                "mic",
+            );
+        } else {
+            crate::system::notice::show(
+                &app,
+                "Didn't catch any speech",
+                "Speak a bit louder, or move Background noise filter toward Sensitive.",
+                "settings",
+            );
+        }
         go_idle(&app);
         return;
     }
@@ -806,6 +1128,17 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
     };
 
     let raw_text = join_parts(&prefix, &tail_text);
+    // Chunks were decoded alone, so every thinking pause became a full stop.
+    // The punctuation model is English-only.
+    let raw_text = if chunked && english_text(&language, &model_id) {
+        let t = std::time::Instant::now();
+        let parts: Vec<&str> = chunks.iter().map(String::as_str).chain([tail_text.as_str()]).collect();
+        let fixed = repunctuate_chunks(&parts);
+        crate::logging::log_info("punct", &format!("repunctuated in {}ms", t.elapsed().as_millis()));
+        fixed
+    } else {
+        raw_text
+    };
 
     let raw_text = textfmt::strip_fillers(&raw_text);
     let raw_text = textfmt::collapse_repeated_words(&raw_text);
@@ -815,6 +1148,9 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
     } else {
         raw_text
     };
+
+    let (raw_text, command) = textfmt::trailing_command(&raw_text);
+    let press_enter = command == textfmt::VoiceCommand::Enter;
 
     let will_run_llm = !raw_text.is_empty()
         && !mode_prompt.is_empty()
@@ -904,7 +1240,14 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
             .state::<AppState>()
             .target_hwnd
             .load(std::sync::atomic::Ordering::Relaxed);
-        let current_hwnd = foreground::foreground_hwnd();
+        let mut current_hwnd = foreground::foreground_hwnd();
+        // Focus moved while we were processing: bring the original window back
+        // first (Wispr does the same). Only if that fails do we fall back to
+        // leaving the text on the clipboard.
+        if target_hwnd != 0 && current_hwnd != 0 && current_hwnd != target_hwnd && foreground::refocus(target_hwnd) {
+            logging::log_info("paste", "focus had moved; restored the original window");
+            current_hwnd = target_hwnd;
+        }
         let window_changed =
             target_hwnd != 0 && current_hwnd != 0 && current_hwnd != target_hwnd;
         let secure = crate::system::secure_field::focused_is_password();
@@ -917,7 +1260,7 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
                 Ok(()) => {
                     report_error(
                         &app,
-                        "paste",
+                        "copied",
                         "Silent Voice needs Accessibility permission to paste — text copied, press Cmd+V. Turn it on in System Settings > Privacy & Security > Accessibility.",
                     );
                     static OPENED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -932,7 +1275,7 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
             } else {
                 report_error(
                     &app,
-                    "paste",
+                    "copied",
                     if secure {
                         "Protected field detected — text copied to clipboard (press Ctrl+V to paste it)."
                     } else {
@@ -944,6 +1287,8 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
             report_error(&app, "paste", &e);
         } else {
             pasted_ok = true;
+            #[cfg(windows)]
+            verify_paste(app.clone(), to_paste.clone(), current_hwnd);
         }
         // After the paste, so the extra frontmost lookup (osascript on macOS)
         // never delays it. Every fact needed to tell why a paste did not land, in one line
@@ -957,6 +1302,19 @@ pub async fn process_audio_pipeline(app: AppHandle, samples: Vec<f32>, started: 
                 foreground::foreground_app(),
             ),
         );
+    }
+
+    // "… press enter": only when the text really landed (or there was none),
+    // never into a window that changed or a password field.
+    let safe_target = || {
+        let target = app.state::<AppState>().target_hwnd.load(std::sync::atomic::Ordering::Relaxed);
+        foreground::foreground_hwnd() == target && !crate::system::secure_field::focused_is_password()
+    };
+    if press_enter && (pasted_ok || (processed_text.is_empty() && safe_target())) {
+        tokio::time::sleep(Duration::from_millis(120)).await;
+        if let Err(e) = paste::press_enter() {
+            report_error(&app, "paste", &e);
+        }
     }
 
     let elapsed = started.elapsed().as_millis() as i64;

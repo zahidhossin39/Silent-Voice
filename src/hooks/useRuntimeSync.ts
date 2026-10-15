@@ -9,6 +9,7 @@ import {
   setAppProfiles,
   setAutostart,
   setTts,
+  setPasteLastHotkey,
   setPopupTheme,
   setPopupSurface,
   listenEvent,
@@ -68,12 +69,14 @@ export function useRuntimeSync() {
   const proofreadIgnoreApps = useSettingsStore((s) => s.settings.proofread_ignore_apps);
   const pillAutoHide = useSettingsStore((s) => s.settings.pill_auto_hide);
   const appendTrailingSpace = useSettingsStore((s) => s.settings.append_trailing_space);
+  const dictationSound = useSettingsStore((s) => s.settings.dictation_sound);
   const coeditEnabled = useSettingsStore((s) => s.settings.coedit_enabled);
   const chunkOnSilence = useSettingsStore((s) => s.settings.chunk_on_silence);
   const saveAudio = useSettingsStore((s) => s.settings.save_audio);
   const audioClipLimit = useSettingsStore((s) => s.settings.audio_clip_limit);
   const modelUnloadMinutes = useSettingsStore((s) => s.settings.model_unload_minutes);
   const ttsVoice = useSettingsStore((s) => s.settings.active_tts_voice);
+  const pasteLastHotkey = useSettingsStore((s) => s.settings.paste_last_hotkey);
   const ttsHotkey = useSettingsStore((s) => s.settings.tts_hotkey);
   const ttsEnabled = useSettingsStore((s) => s.settings.tts_enabled);
   const autoStart = useSettingsStore((s) => s.settings.auto_start);
@@ -158,11 +161,12 @@ export function useRuntimeSync() {
         chunkOnSilence,
         saveAudio,
         audioClipLimit,
-        modelUnloadMinutes
+        modelUnloadMinutes,
+        dictationSound
       );
     }, 150);
     return () => clearTimeout(id);
-  }, [toggleMode, inputSensitivity, inlineProofread, highPerformance, performanceThreads, proofreadDisabledRules, gectorSensitivity, proofreadIgnoreApps, pillAutoHide, appendTrailingSpace, coeditEnabled, chunkOnSilence, saveAudio, audioClipLimit, modelUnloadMinutes]);
+  }, [toggleMode, inputSensitivity, inlineProofread, highPerformance, performanceThreads, proofreadDisabledRules, gectorSensitivity, proofreadIgnoreApps, pillAutoHide, appendTrailingSpace, coeditEnabled, chunkOnSilence, saveAudio, audioClipLimit, modelUnloadMinutes, dictationSound]);
 
   useEffect(() => {
     setAutostart(autoStart);
@@ -171,6 +175,10 @@ export function useRuntimeSync() {
   useEffect(() => {
     setTts(ttsVoice ?? "", ttsHotkey, ttsEnabled);
   }, [ttsVoice, ttsHotkey, ttsEnabled]);
+
+  useEffect(() => {
+    setPasteLastHotkey(pasteLastHotkey);
+  }, [pasteLastHotkey]);
 
   useEffect(() => {
     setPopupTheme(popupTheme);

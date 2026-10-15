@@ -1,4 +1,4 @@
-import { NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useRef, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import Home from "./components/dashboard/Home";
@@ -12,6 +12,7 @@ import Theme from "./components/dashboard/Theme";
 import OverlayApp from "./components/overlay/OverlayApp";
 import SquiggleOverlay from "./components/overlay/SquiggleOverlay";
 import SquigglePopup from "./components/overlay/SquigglePopup";
+import NoticeCard from "./components/overlay/NoticeCard";
 import Onboarding from "./components/onboarding/Onboarding";
 import { useModelStore } from "./stores/modelStore";
 import { useSettingsStore } from "./stores/settingsStore";
@@ -23,7 +24,7 @@ import { useRuntimeSync } from "./hooks/useRuntimeSync";
 import { useAutoVoiceDetection } from "./hooks/useAutoVoiceDetection";
 import { useResolvedTheme } from "./hooks/useResolvedTheme";
 import { useUpdateStore } from "./stores/updateStore";
-import { isTauri, emitEvent } from "./services/tauriBridge";
+import { isTauri, emitEvent, listenEvent } from "./services/tauriBridge";
 import { applyAppTheme } from "./services/appThemes";
 import {
   HomeIcon,
@@ -84,6 +85,9 @@ export default function App() {
   if (view === "squiggle-popup") {
     return <SquigglePopup />;
   }
+  if (view === "notice") {
+    return <NoticeCard />;
+  }
 
   return (
     <div className="flex h-screen w-full flex-col overflow-hidden bg-sv-bg">
@@ -124,6 +128,15 @@ function Dashboard() {
   const [version, setVersion] = useState("");
   const mainRef = useRef<HTMLElement>(null);
   const { pathname } = useLocation();
+
+  // The on-screen notice's "Select microphone" / "Open settings" button.
+  const navigate = useNavigate();
+  useEffect(() => {
+    const un = listenEvent<string>("nav://to", (path) => navigate(path));
+    return () => {
+      un.then((f) => f());
+    };
+  }, [navigate]);
 
   // Subscribe to backend pipeline + download events and keep Rust in sync.
   usePipeline();

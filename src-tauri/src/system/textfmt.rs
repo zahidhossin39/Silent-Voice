@@ -15,7 +15,7 @@ use std::collections::HashMap;
 
 /// Spoken fillers. Whisper omits these on its own; Parakeet/NeMo transcribe them
 /// verbatim, so the pipeline strips them to keep output the same across engines.
-pub const FILLER_WORDS: &[&str] = &["um", "umm", "uh", "uhh", "erm"];
+pub const FILLER_WORDS: &[&str] = &["um", "umm", "uh", "uhh", "erm", "er", "ah", "ahh", "hmm", "hm", "mmm", "mm-hmm", "mm-hm", "mhm", "mmhmm"]; // not "mm": "5 mm"
 
 fn units_map() -> HashMap<&'static str, u64> {
     HashMap::from([
@@ -452,6 +452,13 @@ fn strip_fillers_line(line: &str) -> String {
     let mut cap_next = false;
     for token in line.split_whitespace() {
         if is_filler_token(token) {
+            // "I think so uh." -> the sentence's mark moves to "so".
+            if let (Some(mark), Some(prev)) = (token.chars().last().filter(|c| matches!(c, '.' | '!' | '?')), kept.last_mut()) {
+                if !prev.ends_with(['.', '!', '?']) {
+                    prev.truncate(prev.trim_end_matches([',', ';', ':']).len());
+                    prev.push(mark);
+                }
+            }
             // Only a filler that opened a sentence leaves a gap worth fixing;
             // capitalizing anywhere else would turn "e.g. here" into "e.g. Here".
             if kept
@@ -473,13 +480,15 @@ fn strip_fillers_line(line: &str) -> String {
 }
 
 fn is_filler_token(token: &str) -> bool {
-    let bare = token
-        .trim_matches(|c: char| c.is_ascii_punctuation())
-        .to_lowercase();
-    FILLER_WORDS.contains(&bare.as_str())
+    let core = token.trim_matches(|c: char| c.is_ascii_punctuation());
+    // "ER", "UM": all caps means an acronym, not a hesitation.
+    if core.chars().count() > 1 && core.chars().all(|c| c.is_uppercase()) {
+        return false;
+    }
+    FILLER_WORDS.contains(&core.to_lowercase().as_str())
 }
 
-fn capitalize_first(token: &str) -> String {
+pub(crate) fn capitalize_first(token: &str) -> String {
     let mut out = String::with_capacity(token.len());
     let mut done = false;
     for c in token.chars() {
@@ -985,6 +994,120 @@ pub fn structure_text(text: &str) -> String {
     cap_result
 }
 
+/// A spoken command at the very END of a dictation.
+#[derive(Debug, PartialEq)]
+pub enum VoiceCommand {
+    None,
+    /// "press enter" → paste the rest, then press Enter.
+    Enter,
+}
+
+/// Peel a trailing voice command off the transcript. Only the end counts, so
+/// "press enter to start" mid-sentence is left alone.
+pub fn trailing_command(text: &str) -> (String, VoiceCommand) {
+    let body = text.trim_end_matches(|c: char| c.is_whitespace() || ".,!?;:".contains(c));
+    let lower = body.to_lowercase();
+    // Byte lengths match only for ASCII; anything else can't hold a command.
+    if lower.len() != body.len() {
+        return (text.to_string(), VoiceCommand::None);
+    }
+    let ends = |p: &str| {
+        lower.ends_with(p) && lower[..lower.len() - p.len()].chars().last().map_or(true, |c| !c.is_alphanumeric())
+    };
+    let strip = |p: &str| body[..body.len() - p.len()].trim_end_matches(|c: char| c.is_whitespace() || ",;:".contains(c)).to_string();
+    if ends("press enter") {
+        return (strip("press enter"), VoiceCommand::Enter);
+    }
+    (text.to_string(), VoiceCommand::None)
+}
+
+#[cfg(test)]
+mod command_tests {
+    use super::{trailing_command, VoiceCommand::*};
+
+    #[test]
+    fn trailing_commands() {
+        assert_eq!(trailing_command("Scratch that."), ("Scratch that.".into(), None));
+        assert_eq!(trailing_command("Looks good, press enter."), ("Looks good".into(), Enter));
+        assert_eq!(trailing_command("Press Enter"), (String::new(), Enter));
+        assert_eq!(trailing_command("I'll repress enter"), ("I'll repress enter".into(), None));
+        assert_eq!(trailing_command("Hello there."), ("Hello there.".into(), None));
+    }
+}
+
+/// Phrases the user typed over a dictated paste: "Cloud code" -> "Claude Code",
+/// "jet sap" -> "GSAP". Word-level diff of the pasted text against the
+/// field's current text; only small 1-3 word swaps count (bigger edits are
+/// rewrites, not spelling fixes). Returns the user's new wording, unfiltered.
+pub fn corrected_phrases(pasted: &str, field: &str) -> Vec<String> {
+    let bare = |w: &str| w.trim_matches(|c: char| !c.is_alphanumeric()).to_string();
+    let a: Vec<String> = pasted.split_whitespace().map(bare).filter(|w| !w.is_empty()).collect();
+    let all: Vec<String> = field.split_whitespace().map(bare).filter(|w| !w.is_empty()).collect();
+    if a.len() < 3 {
+        return Vec::new();
+    }
+    // Find the paste inside the field by its first or last three words (one
+    // end may itself have been edited), then diff only that window.
+    let low = |v: &[String]| v.iter().map(|w| w.to_lowercase()).collect::<Vec<_>>();
+    let (la, lall) = (low(&a), low(&all));
+    let find = |needle: &[String]| lall.windows(needle.len()).position(|w| w == needle);
+    let start = match (find(&la[..3]), find(&la[la.len() - 3..])) {
+        (Some(i), _) => i,
+        (None, Some(j)) => j.saturating_sub(a.len()),
+        _ => return Vec::new(),
+    };
+    let b = &all[start..(start + a.len() + 12).min(all.len())];
+    let lb = &lall[start..start + b.len()];
+
+    // LCS table on lowercase words; a case-only change is checked after.
+    let (n, m) = (a.len(), b.len());
+    let mut dp = vec![vec![0u16; m + 1]; n + 1];
+    for i in (0..n).rev() {
+        for j in (0..m).rev() {
+            dp[i][j] = if la[i] == lb[j] { dp[i + 1][j + 1] + 1 } else { dp[i + 1][j].max(dp[i][j + 1]) };
+        }
+    }
+    let mut out = Vec::new();
+    let (mut i, mut j) = (0, 0);
+    while i < n && j < m {
+        if la[i] == lb[j] {
+            // "github" -> "GitHub": same word, the user fixed its capitals.
+            if a[i] != b[j] && b[j].chars().skip(1).any(char::is_uppercase) {
+                out.push(b[j].clone());
+            }
+            i += 1;
+            j += 1;
+            continue;
+        }
+        // A changed block: advance both sides until they meet again.
+        let (i0, j0) = (i, j);
+        while i < n && j < m && la[i] != lb[j] {
+            if dp[i + 1][j] >= dp[i][j + 1] { i += 1 } else { j += 1 }
+        }
+        // One side ran out: the rest of the other side is part of the swap.
+        if i == n {
+            j = m;
+        } else if j == m {
+            i = n;
+        }
+        // "cloud code" -> "Claude Code": recapitalised words right after the
+        // swap belong to the same phrase.
+        while i < n && j < m && la[i] == lb[j] && a[i] != b[j] {
+            i += 1;
+            j += 1;
+        }
+        // Small swaps only: typing on after the paste makes the field side
+        // long, and a rewrite fails the sound check.
+        if (1..=3).contains(&(i - i0))
+            && (1..=3).contains(&(j - j0))
+            && crate::system::soundalike::roughly_alike(&a[i0..i].join(" "), &b[j0..j].join(" "))
+        {
+            out.push(b[j0..j].join(" "));
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::{collapse_repeated_words, format_numbers, spoken_symbols, strip_fillers, structure_text};
@@ -1150,6 +1273,21 @@ mod tests {
     }
 
     #[test]
+    fn test_strip_fillers_ah_hmm_and_their_punctuation() {
+        // Real dictation: "I don't see that thing. Ah anymore."
+        assert_eq!(strip_fillers("Ah, I see. Hmm, okay."), "I see. Okay.");
+        assert_eq!(strip_fillers("Mmm, the er report"), "The report");
+        assert_eq!(strip_fillers("Mm-hmm."), "");
+        assert_eq!(strip_fillers("Mhm, sounds good."), "Sounds good.");
+        assert_eq!(strip_fillers("A 5 mm screw. We took him to the ER, UM campus."), "A 5 mm screw. We took him to the ER, UM campus.");
+        // A filler that ended the sentence hands its mark to the word before.
+        assert_eq!(strip_fillers("I think so uh."), "I think so.");
+        assert_eq!(strip_fillers("Is it ready, um?"), "Is it ready?");
+        // Real words that only look close stay.
+        assert_eq!(strip_fillers("Oh, the ahead and hmmm-like Ahmed."), "Oh, the ahead and hmmm-like Ahmed.");
+    }
+
+    #[test]
     fn test_strip_fillers_keeps_line_breaks() {
         let input = "Um first line
 second um line";
@@ -1182,4 +1320,29 @@ second line";
             "It's been a while. Yeah, that's all. Sometimes we do a lot of things. We can also make it"
         );
     }
+
+    #[test]
+    fn test_corrected_phrases() {
+        use super::corrected_phrases;
+        let pasted = "I asked cloud code to fix the jet sap animation on github today.";
+        let field = "Hey team, I asked Claude Code to fix the GSAP animation on GitHub today. Thanks";
+        assert_eq!(corrected_phrases(pasted, field), vec!["Claude Code", "GSAP", "GitHub"]);
+        // Untouched paste, or only typing after it: nothing learned.
+        assert!(corrected_phrases(pasted, &format!("{pasted} And more words here.")).is_empty());
+        // A rewrite of half the sentence is not a spelling fix.
+        assert!(corrected_phrases(pasted, "I asked someone else entirely to redo all of it on github today.").is_empty());
+        // The fix is the last word.
+        assert_eq!(corrected_phrases("please send it to cloud.", "please send it to Claude."), vec!["Claude"]);
+        // Real case: "Claude Court" fixed by hand to "Claude code".
+        assert_eq!(
+            corrected_phrases(
+                "That's why Claude Court seems much more better harnessed than others.",
+                "I've been making motion graphics with GSAP for a long time. That's why Claude code seems much more better harnessed than others."
+            ),
+            vec!["code"]
+        );
+        // Paste no longer in the field at all.
+        assert!(corrected_phrases(pasted, "something else").is_empty());
+    }
+
 }

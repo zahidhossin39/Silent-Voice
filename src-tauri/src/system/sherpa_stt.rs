@@ -590,7 +590,7 @@ fn ensure_bpe_vocab(model_id: &str, dir: &Path) -> Option<std::path::PathBuf> {
 /// spells them, and boosting them made it insert them into unrelated speech
 /// ("could you call me" → "could you Claude me"). Measured with
 /// scripts/vocab_bench.py. Duplicates are dropped.
-fn hotword_phrases(vocabulary: &str) -> Vec<&str> {
+pub(crate) fn hotword_phrases(vocabulary: &str) -> Vec<&str> {
     use harper_core::spell::{Dictionary, FstDictionary};
     let dict = FstDictionary::curated();
     let mut out: Vec<&str> = Vec::new();
@@ -661,6 +661,10 @@ pub fn ensure_engine(
 ) -> Result<std::sync::Arc<SherpaSttEngine>, String> {
     use tauri::Manager;
     let state = app.state::<crate::AppState>();
+    // onnxruntime gets slower past the physical cores: on a 4-core/8-thread
+    // i7-8650U, Parakeet took 801 ms for a 1 s clip at 8 threads vs 385 ms at
+    // 4, and lost at every length up to 8 s (bench9.py).
+    let threads = threads.min(super::hardware::physical_core_count().max(1) as u32);
     let mut slot = state.sherpa_stt.lock().map_err(|e| e.to_string())?;
     let dir = crate::models::registry::stt_model_dir(model_id);
     let hotwords = build_hotwords(model_id, &dir, vocabulary);
@@ -894,6 +898,203 @@ fn fixed_windows(len: usize, win: usize) -> Vec<(usize, usize)> {
     v
 }
 
+// ---- Punctuation repair for background (chunked) dictation ----
+//
+// Background mode decodes each pause-separated chunk on its own, so Parakeet
+// ends a sentence at every thinking pause. A small punctuation model
+// (sherpa-onnx-online-punct-en, CNN-BiLSTM int8, 7 MB) re-reads the joined text
+// and puts the punctuation back where the words, not the pauses, say it goes.
+// Measured on 321 words: 51 punctuation/casing errors -> 23. A 76 MB
+// CT-Transformer scored 27, so the small one stays (docs/research-punctuation-model.md).
+
+#[repr(C)]
+struct OnlinePunctuationModelConfig {
+    cnn_bilstm: *const c_char,
+    bpe_vocab: *const c_char,
+    num_threads: c_int,
+    debug: c_int,
+    provider: *const c_char,
+}
+#[repr(C)]
+struct OnlinePunctuationConfig {
+    model: OnlinePunctuationModelConfig,
+}
+
+type CreatePunctFn = unsafe extern "C" fn(*const OnlinePunctuationConfig) -> *const std::ffi::c_void;
+type AddPunctFn = unsafe extern "C" fn(*const std::ffi::c_void, *const c_char) -> *const c_char;
+type FreePunctTextFn = unsafe extern "C" fn(*const c_char);
+
+struct Punct(*const std::ffi::c_void);
+// One handle, only used behind the PUNCT mutex.
+unsafe impl Send for Punct {}
+
+/// Loaded on first use and kept: ~7 MB, and dictation pipelines are serialized.
+static PUNCT: std::sync::Mutex<Option<Punct>> = std::sync::Mutex::new(None);
+
+fn load_punct(dir: &Path) -> Result<Punct, String> {
+    let lib = super::sherpa::lib()?;
+    let c = |s: String| CString::new(s).map_err(|e| e.to_string());
+    let model = c(dir.join("model.int8.onnx").to_string_lossy().into_owned())?;
+    let vocab = c(dir.join("bpe.vocab").to_string_lossy().into_owned())?;
+    let provider = c("cpu".into())?;
+    let cfg = OnlinePunctuationConfig {
+        model: OnlinePunctuationModelConfig {
+            cnn_bilstm: model.as_ptr(),
+            bpe_vocab: vocab.as_ptr(),
+            num_threads: 1,
+            debug: 0,
+            provider: provider.as_ptr(),
+        },
+    };
+    let p = unsafe {
+        let create: Symbol<CreatePunctFn> = lib
+            .get(b"SherpaOnnxCreateOnlinePunctuation\0")
+            .map_err(|e| e.to_string())?;
+        create(&cfg)
+    };
+    if p.is_null() {
+        return Err("could not load the punctuation model".into());
+    }
+    Ok(Punct(p))
+}
+
+/// Load the punctuation model if it isn't yet. Errors surface on real use.
+pub fn warm_punct() {
+    if !crate::models::registry::punct_installed() {
+        return;
+    }
+    if let Ok(mut slot) = PUNCT.lock() {
+        if slot.is_none() {
+            *slot = load_punct(&crate::models::registry::punct_dir()).ok();
+        }
+    }
+}
+
+fn add_punct(text: &str) -> Result<String, String> {
+    let lib = super::sherpa::lib()?;
+    let mut slot = PUNCT.lock().map_err(|e| e.to_string())?;
+    if slot.is_none() {
+        *slot = Some(load_punct(&crate::models::registry::punct_dir())?);
+    }
+    let handle = slot.as_ref().unwrap().0;
+    let input = CString::new(text).map_err(|e| e.to_string())?;
+    unsafe {
+        let add: Symbol<AddPunctFn> = lib
+            .get(b"SherpaOnnxOnlinePunctuationAddPunct\0")
+            .map_err(|e| e.to_string())?;
+        let free: Symbol<FreePunctTextFn> = lib
+            .get(b"SherpaOnnxOnlinePunctuationFreeText\0")
+            .map_err(|e| e.to_string())?;
+        let out = add(handle, input.as_ptr());
+        if out.is_null() {
+            return Err("punctuation model returned nothing".into());
+        }
+        let s = std::ffi::CStr::from_ptr(out).to_string_lossy().into_owned();
+        free(out);
+        Ok(s)
+    }
+}
+
+const SENTENCE_END: [char; 3] = ['.', '?', '!'];
+const PUNCT_MARKS: [char; 4] = ['.', ',', '?', '!'];
+
+/// Re-punctuate English text stitched from background chunks (in order).
+/// Returns the plain join when the model is missing or anything fails,
+/// so the user never loses words to this step.
+pub fn repunctuate(chunks: &[&str]) -> String {
+    let text = chunks.iter().map(|c| c.trim()).filter(|c| !c.is_empty()).collect::<Vec<_>>().join(" ");
+    if text.is_empty() || !crate::models::registry::punct_installed() {
+        return text;
+    }
+    let words: Vec<&str> = text.split_whitespace().collect();
+    // Word index where each chunk after the first begins.
+    let mut seams = Vec::new();
+    let mut n = 0;
+    for c in chunks {
+        let k = c.split_whitespace().count();
+        if k > 0 && n > 0 {
+            seams.push(n);
+        }
+        n += k;
+    }
+    let bare: Vec<String> = words
+        .iter()
+        .map(|w| w.chars().filter(|c| c.is_alphanumeric() || *c == '\'').collect::<String>().to_lowercase())
+        .collect();
+    // ponytail: a symbol-only word ("&") would break the word alignment, so that dictation skips the repair.
+    if bare.iter().any(|w| w.is_empty()) {
+        return text.to_string();
+    }
+    match add_punct(&bare.join(" ")) {
+        Ok(model) => merge_punct(&words, &model, &seams).unwrap_or_else(|| text.to_string()),
+        Err(e) => {
+            crate::logging::log_error("punct", &e);
+            text.to_string()
+        }
+    }
+}
+
+/// Take punctuation and sentence-start capitals from the model, and every
+/// other word's casing from the speech model: the punctuation model would turn
+/// "GitHub" into "Github". A word Parakeet capitalised only because it had
+/// ended a sentence right before it, or only because a chunk started there
+/// (`seams`), goes back to lowercase. None when the word counts differ.
+fn merge_punct(words: &[&str], model: &str, seams: &[usize]) -> Option<String> {
+    let m: Vec<&str> = model.split_whitespace().collect();
+    if m.len() != words.len() {
+        return None;
+    }
+    let mut out: Vec<String> = Vec::with_capacity(words.len());
+    let mut starts_sentence = true;
+    for (i, (w, mw)) in words.iter().zip(&m).enumerate() {
+        let mut tail = &mw[mw.trim_end_matches(PUNCT_MARKS).len()..];
+        // No chunk join follows the last word, so Parakeet's own ? or ! there
+        // is trustworthy (it hears the intonation; the text model can't).
+        // Everywhere else it isn't: keeping them all scored 25 vs 22 errors.
+        if i + 1 == words.len() && w.ends_with(['?', '!']) {
+            tail = &w[w.len() - 1..];
+        }
+        let core = w.trim_end_matches(PUNCT_MARKS);
+        // "a.m." and "e.g." keep their own final dot.
+        let abbrev = is_abbreviation(core) && w[core.len()..].starts_with('.');
+        let core = if starts_sentence {
+            super::textfmt::capitalize_first(core)
+        } else if i > 0
+            && (words[i - 1].ends_with(SENTENCE_END) || seams.contains(&i))
+            && is_title_case(core)
+            && !mw.starts_with(char::is_uppercase)
+        {
+            core.to_lowercase()
+        } else {
+            core.to_string()
+        };
+        out.push(if abbrev { core + "." + tail.trim_start_matches('.') } else { core + tail });
+        starts_sentence = tail.ends_with(SENTENCE_END);
+    }
+    let mut s = out.join(" ");
+    // The model often leaves the last word bare.
+    s.truncate(s.trim_end_matches(',').len());
+    if !s.ends_with(SENTENCE_END) {
+        s.push('.');
+    }
+    Some(s)
+}
+
+/// "a.m", "e.g", "U.S" (final dot already stripped); not "3.5" or "node.js".
+fn is_abbreviation(w: &str) -> bool {
+    w.contains('.')
+        && w.split('.').all(|p| (1..=2).contains(&p.chars().count()) && p.chars().all(char::is_alphabetic))
+}
+
+/// "Thursday" yes; "I", "I'm", "GitHub", "API" no: those keep their capitals.
+fn is_title_case(w: &str) -> bool {
+    let mut c = w.chars();
+    c.next().is_some_and(char::is_uppercase)
+        && w.chars().filter(|c| c.is_alphabetic()).count() > 1
+        && !w.starts_with("I'")
+        && c.all(|c| !c.is_uppercase())
+}
+
 #[cfg(test)]
 mod seg_tests {
     use super::*;
@@ -1061,4 +1262,188 @@ mod tests {
             eprintln!("run {i}: {} ms  |  \"{text}\"", t.elapsed().as_millis());
         }
     }
+
+    #[test]
+    fn merge_punct_fixes_pause_breaks_and_keeps_names() {
+        // Parakeet ended a sentence at a thinking pause ("is. The") and
+        // capitalised the next word; the model knows the sentence goes on.
+        let words: Vec<&str> = "The main thing left is. The export feature on GitHub, I think"
+            .split_whitespace()
+            .collect();
+        let model = "The main thing left is the export feature on github. I think";
+        assert_eq!(
+            merge_punct(&words, model, &[]).unwrap(),
+            "The main thing left is the export feature on GitHub. I think."
+        );
+    }
+
+    #[test]
+    fn merge_punct_keeps_i_and_acronyms_after_a_false_stop() {
+        let words: Vec<&str> = "Hey Sarah. I wanted the API. Docs".split_whitespace().collect();
+        let model = "hey, sarah, i wanted the api docs";
+        assert_eq!(merge_punct(&words, model, &[]).unwrap(), "Hey, Sarah, I wanted the API docs.");
+    }
+
+    #[test]
+    fn merge_punct_keeps_abbreviations_and_a_final_question() {
+        let words: Vec<&str> = "It opens at 9 a.m. Then. Can we go?".split_whitespace().collect();
+        let model = "it opens at 9 am. then can we go.";
+        assert_eq!(merge_punct(&words, model, &[]).unwrap(), "It opens at 9 a.m. Then can we go?");
+        // A mid-text ? is a chunk-join guess: the model decides there.
+        let words: Vec<&str> = "Can we do that? Without the cloud".split_whitespace().collect();
+        let model = "can we do that without the cloud";
+        assert_eq!(merge_punct(&words, model, &[]).unwrap(), "Can we do that without the cloud.");
+    }
+
+    #[test]
+    fn merge_punct_lowercases_a_chunk_start_capital() {
+        // Real dictation: a chunk began at "needing" after a pause, Parakeet
+        // capitalised it ("I was just Pressing", "it's Kneading").
+        let words: Vec<&str> = "when I was just Pressing the key".split_whitespace().collect();
+        let model = "when i was just pressing the key";
+        assert_eq!(merge_punct(&words, model, &[4]).unwrap(), "When I was just pressing the key.");
+        // Not a seam: Parakeet capitalised it mid-chunk, so it's a name.
+        assert_eq!(merge_punct(&words, model, &[]).unwrap(), "When I was just Pressing the key.");
+    }
+
+    #[test]
+    fn merge_punct_refuses_misaligned_output() {
+        let words: Vec<&str> = "one two three".split_whitespace().collect();
+        assert!(merge_punct(&words, "one two", &[]).is_none());
+    }
+
+    #[test]
+    #[ignore] // needs the downloaded punctuation model
+    fn repunctuate_with_real_model() {
+        let out = repunctuate(&["So I was thinking about.", "What we should build next for the app.", "Can we do that"]);
+        println!("{out}");
+        assert!(out.starts_with("So I was thinking about what we should build next for the app"), "{out}");
+    }
+
+
+    #[test]
+    #[ignore] // needs the downloaded punctuation model
+    fn repunctuate_never_changes_words() {
+        let bare = |t: &str| -> Vec<String> {
+            t.split_whitespace().map(|w| w.trim_end_matches(PUNCT_MARKS).to_lowercase()).collect()
+        };
+        for input in [
+            "So I was thinking about. What we should build next for the app. Can we do that",
+            "I paid $20 for 3.5 GB on GitHub. Then Claude said it's fine, e.g. the API. Works",
+            "Um, so the café in São Paulo. Opens at 9 a.m. I think",
+            "Send it to bob@example.com & then. Press enter.",
+            "don't won't can't I'm I'll. You're",
+            "one",
+            "ok? ok! ok, ok.",
+            "The meeting is on Thursday. Afternoon. Which works for me",
+        ] {
+            let out = repunctuate(&[input]);
+            println!("{input}\n  -> {out}");
+            assert_eq!(bare(&out), bare(input), "words changed: {input} -> {out}");
+        }
+    }
+
+
+    /// Repro for "pressed the hotkey, said nothing, got 'Mm-hmm.'": the quiet
+    /// head and tail of the user's real saved clips (mic noise, key clicks, the
+    /// start sound) go through the app's real gate at the user's sensitivity,
+    /// then Parakeet. Any text out of that is a phantom.
+    #[test]
+    #[ignore] // needs the user's clips + Parakeet + VAD on disk
+    fn phantom_text_on_silence() {
+        let sens: u32 = std::env::var("SV_SENS").ok().and_then(|v| v.parse().ok()).unwrap_or(100);
+        let dir = crate::models::registry::stt_model_dir("parakeet-tdt-0.6b-v2");
+        let eng = SherpaSttEngine::load_transducer(&dir, 4, None, 1.5).unwrap();
+        let clips = dirs::data_dir().unwrap().join("SilentVoice").join("audio").join("clips");
+        let mut phantoms = 0;
+        let mut tried = 0;
+        for e in std::fs::read_dir(clips).unwrap().flatten() {
+            let x = read_wav_mono_f32(&e.path()).unwrap();
+            // Where the user's speech starts/ends, by a strict VAD threshold.
+            let Some(mask) = crate::audio::vad::speech_mask(&x, 0.5) else { panic!("no VAD") };
+            let f = crate::audio::vad::FRAME;
+            let first = mask.iter().position(|&v| v).unwrap_or(mask.len()) * f;
+            let last = (mask.iter().rposition(|&v| v).map_or(0, |i| i + 1)) * f;
+            for (name, piece) in [("head", &x[..first.saturating_sub(1600)]), ("tail", &x[(last + 4800).min(x.len())..])] {
+                for secs in [0.4f32, 0.8, 1.2] {
+                    let n = (secs * 16000.0) as usize;
+                    if piece.len() < n { continue; }
+                    let clip = if name == "head" { &piece[..n] } else { &piece[piece.len() - n..] };
+                    tried += 1;
+                    let Some(trimmed) = crate::audio::gate::trim_silence(clip, sens) else { continue };
+                    let text = eng.transcribe(&trimmed).unwrap();
+                    println!("{:?} {name} {secs}s -> gate kept {:.2}s -> {text:?}", e.file_name(), trimmed.len() as f32 / 16000.0);
+                    if !text.is_empty() { phantoms += 1; }
+                }
+            }
+        }
+        println!("sensitivity {sens}: {phantoms} phantom(s) from {tried} silent clips");
+        assert!(tried > 0);
+        assert_eq!(phantoms, 0);
+    }
+
+
+    /// The other side of phantom_text_on_silence: short, quiet real words
+    /// (TTS "Yes." / "No." mixed into the user's mic noise, in SV_SHORTWORDS)
+    /// must still get through the gate and transcribe.
+    #[test]
+    #[ignore] // needs SV_SHORTWORDS clips + Parakeet + VAD on disk
+    fn short_quiet_words_survive_the_gate() {
+        let dir = crate::models::registry::stt_model_dir("parakeet-tdt-0.6b-v2");
+        let eng = SherpaSttEngine::load_transducer(&dir, 4, None, 1.5).unwrap();
+        let mut lost = Vec::new();
+        for e in std::fs::read_dir(std::env::var("SV_SHORTWORDS").unwrap()).unwrap().flatten() {
+            let x = read_wav_mono_f32(&e.path()).unwrap();
+            let text = crate::audio::gate::trim_silence(&x, 100).map(|c| eng.transcribe(&c).unwrap()).unwrap_or_default();
+            println!("{:?} -> {text:?}", e.file_name());
+            if text.is_empty() { lost.push(e.file_name()); }
+        }
+        assert!(lost.is_empty(), "real words dropped: {lost:?}");
+    }
+
+
+    /// Replays the user's saved recordings through the background-mode logic
+    /// in real time (VAD, cut rules, Parakeet with their vocabulary, the
+    /// punctuation repair) and reports the wait after release.
+    #[test]
+    #[ignore] // needs the user's clips + models on disk
+    fn simulate_background_dictation() {
+        let id = "parakeet-tdt-0.6b-v2";
+        let dir = crate::models::registry::stt_model_dir(id);
+        let vocab = "Claude, discord, task, anti-gravity, n8n, Claude Code, Gemini, ask, Ask user tool, GSAP, My business email, kimi";
+        let hot = build_hotwords(id, &dir, vocab);
+        let eng = SherpaSttEngine::load_transducer(&dir, 4, hot.as_ref(), 0.75).unwrap();
+        let clips = dirs::data_dir().unwrap().join("SilentVoice").join("audio").join("clips");
+        let f = crate::audio::vad::FRAME;
+        let decode = |a: &[f32]| -> (String, u128) {
+            let t = std::time::Instant::now();
+            let text = crate::audio::gate::trim_silence(a, 100).map(|c| eng.transcribe(&c).unwrap()).unwrap_or_default();
+            (text, t.elapsed().as_millis())
+        };
+        for e in std::fs::read_dir(clips).unwrap().flatten() {
+            let x = read_wav_mono_f32(&e.path()).unwrap();
+            let (mut start, mut pos, mut parts, mut busy_ms) = (0usize, 0usize, Vec::new(), 0u128);
+            while pos < x.len() {
+                pos = (pos + 4000).min(x.len()); // one 250 ms poll of new audio
+                let pending = &x[start..pos];
+                let mask = crate::audio::vad::speech_mask(&pending[..pending.len() / f * f], crate::audio::vad::threshold_for(100)).unwrap_or_default();
+                if let Some(cut) = crate::audio::segmenter::find_boundary(&mask) {
+                    let (text, ms) = decode(&x[start..start + cut * f]);
+                    parts.push(text);
+                    start += cut * f;
+                    pos += ms as usize * 16; // the user kept talking meanwhile
+                    busy_ms = (pos.saturating_sub(x.len()) / 16) as u128; // decode still running at release
+                }
+            }
+            let tail = x.len().min(pos) - start.min(x.len());
+            let (text, tail_ms) = decode(&x[start.min(x.len())..]);
+            parts.push(text);
+            let t = std::time::Instant::now();
+            let fixed = repunctuate(&parts.iter().map(String::as_str).collect::<Vec<_>>());
+            let wait = busy_ms + tail_ms + t.elapsed().as_millis();
+            println!("\n{:?}: {:.0}s audio, {} chunks, tail {:.1}s, WAIT {wait} ms (tail decode {tail_ms}, chunk still running {busy_ms})\n  {fixed}",
+                e.file_name(), x.len() as f32 / 16000.0, parts.len() - 1, tail as f32 / 16000.0);
+        }
+    }
+
 }
