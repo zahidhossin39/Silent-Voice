@@ -3,7 +3,7 @@
 Source: `D:\Vibe-coding\REA AppS\Wispr Flow\docs` (Wispr Flow 1.6.1147 teardown) compared with Silent Voice's code on 2026-10-14.
 Work through it top to bottom, one item per branch. Size: S = hours, M = a day or two, L = bigger.
 
-**Status (2026-10-15, branch `experiment`):** done #1, #2 (hotkey changeable), #3 (only "press enter" kept, cancel phrases dropped), #4 (sound packs, Chorus default), #10, #11 (background mode + 7 MB punctuation repair, on by default for English), #12, #13, #14, #15 (paste verification via UIA re-read), #7 (corrected names/jargon offered via the inline-proofreading popup). Skipped #9. **Deferred for later: #5, #6** (only matter with AI writing styles, which the user doesn't use yet).
+**Status (2026-10-15, branch `experiment`):** done #1, #2 (hotkey changeable), #3 (only "press enter" kept, cancel phrases dropped), #4 (sound packs, Chorus default), #10, #11 (background mode + 7 MB punctuation repair, on by default for English), #12, #13, #14, #15 (paste verification via UIA re-read), #7 (corrected names/jargon offered via the inline-proofreading popup). Skipped #9. **Deferred for later: #5, #6, #8** (only matter with AI writing styles, which the user doesn't use yet).
 
 ## A. Missing: worth building (local-only, keeps the app simple)
 
