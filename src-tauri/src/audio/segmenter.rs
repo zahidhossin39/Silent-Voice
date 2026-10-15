@@ -21,6 +21,11 @@ use crate::transcription::whisper;
 const POLL_MS: u64 = 250;
 const MIN_SPEECH_MS: usize = 2500; // a chunk must hold at least this much speech
 const SILENCE_MS: usize = 700; // trailing silence that marks a boundary
+/// After this much audio with no real pause, a breath is enough to cut at.
+/// People talk 12 s without a 700 ms pause; that all landed in one tail that
+/// cost 7.8 s after release.
+const LONG_PENDING_MS: usize = 5000;
+const BREATH_MS: usize = 300;
 /// Each Silero frame is 512 samples at 16 kHz.
 const FRAME_MS: usize = vad::FRAME * 1000 / capture::WHISPER_SAMPLE_RATE as usize;
 
@@ -64,13 +69,15 @@ impl Segmenter {
 
     /// Transcribed text so far, and how many 16 kHz samples it covers.
     /// Returns nothing once a chunk has failed.
-    pub fn prefix(&self) -> (String, usize) {
+    /// The committed chunk texts (kept apart so the punctuation repair knows
+    /// where the joins are) and how much audio they cover.
+    pub fn prefix(&self) -> (Vec<String>, usize) {
         if self.failed.load(Ordering::Relaxed) {
-            return (String::new(), 0);
+            return (Vec::new(), 0);
         }
         match self.done.lock() {
-            Ok(done) => (done.text.join(" "), done.consumed_16k),
-            Err(_) => (String::new(), 0),
+            Ok(done) => (done.text.clone(), done.consumed_16k),
+            Err(_) => (Vec::new(), 0),
         }
     }
 
@@ -226,11 +233,17 @@ pub fn spawn(app: AppHandle, seg: Arc<Segmenter>, cfg: ChunkCfg, generation: usi
 /// the user keeps talking while a chunk decodes, and a pause made then must
 /// still count, or everything after it piles into one slow tail (a 14 s tail
 /// cost 6.9 s after release in the logs).
-fn find_boundary(mask: &[bool]) -> Option<usize> {
+pub(crate) fn find_boundary(mask: &[bool]) -> Option<usize> {
+    pause_after(mask, SILENCE_MS)
+        .or_else(|| (mask.len() * FRAME_MS >= LONG_PENDING_MS).then(|| pause_after(mask, BREATH_MS)).flatten())
+}
+
+/// Latest silence of at least `silence_ms` that follows enough speech.
+fn pause_after(mask: &[bool], silence_ms: usize) -> Option<usize> {
     let mut end = mask.len();
     while end > 0 {
         let start = mask[..end].iter().rposition(|&s| s)? + 1;
-        if (end - start) * FRAME_MS >= SILENCE_MS
+        if (end - start) * FRAME_MS >= silence_ms
             && mask[..start].iter().filter(|&&s| s).count() * FRAME_MS >= MIN_SPEECH_MS
         {
             // Middle of the silence: far from any word on either side.
@@ -340,6 +353,20 @@ mod tests {
         later.extend(vec![false; pause]);
         later.extend(vec![true; 10]);
         assert!(find_boundary(&later).unwrap() > m.len());
+    }
+
+    #[test]
+    fn long_talk_without_pauses_cuts_at_a_breath() {
+        let breath = ms_to_frames(BREATH_MS);
+        // 9 s of talk with one breath in it: cut there.
+        let mut m = frames(ms_to_frames(4000), breath);
+        m.extend(vec![true; ms_to_frames(5000)]);
+        let cut = find_boundary(&m).expect("boundary");
+        assert!(cut > ms_to_frames(4000) && cut < ms_to_frames(4000) + breath);
+        // Short so far: a breath is just a breath.
+        let mut short = frames(ms_to_frames(3000), breath);
+        short.extend(vec![true; ms_to_frames(1000)]);
+        assert!(find_boundary(&short).is_none());
     }
 
     #[test]

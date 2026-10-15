@@ -661,6 +661,10 @@ pub fn ensure_engine(
 ) -> Result<std::sync::Arc<SherpaSttEngine>, String> {
     use tauri::Manager;
     let state = app.state::<crate::AppState>();
+    // onnxruntime gets slower past the physical cores: on a 4-core/8-thread
+    // i7-8650U, Parakeet took 801 ms for a 1 s clip at 8 threads vs 385 ms at
+    // 4, and lost at every length up to 8 s (bench9.py).
+    let threads = threads.min(super::hardware::physical_core_count().max(1) as u32);
     let mut slot = state.sherpa_stt.lock().map_err(|e| e.to_string())?;
     let dir = crate::models::registry::stt_model_dir(model_id);
     let hotwords = build_hotwords(model_id, &dir, vocabulary);
@@ -994,14 +998,25 @@ fn add_punct(text: &str) -> Result<String, String> {
 const SENTENCE_END: [char; 3] = ['.', '?', '!'];
 const PUNCT_MARKS: [char; 4] = ['.', ',', '?', '!'];
 
-/// Re-punctuate English text that was stitched from background chunks.
-/// Returns the input unchanged when the model is missing or anything fails,
+/// Re-punctuate English text stitched from background chunks (in order).
+/// Returns the plain join when the model is missing or anything fails,
 /// so the user never loses words to this step.
-pub fn repunctuate(text: &str) -> String {
-    if text.trim().is_empty() || !crate::models::registry::punct_installed() {
-        return text.to_string();
+pub fn repunctuate(chunks: &[&str]) -> String {
+    let text = chunks.iter().map(|c| c.trim()).filter(|c| !c.is_empty()).collect::<Vec<_>>().join(" ");
+    if text.is_empty() || !crate::models::registry::punct_installed() {
+        return text;
     }
     let words: Vec<&str> = text.split_whitespace().collect();
+    // Word index where each chunk after the first begins.
+    let mut seams = Vec::new();
+    let mut n = 0;
+    for c in chunks {
+        let k = c.split_whitespace().count();
+        if k > 0 && n > 0 {
+            seams.push(n);
+        }
+        n += k;
+    }
     let bare: Vec<String> = words
         .iter()
         .map(|w| w.chars().filter(|c| c.is_alphanumeric() || *c == '\'').collect::<String>().to_lowercase())
@@ -1011,7 +1026,7 @@ pub fn repunctuate(text: &str) -> String {
         return text.to_string();
     }
     match add_punct(&bare.join(" ")) {
-        Ok(model) => merge_punct(&words, &model).unwrap_or_else(|| text.to_string()),
+        Ok(model) => merge_punct(&words, &model, &seams).unwrap_or_else(|| text.to_string()),
         Err(e) => {
             crate::logging::log_error("punct", &e);
             text.to_string()
@@ -1022,9 +1037,9 @@ pub fn repunctuate(text: &str) -> String {
 /// Take punctuation and sentence-start capitals from the model, and every
 /// other word's casing from the speech model: the punctuation model would turn
 /// "GitHub" into "Github". A word Parakeet capitalised only because it had
-/// ended a sentence right before it goes back to lowercase. None when the word
-/// counts differ (can't align safely).
-fn merge_punct(words: &[&str], model: &str) -> Option<String> {
+/// ended a sentence right before it, or only because a chunk started there
+/// (`seams`), goes back to lowercase. None when the word counts differ.
+fn merge_punct(words: &[&str], model: &str, seams: &[usize]) -> Option<String> {
     let m: Vec<&str> = model.split_whitespace().collect();
     if m.len() != words.len() {
         return None;
@@ -1045,7 +1060,7 @@ fn merge_punct(words: &[&str], model: &str) -> Option<String> {
         let core = if starts_sentence {
             super::textfmt::capitalize_first(core)
         } else if i > 0
-            && words[i - 1].ends_with(SENTENCE_END)
+            && (words[i - 1].ends_with(SENTENCE_END) || seams.contains(&i))
             && is_title_case(core)
             && !mw.starts_with(char::is_uppercase)
         {
@@ -1257,7 +1272,7 @@ mod tests {
             .collect();
         let model = "The main thing left is the export feature on github. I think";
         assert_eq!(
-            merge_punct(&words, model).unwrap(),
+            merge_punct(&words, model, &[]).unwrap(),
             "The main thing left is the export feature on GitHub. I think."
         );
     }
@@ -1266,30 +1281,41 @@ mod tests {
     fn merge_punct_keeps_i_and_acronyms_after_a_false_stop() {
         let words: Vec<&str> = "Hey Sarah. I wanted the API. Docs".split_whitespace().collect();
         let model = "hey, sarah, i wanted the api docs";
-        assert_eq!(merge_punct(&words, model).unwrap(), "Hey, Sarah, I wanted the API docs.");
+        assert_eq!(merge_punct(&words, model, &[]).unwrap(), "Hey, Sarah, I wanted the API docs.");
     }
 
     #[test]
     fn merge_punct_keeps_abbreviations_and_a_final_question() {
         let words: Vec<&str> = "It opens at 9 a.m. Then. Can we go?".split_whitespace().collect();
         let model = "it opens at 9 am. then can we go.";
-        assert_eq!(merge_punct(&words, model).unwrap(), "It opens at 9 a.m. Then can we go?");
+        assert_eq!(merge_punct(&words, model, &[]).unwrap(), "It opens at 9 a.m. Then can we go?");
         // A mid-text ? is a chunk-join guess: the model decides there.
         let words: Vec<&str> = "Can we do that? Without the cloud".split_whitespace().collect();
         let model = "can we do that without the cloud";
-        assert_eq!(merge_punct(&words, model).unwrap(), "Can we do that without the cloud.");
+        assert_eq!(merge_punct(&words, model, &[]).unwrap(), "Can we do that without the cloud.");
+    }
+
+    #[test]
+    fn merge_punct_lowercases_a_chunk_start_capital() {
+        // Real dictation: a chunk began at "needing" after a pause, Parakeet
+        // capitalised it ("I was just Pressing", "it's Kneading").
+        let words: Vec<&str> = "when I was just Pressing the key".split_whitespace().collect();
+        let model = "when i was just pressing the key";
+        assert_eq!(merge_punct(&words, model, &[4]).unwrap(), "When I was just pressing the key.");
+        // Not a seam: Parakeet capitalised it mid-chunk, so it's a name.
+        assert_eq!(merge_punct(&words, model, &[]).unwrap(), "When I was just Pressing the key.");
     }
 
     #[test]
     fn merge_punct_refuses_misaligned_output() {
         let words: Vec<&str> = "one two three".split_whitespace().collect();
-        assert!(merge_punct(&words, "one two").is_none());
+        assert!(merge_punct(&words, "one two", &[]).is_none());
     }
 
     #[test]
     #[ignore] // needs the downloaded punctuation model
     fn repunctuate_with_real_model() {
-        let out = repunctuate("So I was thinking about. What we should build next for the app. Can we do that");
+        let out = repunctuate(&["So I was thinking about.", "What we should build next for the app.", "Can we do that"]);
         println!("{out}");
         assert!(out.starts_with("So I was thinking about what we should build next for the app"), "{out}");
     }
@@ -1311,7 +1337,7 @@ mod tests {
             "ok? ok! ok, ok.",
             "The meeting is on Thursday. Afternoon. Which works for me",
         ] {
-            let out = repunctuate(input);
+            let out = repunctuate(&[input]);
             println!("{input}\n  -> {out}");
             assert_eq!(bare(&out), bare(input), "words changed: {input} -> {out}");
         }
@@ -1373,6 +1399,51 @@ mod tests {
             if text.is_empty() { lost.push(e.file_name()); }
         }
         assert!(lost.is_empty(), "real words dropped: {lost:?}");
+    }
+
+
+    /// Replays the user's saved recordings through the background-mode logic
+    /// in real time (VAD, cut rules, Parakeet with their vocabulary, the
+    /// punctuation repair) and reports the wait after release.
+    #[test]
+    #[ignore] // needs the user's clips + models on disk
+    fn simulate_background_dictation() {
+        let id = "parakeet-tdt-0.6b-v2";
+        let dir = crate::models::registry::stt_model_dir(id);
+        let vocab = "Claude, discord, task, anti-gravity, n8n, Claude Code, Gemini, ask, Ask user tool, GSAP, My business email, kimi";
+        let hot = build_hotwords(id, &dir, vocab);
+        let eng = SherpaSttEngine::load_transducer(&dir, 4, hot.as_ref(), 0.75).unwrap();
+        let clips = dirs::data_dir().unwrap().join("SilentVoice").join("audio").join("clips");
+        let f = crate::audio::vad::FRAME;
+        let decode = |a: &[f32]| -> (String, u128) {
+            let t = std::time::Instant::now();
+            let text = crate::audio::gate::trim_silence(a, 100).map(|c| eng.transcribe(&c).unwrap()).unwrap_or_default();
+            (text, t.elapsed().as_millis())
+        };
+        for e in std::fs::read_dir(clips).unwrap().flatten() {
+            let x = read_wav_mono_f32(&e.path()).unwrap();
+            let (mut start, mut pos, mut parts, mut busy_ms) = (0usize, 0usize, Vec::new(), 0u128);
+            while pos < x.len() {
+                pos = (pos + 4000).min(x.len()); // one 250 ms poll of new audio
+                let pending = &x[start..pos];
+                let mask = crate::audio::vad::speech_mask(&pending[..pending.len() / f * f], crate::audio::vad::threshold_for(100)).unwrap_or_default();
+                if let Some(cut) = crate::audio::segmenter::find_boundary(&mask) {
+                    let (text, ms) = decode(&x[start..start + cut * f]);
+                    parts.push(text);
+                    start += cut * f;
+                    pos += ms as usize * 16; // the user kept talking meanwhile
+                    busy_ms = (pos.saturating_sub(x.len()) / 16) as u128; // decode still running at release
+                }
+            }
+            let tail = x.len().min(pos) - start.min(x.len());
+            let (text, tail_ms) = decode(&x[start.min(x.len())..]);
+            parts.push(text);
+            let t = std::time::Instant::now();
+            let fixed = repunctuate(&parts.iter().map(String::as_str).collect::<Vec<_>>());
+            let wait = busy_ms + tail_ms + t.elapsed().as_millis();
+            println!("\n{:?}: {:.0}s audio, {} chunks, tail {:.1}s, WAIT {wait} ms (tail decode {tail_ms}, chunk still running {busy_ms})\n  {fixed}",
+                e.file_name(), x.len() as f32 / 16000.0, parts.len() - 1, tail as f32 / 16000.0);
+        }
     }
 
 }

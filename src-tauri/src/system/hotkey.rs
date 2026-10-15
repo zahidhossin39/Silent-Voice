@@ -782,7 +782,7 @@ fn join_parts(a: &str, b: &str) -> String {
 pub async fn process_audio_pipeline(
     app: AppHandle,
     samples: Vec<f32>,
-    (prefix, tail_start): (String, usize),
+    (chunks, tail_start): (Vec<String>, usize),
     started: std::time::Instant,
 ) {
     // Read runtime config (STT model, language, active AI mode).
@@ -878,6 +878,7 @@ pub async fn process_audio_pipeline(
     // was held, and `tail_start`: how much of the clip they cover. Empty unless
     // chunking actually fired.
     let t_pipeline = std::time::Instant::now();
+    let prefix = chunks.join(" ");
     let chunked = !prefix.trim().is_empty();
 
     // Only the audio nobody has transcribed yet. Without chunking that is the
@@ -979,7 +980,8 @@ pub async fn process_audio_pipeline(
     // The punctuation model is English-only.
     let raw_text = if chunked && english_text(&language, &model_id) {
         let t = std::time::Instant::now();
-        let fixed = crate::system::sherpa_stt::repunctuate(&raw_text);
+        let parts: Vec<&str> = chunks.iter().map(String::as_str).chain([tail_text.as_str()]).collect();
+        let fixed = crate::system::sherpa_stt::repunctuate(&parts);
         crate::logging::log_info("punct", &format!("repunctuated in {}ms", t.elapsed().as_millis()));
         fixed
     } else {
