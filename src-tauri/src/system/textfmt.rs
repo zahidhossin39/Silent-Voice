@@ -15,7 +15,7 @@ use std::collections::HashMap;
 
 /// Spoken fillers. Whisper omits these on its own; Parakeet/NeMo transcribe them
 /// verbatim, so the pipeline strips them to keep output the same across engines.
-pub const FILLER_WORDS: &[&str] = &["um", "umm", "uh", "uhh", "erm"];
+pub const FILLER_WORDS: &[&str] = &["um", "umm", "uh", "uhh", "erm", "er", "ah", "ahh", "hmm", "hm", "mmm"]; // not "mm": "5 mm"
 
 fn units_map() -> HashMap<&'static str, u64> {
     HashMap::from([
@@ -452,6 +452,13 @@ fn strip_fillers_line(line: &str) -> String {
     let mut cap_next = false;
     for token in line.split_whitespace() {
         if is_filler_token(token) {
+            // "I think so uh." -> the sentence's mark moves to "so".
+            if let (Some(mark), Some(prev)) = (token.chars().last().filter(|c| matches!(c, '.' | '!' | '?')), kept.last_mut()) {
+                if !prev.ends_with(['.', '!', '?']) {
+                    prev.truncate(prev.trim_end_matches([',', ';', ':']).len());
+                    prev.push(mark);
+                }
+            }
             // Only a filler that opened a sentence leaves a gap worth fixing;
             // capitalizing anywhere else would turn "e.g. here" into "e.g. Here".
             if kept
@@ -473,10 +480,12 @@ fn strip_fillers_line(line: &str) -> String {
 }
 
 fn is_filler_token(token: &str) -> bool {
-    let bare = token
-        .trim_matches(|c: char| c.is_ascii_punctuation())
-        .to_lowercase();
-    FILLER_WORDS.contains(&bare.as_str())
+    let core = token.trim_matches(|c: char| c.is_ascii_punctuation());
+    // "ER", "UM": all caps means an acronym, not a hesitation.
+    if core.chars().count() > 1 && core.chars().all(|c| c.is_uppercase()) {
+        return false;
+    }
+    FILLER_WORDS.contains(&core.to_lowercase().as_str())
 }
 
 pub(crate) fn capitalize_first(token: &str) -> String {
@@ -1188,6 +1197,19 @@ mod tests {
         assert_eq!(strip_fillers("Um yeah, that's all. Um we can also uh make it"), "Yeah, that's all. We can also make it");
         assert_eq!(strip_fillers("The drummer went rat-a-tat."), "The drummer went rat-a-tat.");
         assert_eq!(strip_fillers("um uh"), "");
+    }
+
+    #[test]
+    fn test_strip_fillers_ah_hmm_and_their_punctuation() {
+        // Real dictation: "I don't see that thing. Ah anymore."
+        assert_eq!(strip_fillers("Ah, I see. Hmm, okay."), "I see. Okay.");
+        assert_eq!(strip_fillers("Mmm, the er report"), "The report");
+        assert_eq!(strip_fillers("A 5 mm screw. We took him to the ER, UM campus."), "A 5 mm screw. We took him to the ER, UM campus.");
+        // A filler that ended the sentence hands its mark to the word before.
+        assert_eq!(strip_fillers("I think so uh."), "I think so.");
+        assert_eq!(strip_fillers("Is it ready, um?"), "Is it ready?");
+        // Real words that only look close stay.
+        assert_eq!(strip_fillers("Oh, the ahead and hmmm-like Ahmed."), "Oh, the ahead and hmmm-like Ahmed.");
     }
 
     #[test]

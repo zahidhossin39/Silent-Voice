@@ -809,6 +809,26 @@ mod paste_verdict_tests {
     }
 }
 
+/// Background chunks -> one text with repaired punctuation. Fillers go first:
+/// the punctuation model saw "thing ah anymore" and put a full stop before
+/// the "ah", which stayed behind after the filler was removed.
+fn repunctuate_chunks(parts: &[&str]) -> String {
+    let cleaned: Vec<String> = parts.iter().map(|p| textfmt::strip_fillers(p)).collect();
+    crate::system::sherpa_stt::repunctuate(&cleaned.iter().map(String::as_str).collect::<Vec<_>>())
+}
+
+#[cfg(test)]
+mod chunk_tests {
+    /// Real dictation: Parakeet ended a chunk at "thing." and began the next
+    /// with "Ah". Must read "that thing anymore", no stray full stop.
+    #[test]
+    #[ignore] // needs the downloaded punctuation model
+    fn filler_at_a_seam_leaves_no_stray_stop() {
+        let out = super::repunctuate_chunks(&["but I don't see that thing.", "Ah anymore. So could you check it out?"]);
+        assert!(out.contains("that thing anymore"), "{out}");
+    }
+}
+
 /// The punctuation model is English-only.
 fn english_text(language: &str, model_id: &str) -> bool {
     language.starts_with("en")
@@ -1033,7 +1053,7 @@ pub async fn process_audio_pipeline(
     let raw_text = if chunked && english_text(&language, &model_id) {
         let t = std::time::Instant::now();
         let parts: Vec<&str> = chunks.iter().map(String::as_str).chain([tail_text.as_str()]).collect();
-        let fixed = crate::system::sherpa_stt::repunctuate(&parts);
+        let fixed = repunctuate_chunks(&parts);
         crate::logging::log_info("punct", &format!("repunctuated in {}ms", t.elapsed().as_millis()));
         fixed
     } else {
