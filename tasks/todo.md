@@ -1,0 +1,74 @@
+# Tasks: Transcribe a file (step 1)
+
+## Phase 1: Foundation (riskiest first)
+
+### Task 1: Decode any file to 16 kHz mono, streamed
+**Description:** `audio/decode.rs` with `decode_file(path, on_chunk) -> Result<Info>` using symphonia (mp3, aac, isomp4, flac, wav, ogg/vorbis, mkv). Downmix to mono, resample to 16 kHz with the existing linear resampler, hand out chunks, report total duration up front for progress. Opus and unknown formats return a clear, human message.
+**Acceptance criteria:**
+- [ ] A 44.1 kHz stereo WAV made in the test decodes to the right length at 16 kHz
+- [ ] A real mp3, m4a and mp4 each decode (ignored test with sample files)
+- [ ] An Opus/unknown file returns "This file type isn't supported yet…" not a panic
+**Verification:** `cargo test --lib decode`; real-file ignored test passes
+**Dependencies:** None
+**Files:** `src-tauri/Cargo.toml`, `src-tauri/src/audio/decode.rs`, `src-tauri/src/audio/mod.rs`, `src-tauri/src/audio/capture.rs` (make resampler shared)
+**Scope:** S
+
+### Task 2: Streaming chunker (TDD)
+**Description:** `audio/longform.rs` `Chunker`: `push(&[f32]) -> Vec<Segment>`, `finish() -> Vec<Segment>`. Runs VAD on new frames only, cuts at pause midpoints, ~12 s target, hard-splits long speech at the quietest point. Move `silence_midpoints` / `build_segments` / `quietest_cut` here; `sherpa_stt::transcribe_file` uses the moved helpers. VAD is injectable so tests run without the model.
+**Acceptance criteria:**
+- [ ] Segments cover every sample exactly once, in order (property test over random masks and push sizes)
+- [ ] No segment longer than the cap; cuts land in silence when silence exists
+- [ ] Existing dictation tests still pass (shared helpers unchanged in behavior)
+**Verification:** `cargo test --lib longform`; full `cargo test --lib`
+**Dependencies:** None
+**Files:** `src-tauri/src/audio/longform.rs`, `src-tauri/src/audio/mod.rs`, `src-tauri/src/system/sherpa_stt.rs`
+**Scope:** S
+
+## Checkpoint A
+- [ ] All tests pass; a real 10-min mp3 decodes and chunks (log segment count and time)
+
+## Phase 2: Core flow
+
+### Task 3: Transcription job with progress and cancel
+**Description:** `transcribe_job.rs` + commands `transcribe_file_start(path)`, `transcribe_file_cancel()`. Decode → chunker → per segment: sherpa engine direct, or whisper via a temp segment WAV. Clean each segment (fillers, repeats), repunctuate per paragraph (English). Events: `transcript://progress` (percent, elapsed, ETA) and `transcript://segment` (start_ms, end_ms, text). One job at a time.
+**Acceptance criteria:**
+- [ ] A 10-min file produces timestamped segments and a finished event
+- [ ] Cancel stops within one segment and keeps the text so far
+- [ ] A dictation during a job still works
+**Verification:** ignored integration test on a sample file; manual run in `tauri:dev`
+**Dependencies:** 1, 2
+**Files:** `src-tauri/src/transcribe_job.rs`, `src-tauri/src/lib.rs`
+**Scope:** M
+
+### Task 4: Save, list, export
+**Description:** transcripts stored as JSON (`transcripts/<id>.json`), written as segments arrive with status running/cancelled/done/failed. Commands: list, get, delete, rename, export (.txt, .srt, .md).
+**Acceptance criteria:**
+- [ ] Closing the app mid-job leaves a readable partial transcript marked "Stopped at mm:ss"
+- [ ] Resume continues from the last finished segment (decode skips to it) and the result has no gap or duplicate
+- [ ] Export writes valid .srt (checked by a unit test) and plain .txt
+**Verification:** `cargo test --lib transcripts`
+**Dependencies:** 3
+**Files:** `src-tauri/src/transcripts.rs`, `src-tauri/src/transcribe_job.rs`, `src-tauri/src/lib.rs`
+**Scope:** S
+
+## Checkpoint B
+- [ ] End to end from a Tauri command: file in, saved transcript out
+
+## Phase 3: The page
+
+### Task 5: "Transcribe" page (designed with /impeccable)
+**Description:** New sidebar page in the Progress page's style: drop zone + Browse button, live progress card (percent, elapsed, time left, Cancel), text appearing as it's done, list of past transcripts, reader with timestamps, Copy and Save.
+**Acceptance criteria:**
+- [ ] Drop or browse a file and watch it fill in live
+- [ ] Past transcripts open, copy, save and delete
+- [ ] Unsupported file shows a friendly message
+**Verification:** `npx tsc --noEmit`, `npx vitest run`, screenshot in light and dark
+**Dependencies:** 3, 4
+**Files:** `src/components/dashboard/Transcribe.tsx`, `src/App.tsx`, `src/services/tauriBridge.ts`, `src/components/shared/NavIcons.tsx`, `src-tauri/capabilities/default.json`
+**Scope:** M
+
+## Checkpoint C: Verify for real
+- [ ] Tests + typecheck pass
+- [ ] Real ~10 min file and 1 h file transcribed: time taken and peak memory reported
+- [ ] /code-review on experiment vs main, fixes applied
+- [ ] Handed to the user to test
