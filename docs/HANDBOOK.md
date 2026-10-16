@@ -470,6 +470,13 @@ All commands are registered in `src-tauri/src/lib.rs` → `tauri::generate_handl
 | `set_tts` | Set active voice id + TTS hotkey in RuntimeConfig; re-registers global shortcut |
 | `speak_text` | Synthesize + play explicit text string (Settings "Test voice" button) |
 | `stop_tts` | Stop active TTS playback |
+| `file_transcribe_start(path?, resume?)` | Start a file-transcription job (or resume transcript `resume`); returns the Transcript. One job at a time |
+| `file_transcribe_cancel` | Stop the running job (what's done is kept) |
+| `transcripts_list` | Saved transcripts, newest first, headers only (`lines` empty) |
+| `transcript_get(id)` | One full transcript with its `lines` |
+| `transcript_rename(id, name)` | Rename; refused while that transcript is running |
+| `transcript_delete(id)` | Delete; refused while that transcript is running |
+| `transcript_export(id)` | Rust shows the Save dialog, writes .txt/.md/.srt by the chosen extension, returns the path or null if cancelled |
 
 ---
 
@@ -483,6 +490,7 @@ All commands are registered in `src-tauri/src/lib.rs` → `tauri::generate_handl
 | `pipeline://partial` | Rust → Overlay | `string` | Live-preview text while recording (when enabled) |
 | `download://progress` | Rust → Frontend | `{model_id, downloaded_bytes, total_bytes, status, error?}` | Progress bars in Model Store |
 | `overlay://opacity` | Rust → Overlay | `number` | (dead code — kept but not used) |
+| `transcript://update` | Rust → Frontend | full `Transcript` (with `lines`) | Transcribe page; fires on new text, status change, and at most ~1/s for progress |
 | `tray://toggle-record` | Rust → Frontend | `()` | Tray menu record toggle |
 | `tray://toggle-listen` | Rust → Frontend | `()` | Tray menu always-listen toggle |
 | `tts://state` | Rust → Frontend | `"synthesizing"\|"speaking"\|"idle"` | TTS playback state (for future UI indicator) |

@@ -8,7 +8,9 @@ mod models;
 mod onnx;
 mod proofread;
 mod system;
+mod transcribe_job;
 mod transcription;
+mod transcripts;
 
 use audio::capture::{self, Recorder};
 use history::HistoryEntry;
@@ -922,6 +924,66 @@ async fn delete_model(model_id: String) -> Result<(), String> {
     downloader::delete_model(&model_id)
 }
 
+// ---------------- Transcribe a file ----------------
+
+#[tauri::command]
+fn file_transcribe_start(app: AppHandle, path: Option<String>, resume: Option<i64>) -> Result<transcripts::Transcript, String> {
+    transcribe_job::start(&app, path, resume)
+}
+
+#[tauri::command]
+fn file_transcribe_cancel() {
+    transcribe_job::cancel();
+}
+
+#[tauri::command]
+fn transcripts_list() -> Vec<transcripts::Transcript> {
+    transcripts::list()
+}
+
+#[tauri::command]
+fn transcript_get(id: i64) -> Result<transcripts::Transcript, String> {
+    transcripts::load(id)
+}
+
+#[tauri::command]
+fn transcript_delete(id: i64) -> Result<(), String> {
+    transcribe_job::unless_running(id, "Cancel the transcription before deleting it.", || transcripts::delete(id))
+}
+
+#[tauri::command]
+fn transcript_rename(id: i64, name: String) -> Result<(), String> {
+    transcribe_job::unless_running(id, "Wait for the transcription to finish before renaming it.", || {
+        let mut t = transcripts::load(id)?;
+        t.name = name.trim().chars().take(200).collect();
+        transcripts::save(&t)
+    })
+}
+
+/// Show the Save dialog here, not in the page, so the page can never pick
+/// where a file is written. Returns the saved path, or None when cancelled.
+#[tauri::command]
+async fn transcript_export(app: AppHandle, id: i64) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let t = transcripts::load(id)?;
+    let base = std::path::Path::new(&t.name).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    let Some(picked) = app
+        .dialog()
+        .file()
+        .set_file_name(format!("{}.txt", if base.is_empty() { "transcript" } else { &base }))
+        .add_filter("Plain text", &["txt"])
+        .add_filter("Markdown with timestamps", &["md"])
+        .add_filter("Subtitles", &["srt"])
+        .blocking_save_file()
+    else {
+        return Ok(None);
+    };
+    let path = picked.into_path().map_err(|e| e.to_string())?;
+    let format = transcripts::Format::from_path(&path).ok_or("Save as .txt, .md or .srt.")?;
+    std::fs::write(&path, transcripts::render(&t, format)).map_err(|e| e.to_string())?;
+    Ok(Some(path.to_string_lossy().into_owned()))
+}
+
 // ---------------- History (local JSON file) ----------------
 
 #[tauri::command]
@@ -1262,6 +1324,7 @@ pub fn run() {
 
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
@@ -1322,9 +1385,25 @@ pub fn run() {
         })
         .setup(|app| {
             let _ = registry::ensure_dirs();
+            // A transcript still "running" means the app closed mid-way.
+            transcripts::mark_interrupted();
             tray::build_tray(app.handle())?;
             overlay::create_overlay(app.handle())?;
 
+            // Transcribe-a-file check on a real file, no UI needed: waits for the
+            // dashboard to push the user's settings (model, language) first.
+            if let Some(file) = std::env::var_os("SV_SELFTEST_TRANSCRIBE") {
+                let app = app.handle().clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_secs(20));
+                    let r = transcribe_job::start(&app, Some(file.to_string_lossy().into_owned()), None);
+                    logging::log_info("selftest", &format!("transcribe started: {:?}", r.map(|t| (t.id, t.model_id))));
+                    if let Some(w) = app.get_webview_window("main") {
+                        let _ = w.show();
+                    }
+                    let _ = app.emit("nav://to", "/transcribe");
+                });
+            }
             // CI smoke test (scripts/smoke-test.sh): paste once from a tokio
             // worker, the same thread a real dictation pastes from. macOS kills
             // the app if the paste touches main-thread-only APIs from there.
@@ -1473,6 +1552,13 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            file_transcribe_start,
+            file_transcribe_cancel,
+            transcripts_list,
+            transcript_get,
+            transcript_delete,
+            transcript_rename,
+            transcript_export,
             package_managed,
             get_hardware_info,
             recommend_device_defaults,

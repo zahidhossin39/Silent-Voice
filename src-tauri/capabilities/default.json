@@ -24,6 +24,7 @@
     "global-shortcut:allow-is-registered",
     "updater:default",
     "process:default",
-    "store:default"
+    "store:default",
+    "dialog:allow-open"
   ]
 }
