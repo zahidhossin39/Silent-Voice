@@ -8,6 +8,7 @@ mod models;
 mod onnx;
 mod proofread;
 mod system;
+mod meeting_job;
 mod transcribe_job;
 mod transcription;
 mod transcripts;
@@ -936,6 +937,18 @@ fn file_transcribe_cancel() {
     transcribe_job::cancel();
 }
 
+/// Record the mic (You) and the computer's sound (Others) into a live transcript.
+#[tauri::command]
+fn meeting_start(app: AppHandle) -> Result<transcripts::Transcript, String> {
+    meeting_job::start(&app)
+}
+
+/// Stop recording; the transcript finishes the queued pieces, then reads "done".
+#[tauri::command]
+fn meeting_stop() -> Result<(), String> {
+    meeting_job::stop()
+}
+
 #[tauri::command]
 fn transcripts_list() -> Vec<transcripts::Transcript> {
     transcripts::list()
@@ -1404,6 +1417,17 @@ pub fn run() {
                     let _ = app.emit("nav://to", "/transcribe");
                 });
             }
+            // Meeting-recorder check: record for this many seconds, then stop.
+            if let Some(secs) = std::env::var("SV_SELFTEST_MEETING").ok().and_then(|v| v.parse::<u64>().ok()) {
+                let app = app.handle().clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_secs(20));
+                    let r = meeting_job::start(&app);
+                    logging::log_info("selftest", &format!("meeting started: {:?}", r.map(|t| t.id)));
+                    std::thread::sleep(std::time::Duration::from_secs(secs));
+                    logging::log_info("selftest", &format!("meeting stop: {:?}", meeting_job::stop()));
+                });
+            }
             // CI smoke test (scripts/smoke-test.sh): paste once from a tokio
             // worker, the same thread a real dictation pastes from. macOS kills
             // the app if the paste touches main-thread-only APIs from there.
@@ -1554,6 +1578,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             file_transcribe_start,
             file_transcribe_cancel,
+            meeting_start,
+            meeting_stop,
             transcripts_list,
             transcript_get,
             transcript_delete,

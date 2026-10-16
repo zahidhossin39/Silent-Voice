@@ -14,11 +14,33 @@ pub struct Line {
     pub start_ms: u64,
     pub end_ms: u64,
     pub text: String,
+    /// Who said it, in a recorded meeting; absent for files.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speaker: Option<Speaker>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum Speaker {
+    /// The microphone.
+    You,
+    /// The computer's sound: everyone else on the call.
+    Others,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum Kind {
+    #[default]
+    File,
+    Meeting,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Transcript {
     pub id: i64,
+    #[serde(default)]
+    pub kind: Kind,
     /// File name shown in the list ("lecture.mp3").
     pub name: String,
     /// Full path, so Resume can reopen the file.
@@ -106,7 +128,15 @@ pub fn list() -> Vec<Transcript> {
 }
 
 pub fn delete(id: i64) -> Result<(), String> {
+    for s in [Speaker::You, Speaker::Others] {
+        let _ = std::fs::remove_file(audio_path(id, s));
+    }
     std::fs::remove_file(path_in(&dir(), id)).map_err(|e| e.to_string())
+}
+
+/// A recorded meeting's audio, one 16 kHz WAV per track.
+pub fn audio_path(id: i64, speaker: Speaker) -> PathBuf {
+    dir().join(format!("{id}-{}.wav", if speaker == Speaker::You { "you" } else { "others" }))
 }
 
 /// At startup nothing is running, so a "running" transcript means the app was
@@ -158,6 +188,28 @@ fn clock(ms: u64, srt: bool) -> String {
     }
 }
 
+/// Runs of the same speaker, at most PARAGRAPH lines each: one paragraph in
+/// the reader and the exports, and one punctuation repair for meetings.
+pub fn paragraphs(lines: &[Line]) -> Vec<std::ops::Range<usize>> {
+    let mut out = Vec::new();
+    let mut from = 0;
+    for i in 1..=lines.len() {
+        if i == lines.len() || i - from == PARAGRAPH || lines[i].speaker != lines[from].speaker {
+            out.push(from..i);
+            from = i;
+        }
+    }
+    out
+}
+
+fn label(l: &Line) -> &'static str {
+    match l.speaker {
+        Some(Speaker::You) => "You: ",
+        Some(Speaker::Others) => "Others: ",
+        None => "",
+    }
+}
+
 /// The transcript as .txt (paragraphs), .md (timestamped paragraphs) or .srt.
 pub fn render(t: &Transcript, format: Format) -> String {
     match format {
@@ -165,17 +217,21 @@ pub fn render(t: &Transcript, format: Format) -> String {
             .lines
             .iter()
             .enumerate()
-            .map(|(i, l)| format!("{}\n{} --> {}\n{}\n", i + 1, clock(l.start_ms, true), clock(l.end_ms, true), l.text))
+            .map(|(i, l)| format!("{}\n{} --> {}\n{}{}\n", i + 1, clock(l.start_ms, true), clock(l.end_ms, true), label(l), l.text))
             .collect::<Vec<_>>()
             .join("\n"),
         Format::Md => {
             let mut s = format!("# {}\n\n", t.name);
-            for p in t.lines.chunks(PARAGRAPH) {
-                s += &format!("**[{}]** {}\n\n", clock(p[0].start_ms, false), join(p));
+            for r in paragraphs(&t.lines) {
+                let p = &t.lines[r];
+                s += &format!("**[{}]** {}{}\n\n", clock(p[0].start_ms, false), label(&p[0]), join(p));
             }
             s
         }
-        Format::Txt => t.lines.chunks(PARAGRAPH).map(join).collect::<Vec<_>>().join("\n\n") + "\n",
+        Format::Txt => {
+            let paras: Vec<String> = paragraphs(&t.lines).into_iter().map(|r| format!("{}{}", label(&t.lines[r.start]), join(&t.lines[r]))).collect();
+            paras.join("\n\n") + "\n"
+        }
     }
 }
 
@@ -185,6 +241,7 @@ mod tests {
 
     fn sample() -> Transcript {
         Transcript {
+            kind: Kind::File,
             id: 1,
             name: "talk.mp3".into(),
             source: "C:/talk.mp3".into(),
@@ -196,8 +253,8 @@ mod tests {
             done_ms: 3_725_500,
             work_ms: 0,
             lines: vec![
-                Line { start_ms: 0, end_ms: 11_900, text: "First part.".into() },
-                Line { start_ms: 3_661_005, end_ms: 3_725_500, text: "Last part.".into() },
+                Line { start_ms: 0, end_ms: 11_900, text: "First part.".into(), speaker: None },
+                Line { start_ms: 3_661_005, end_ms: 3_725_500, text: "Last part.".into(), speaker: None },
             ],
         }
     }
@@ -216,7 +273,7 @@ mod tests {
         assert_eq!(render(&t, Format::Md), "# talk.mp3\n\n**[0:00]** First part. Last part.\n\n");
         // A seventh line starts the second paragraph.
         for i in 0..5 {
-            t.lines.push(Line { start_ms: 3_725_500 + i * 1000, end_ms: 3_726_000 + i * 1000, text: format!("L{i}.") });
+            t.lines.push(Line { start_ms: 3_725_500 + i * 1000, end_ms: 3_726_000 + i * 1000, text: format!("L{i}."), speaker: None });
         }
         assert_eq!(render(&t, Format::Txt), "First part. Last part. L0. L1. L2. L3.\n\nL4.\n");
         assert!(render(&t, Format::Md).ends_with("**[1:02:09]** L4.\n\n"));
@@ -242,5 +299,25 @@ mod tests {
         let after: Vec<(i64, Status, usize)> = all_in(&dir).iter().map(|t| (t.id, t.status, t.lines.len())).collect();
         let _ = std::fs::remove_dir_all(&dir);
         assert_eq!(after, vec![(3, Status::Failed, 2), (2, Status::Done, 2), (1, Status::Stopped, 2)]);
+    }
+
+    fn said(speaker: Speaker, start_ms: u64, text: &str) -> Line {
+        Line { start_ms, end_ms: start_ms + 2_000, text: text.into(), speaker: Some(speaker) }
+    }
+
+    #[test]
+    fn paragraphs_split_on_speaker_change_and_length() {
+        let mut lines: Vec<Line> = (0..8).map(|i| said(Speaker::Others, i * 3_000, "a b c")).collect();
+        lines.push(said(Speaker::You, 30_000, "d e f"));
+        assert_eq!(paragraphs(&lines), vec![0..6, 6..8, 8..9]);
+    }
+
+    #[test]
+    fn meeting_exports_name_the_speaker_once_per_paragraph() {
+        let mut t = sample();
+        t.lines = vec![said(Speaker::You, 0, "Hi all."), said(Speaker::You, 2_000, "Let's start."), said(Speaker::Others, 5_000, "Sounds good.")];
+        assert_eq!(render(&t, Format::Txt), "You: Hi all. Let's start.\n\nOthers: Sounds good.\n");
+        assert!(render(&t, Format::Md).contains("**[0:05]** Others: Sounds good."));
+        assert!(render(&t, Format::Srt).contains("00:00:05,000 --> 00:00:07,000\nOthers: Sounds good."));
     }
 }
