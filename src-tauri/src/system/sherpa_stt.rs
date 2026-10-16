@@ -831,28 +831,7 @@ fn segment_bounds(samples: &[f32], sensitivity: u32) -> Vec<(usize, usize)> {
     build_segments(samples.len(), &cuts, max_seg)
 }
 
-/// Sample offsets at the middle of each silence gap long enough (~0.38 s) to be
-/// a real between-sentence pause rather than a gap between words.
-fn silence_midpoints(mask: &[bool]) -> Vec<usize> {
-    const MIN_SILENCE_FRAMES: usize = 12; // 12 × 32 ms ≈ 0.38 s
-    let frame = crate::audio::vad::FRAME;
-    let mut cuts = Vec::new();
-    let mut i = 0;
-    while i < mask.len() {
-        if mask[i] {
-            i += 1;
-            continue;
-        }
-        let start = i;
-        while i < mask.len() && !mask[i] {
-            i += 1;
-        }
-        if i - start >= MIN_SILENCE_FRAMES {
-            cuts.push(((start + i) / 2) * frame);
-        }
-    }
-    cuts
-}
+use crate::audio::longform::silence_midpoints;
 
 /// Greedily pack the spans between cut points into segments no longer than
 /// `max_seg`, preferring to break at a pause; a stretch of continuous speech
