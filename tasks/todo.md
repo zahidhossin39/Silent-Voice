@@ -30,7 +30,7 @@
 ## Phase 2: Core flow
 
 ### Task 3: Transcription job with progress and cancel
-**Description:** `transcribe_job.rs` + commands `transcribe_file_start(path)`, `transcribe_file_cancel()`. Decode → chunker → per segment: sherpa engine direct, or whisper via a temp segment WAV. Clean each segment (fillers, repeats), repunctuate per paragraph (English). Events: `transcript://progress` (percent, elapsed, ETA) and `transcript://segment` (start_ms, end_ms, text). One job at a time.
+**Description:** `transcribe_job.rs` + commands `file_transcribe_start(path)`, `file_transcribe_cancel()`. Decode → chunker → per segment through the normal local STT path via a temp segment WAV (sherpa engines could take samples directly; not needed at ~5x real time). Clean each segment (fillers, repeats), repunctuate per paragraph (English). One event, `transcript://update`, carries the whole transcript (lines, progress, status); step 2 (meeting recorder) reuses it. One job at a time.
 **Acceptance criteria:**
 - [ ] A 10-min file produces timestamped segments and a finished event
 - [ ] Cancel stops within one segment and keeps the text so far

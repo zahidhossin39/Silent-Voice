@@ -824,7 +824,7 @@ export interface Transcript {
   lines: TranscriptLine[];
 }
 
-/** Same grouping the Rust side uses for .txt/.md paragraphs (~1 min each). */
+/** Paragraph size in lines (~1 min). Must match `PARAGRAPH` in src-tauri/src/transcripts.rs. */
 export const TRANSCRIPT_PARAGRAPH = 6;
 
 export const MEDIA_EXTENSIONS = ["mp3", "m4a", "mp4", "mov", "wav", "flac", "ogg", "mkv", "aac", "m4v"];
@@ -843,11 +843,19 @@ export async function transcriptsList(): Promise<Transcript[]> {
   return invoke<Transcript[]>("transcripts_list").catch(() => []);
 }
 
+/** One full transcript (the list only carries headers). */
+export async function transcriptGet(id: number): Promise<Transcript> {
+  if (!isTauri()) throw new Error("Needs the desktop app");
+  return invoke<Transcript>("transcript_get", { id });
+}
+
 export async function transcriptDelete(id: number): Promise<void> {
+  if (!isTauri()) throw new Error("Needs the desktop app");
   await invoke("transcript_delete", { id });
 }
 
 export async function transcriptRename(id: number, name: string): Promise<void> {
+  if (!isTauri()) throw new Error("Needs the desktop app");
   await invoke("transcript_rename", { id, name });
 }
 
@@ -859,21 +867,8 @@ export async function pickMediaFile(): Promise<string | null> {
   return typeof r === "string" ? r : null;
 }
 
-/** Save-as dialog, then write the transcript in the format the extension names. */
-export async function transcriptSaveAs(t: Transcript): Promise<boolean> {
+/** Rust shows the Save dialog and writes the file. False when the user cancelled. */
+export async function transcriptSaveAs(id: number): Promise<boolean> {
   if (!isTauri()) return false;
-  const { save } = await import("@tauri-apps/plugin-dialog");
-  const base = t.name.replace(/\.[^.]+$/, "") || "transcript";
-  const path = await save({
-    defaultPath: `${base}.txt`,
-    filters: [
-      { name: "Plain text", extensions: ["txt"] },
-      { name: "Markdown with timestamps", extensions: ["md"] },
-      { name: "Subtitles", extensions: ["srt"] },
-    ],
-  });
-  if (!path) return false;
-  const format = (path.split(".").pop() ?? "txt").toLowerCase();
-  await invoke("transcript_export", { id: t.id, format, path });
-  return true;
+  return (await invoke<string | null>("transcript_export", { id })) !== null;
 }

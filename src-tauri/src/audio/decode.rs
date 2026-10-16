@@ -9,7 +9,7 @@ use std::fs::File;
 use std::path::Path;
 
 use symphonia::core::audio::SampleBuffer;
-use symphonia::core::codecs::{DecoderOptions, CODEC_TYPE_NULL, CODEC_TYPE_OPUS};
+use symphonia::core::codecs::{CodecParameters, Decoder, DecoderOptions, CODEC_TYPE_NULL, CODEC_TYPE_OPUS};
 use symphonia::core::errors::Error as SymError;
 use symphonia::core::formats::{FormatOptions, FormatReader};
 use symphonia::core::io::MediaSourceStream;
@@ -22,11 +22,11 @@ use crate::audio::capture::WHISPER_SAMPLE_RATE;
 const CHUNK: usize = WHISPER_SAMPLE_RATE as usize;
 
 pub const UNSUPPORTED: &str =
-    "This file type isn't supported yet. Try mp3, m4a, mp4, wav or flac.";
+    "This file type isn't supported yet. Try mp3, m4a, mp4, wav, flac, ogg or mkv.";
 
 pub struct FileDecoder {
     format: Box<dyn FormatReader>,
-    decoder: Box<dyn symphonia::core::codecs::Decoder>,
+    decoder: Box<dyn Decoder>,
     track_id: u32,
     resampler: Resampler,
     duration_ms: Option<u64>,
@@ -46,22 +46,11 @@ impl FileDecoder {
             .format(&hint, mss, &FormatOptions::default(), &MetadataOptions::default())
             .map_err(|_| UNSUPPORTED.to_string())?;
         let format = probed.format;
-        let track = format
-            .tracks()
-            .iter()
-            .find(|t| t.codec_params.codec != CODEC_TYPE_NULL && t.codec_params.sample_rate.is_some())
-            .ok_or("This file has no audio track.")?;
-        if track.codec_params.codec == CODEC_TYPE_OPUS {
-            return Err(UNSUPPORTED.into());
-        }
-        let params = track.codec_params.clone();
-        let decoder = symphonia::default::get_codecs()
-            .make(&params, &DecoderOptions::default())
-            .map_err(|_| UNSUPPORTED.to_string())?;
+        let (track_id, params, decoder) = audio_track(&*format)?;
         let rate = params.sample_rate.unwrap_or(WHISPER_SAMPLE_RATE);
         let duration_ms = params.n_frames.map(|n| n * 1000 / rate as u64);
         Ok(Self {
-            track_id: track.id,
+            track_id,
             format,
             decoder,
             resampler: Resampler::new(rate, WHISPER_SAMPLE_RATE),
@@ -85,9 +74,14 @@ impl FileDecoder {
                     self.done = true;
                     break;
                 }
+                // The tracks changed mid-file (chained ogg, a new mkv segment):
+                // pick the audio track again and carry on with a fresh decoder.
                 Err(SymError::ResetRequired) => {
-                    self.done = true;
-                    break;
+                    let (track_id, params, decoder) = audio_track(&*self.format)?;
+                    // The rate may change too; this drops under one sample.
+                    self.resampler = Resampler::new(params.sample_rate.unwrap_or(WHISPER_SAMPLE_RATE), WHISPER_SAMPLE_RATE);
+                    (self.track_id, self.decoder) = (track_id, decoder);
+                    continue;
                 }
                 Err(e) => return Err(format!("Couldn't read the file: {e}")),
             };
@@ -117,6 +111,22 @@ impl FileDecoder {
         let n = self.out.len().min(CHUNK);
         Ok(Some(self.out.drain(..n).collect()))
     }
+}
+
+/// The first audio track, with a decoder for it.
+fn audio_track(format: &dyn FormatReader) -> Result<(u32, CodecParameters, Box<dyn Decoder>), String> {
+    let track = format
+        .tracks()
+        .iter()
+        .find(|t| t.codec_params.codec != CODEC_TYPE_NULL && t.codec_params.sample_rate.is_some())
+        .ok_or("This file has no audio track.")?;
+    if track.codec_params.codec == CODEC_TYPE_OPUS {
+        return Err(UNSUPPORTED.into());
+    }
+    let decoder = symphonia::default::get_codecs()
+        .make(&track.codec_params, &DecoderOptions::default())
+        .map_err(|_| UNSUPPORTED.to_string())?;
+    Ok((track.id, track.codec_params.clone(), decoder))
 }
 
 /// Streaming resampler: a short moving average (cheap anti-alias for 44.1/48 kHz

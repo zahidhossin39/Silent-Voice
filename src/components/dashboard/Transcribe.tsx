@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Page from "../shared/Page";
+import { CopyIcon, TrashIcon } from "../shared/TranscriptCard";
 import { STT_MODELS } from "../../services/catalog";
 import {
   copyToClipboard,
@@ -10,6 +11,7 @@ import {
   transcribeCancel,
   transcribeStart,
   transcriptDelete,
+  transcriptGet,
   transcriptRename,
   transcriptSaveAs,
   transcriptsList,
@@ -55,16 +57,41 @@ export default function Transcribe() {
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
+  // The list holds headers only; the open transcript's text lives here.
+  const [full, setFull] = useState<Transcript | null>(null);
 
   const upsert = useCallback((t: Transcript) => {
+    const head = { ...t, lines: [] };
     setList((l) => {
       const i = l.findIndex((x) => x.id === t.id);
-      if (i === -1) return [t, ...l];
+      if (i === -1) return [head, ...l];
       const next = [...l];
-      next[i] = t;
+      next[i] = head;
       return next;
     });
   }, []);
+
+  const selectedRef = useRef(selected);
+  selectedRef.current = selected;
+  const onUpdate = useCallback(
+    (t: Transcript) => {
+      upsert(t);
+      if (t.id === selectedRef.current) setFull(t);
+    },
+    [upsert]
+  );
+
+  useEffect(() => {
+    if (selected === null) return setFull(null);
+    let cancelled = false;
+    transcriptGet(selected).then(
+      (t) => !cancelled && setFull(t),
+      () => {}
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [selected]);
 
   useEffect(() => {
     transcriptsList().then((l) => {
@@ -72,11 +99,11 @@ export default function Transcribe() {
       setSelected((s) => s ?? l[0]?.id ?? null);
       setLoaded(true);
     });
-    const un = listenEvent<Transcript>("transcript://update", upsert);
+    const un = listenEvent<Transcript>("transcript://update", onUpdate);
     return () => {
       un.then((f) => f());
     };
-  }, [upsert]);
+  }, [onUpdate]);
 
   const start = useCallback(
     async (opts: { path?: string; resume?: number }) => {
@@ -85,6 +112,7 @@ export default function Transcribe() {
         const t = await transcribeStart(opts);
         upsert(t);
         setSelected(t.id);
+        setFull(t);
       } catch (e) {
         setError(String(e));
       }
@@ -97,6 +125,7 @@ export default function Transcribe() {
   useEffect(() => {
     if (!isTauri()) return;
     let un: (() => void) | undefined;
+    let cancelled = false;
     import("@tauri-apps/api/webview").then(({ getCurrentWebview }) =>
       getCurrentWebview()
         .onDragDropEvent((e) => {
@@ -108,9 +137,12 @@ export default function Transcribe() {
             if (p.paths[0]) void start({ path: p.paths[0] });
           }
         })
-        .then((f) => (un = f))
+        .then((f) => (cancelled ? f() : (un = f)))
     );
-    return () => un?.();
+    return () => {
+      cancelled = true;
+      un?.();
+    };
   }, [start]);
 
   const browse = async () => {
@@ -118,7 +150,6 @@ export default function Transcribe() {
     if (path) void start({ path });
   };
 
-  const current = list.find((t) => t.id === selected) ?? null;
   const busy = list.some((t) => t.status === "running");
 
   return (
@@ -141,17 +172,23 @@ export default function Transcribe() {
               ))}
             </ul>
           </div>
-          {current ? (
+          {full && full.id === selected ? (
             <Reader
-              key={current.id}
-              t={current}
+              key={full.id}
+              t={full}
               busy={busy}
-              onResume={() => start({ resume: current.id })}
+              onResume={() => start({ resume: full.id })}
               onDeleted={() => {
-                setList((l) => l.filter((x) => x.id !== current.id));
-                setSelected(list.find((x) => x.id !== current.id)?.id ?? null);
+                const id = full.id;
+                setList((l) => {
+                  setSelected(l.find((x) => x.id !== id)?.id ?? null);
+                  return l.filter((x) => x.id !== id);
+                });
               }}
-              onRenamed={(name) => upsert({ ...current, name })}
+              onRenamed={(name) => {
+                setList((l) => l.map((x) => (x.id === full.id ? { ...x, name } : x)));
+                setFull({ ...full, name });
+              }}
             />
           ) : (
             <div className="hidden rounded-2xl border border-sv-border bg-sv-surface md:block" />
@@ -231,7 +268,7 @@ function ListItem({ t, active, onClick }: { t: Transcript; active: boolean; onCl
       </div>
       <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-sv-muted">
         <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${s.dot}`} />
-        <span>{t.status === "running" && t.duration_ms ? `${Math.floor((t.done_ms / t.duration_ms) * 100)}%` : s.label}</span>
+        <span>{t.status === "running" && t.duration_ms ? `${Math.min(100, Math.floor((t.done_ms / t.duration_ms) * 100))}%` : s.label}</span>
         <span aria-hidden>·</span>
         <span className="truncate">
           {t.duration_ms ? clock(t.duration_ms) : "?"} ·{" "}
@@ -256,7 +293,8 @@ function Reader({
   onRenamed: (name: string) => void;
 }) {
   const paras = useMemo(() => paragraphs(t), [t]);
-  const [note, setNote] = useState<string | null>(null);
+  const [note, setNote] = useState<{ msg: string; ok: boolean } | null>(null);
+  const noteTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const bottom = useRef<HTMLDivElement>(null);
@@ -277,9 +315,11 @@ function Reader({
     return () => clearTimeout(id);
   }, [confirmDelete]);
 
-  const flash = (msg: string) => {
-    setNote(msg);
-    setTimeout(() => setNote(null), 2000);
+  useEffect(() => () => clearTimeout(noteTimer.current), []);
+  const flash = (msg: string, ok = true) => {
+    clearTimeout(noteTimer.current);
+    setNote({ msg, ok });
+    noteTimer.current = setTimeout(() => setNote(null), ok ? 2000 : 4000);
   };
 
   const copy = async () => {
@@ -289,9 +329,9 @@ function Reader({
 
   const saveAs = async () => {
     try {
-      if (await transcriptSaveAs(t)) flash("Saved");
+      if (await transcriptSaveAs(t.id)) flash("Saved");
     } catch (e) {
-      flash(String(e));
+      flash(String(e), false);
     }
   };
 
@@ -301,13 +341,13 @@ function Reader({
       await transcriptDelete(t.id);
       onDeleted();
     } catch (e) {
-      flash(String(e));
+      flash(String(e), false);
     }
   };
 
   const pct = t.duration_ms ? Math.min(100, (t.done_ms / t.duration_ms) * 100) : 0;
   // Speed so far (audio per second of work) predicts the rest.
-  const left = t.duration_ms && t.done_ms > 0 && t.work_ms > 0 ? ((t.duration_ms - t.done_ms) / t.done_ms) * t.work_ms : null;
+  const left = t.duration_ms && t.done_ms > 0 && t.work_ms > 0 ? Math.max(0, ((t.duration_ms - t.done_ms) / t.done_ms) * t.work_ms) : null;
 
   return (
     <section className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-sv-border bg-sv-surface">
@@ -325,8 +365,12 @@ function Reader({
                 if (e.key === "Enter") {
                   const name = e.currentTarget.value.trim();
                   if (name && name !== t.name) {
-                    await transcriptRename(t.id, name).catch(() => {});
-                    onRenamed(name);
+                    try {
+                      await transcriptRename(t.id, name);
+                      onRenamed(name);
+                    } catch (err) {
+                      flash(String(err), false);
+                    }
                   }
                   setRenaming(false);
                 }
@@ -350,8 +394,8 @@ function Reader({
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           {note && (
-            <span role="status" className="mr-1 text-xs font-medium text-sv-good">
-              {note}
+            <span role="status" className={`mr-1 text-xs font-medium ${note.ok ? "text-sv-good" : "text-sv-bad"}`}>
+              {note.msg}
             </span>
           )}
           <ToolButton onClick={copy} disabled={paras.length === 0} label="Copy">
@@ -484,29 +528,11 @@ function UploadIcon({ className }: { className?: string }) {
   );
 }
 
-function CopyIcon() {
-  return (
-    <svg {...icon} className="h-4 w-4" aria-hidden>
-      <rect x="8.5" y="8.5" width="11.5" height="11.5" rx="2" />
-      <path d="M15.5 8.5V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7.5a2 2 0 0 0 2 2h2.5" />
-    </svg>
-  );
-}
-
 function SaveIcon() {
   return (
     <svg {...icon} className="h-4 w-4" aria-hidden>
       <path d="M12 4v11M7.5 10.5 12 15l4.5-4.5" />
       <path d="M4.5 19.5h15" />
-    </svg>
-  );
-}
-
-function TrashIcon() {
-  return (
-    <svg {...icon} className="h-4 w-4" aria-hidden>
-      <path d="M4.5 7h15M10 11v6M14 11v6" />
-      <path d="M6 7l1 12a1.5 1.5 0 0 0 1.5 1.4h7a1.5 1.5 0 0 0 1.5-1.4L18 7M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
     </svg>
   );
 }

@@ -24,6 +24,9 @@ audio into the same chunker and job runner.
   dictation is fine. Gemini says a filtered resampler (`rubato`) is needed for
   44.1/48 kHz files. Unproven: we measure on a real file first and add it only if
   accuracy drops.
+  **Measured:** a 44.1 kHz WAV and ffmpeg's 16 kHz resample of the same clip gave identical
+  Parakeet transcripts (153 words, 0 differences), so the simple streaming box-filter +
+  linear resampler stays and `rubato` is not needed.
 - **Step 2 check (not built now):** cpal 0.15.3 already does WASAPI loopback
   (input stream on an output device, device.rs:570). Known gaps verified in its
   source: it waits forever when nothing plays (stream.rs:241, INFINITE) and never
@@ -73,3 +76,8 @@ See `tasks/todo.md`.
    timestamps), .srt.
 5. **Test files:** public-domain LibriVox mp3s (~10 min and ~1 h) in the scratch
    folder, not the repo.
+
+## Measured results
+Release build, Parakeet TDT 0.6B v2:
+- 10.6-min mp3: 117.5 s (~5.4x real time); peak 1.66 GB transient, steady ~1.2-1.3 GB.
+- 59-min mp3: 693 s (~5.1x); memory flat (+8 MB over the hour), peak 1.69 GB transient.

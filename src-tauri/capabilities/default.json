@@ -25,7 +25,6 @@
     "updater:default",
     "process:default",
     "store:default",
-    "dialog:allow-open",
-    "dialog:allow-save"
+    "dialog:allow-open"
   ]
 }

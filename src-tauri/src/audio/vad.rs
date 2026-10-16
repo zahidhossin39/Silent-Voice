@@ -50,6 +50,19 @@ pub fn threshold_for(sensitivity: u32) -> f32 {
 /// One speech flag per 512-sample frame. `None` when the model isn't installed
 /// or inference fails — the caller then falls back to the RMS gate.
 pub fn speech_mask(samples: &[f32], threshold: f32) -> Option<Vec<bool>> {
+    speech_mask_from(samples, threshold, &mut new_state())
+}
+
+/// Silero's memory between frames. Carry one across calls to VAD a stream
+/// piece by piece as if it were one long clip.
+pub type State = ndarray::Array3<f32>;
+
+pub fn new_state() -> State {
+    ndarray::Array3::<f32>::zeros((2, 1, 128))
+}
+
+/// `speech_mask`, continuing from `state` and leaving it ready for the next piece.
+pub fn speech_mask_from(samples: &[f32], threshold: f32, state: &mut State) -> Option<Vec<bool>> {
     if samples.len() < FRAME {
         return None;
     }
@@ -60,7 +73,6 @@ pub fn speech_mask(samples: &[f32], threshold: f32) -> Option<Vec<bool>> {
     }
     let session = slot.as_mut()?;
 
-    let mut state = ndarray::Array3::<f32>::zeros((2, 1, 128));
     let mut mask = Vec::with_capacity(samples.len() / FRAME);
 
     for chunk in samples.chunks(FRAME) {
@@ -90,7 +102,7 @@ pub fn speech_mask(samples: &[f32], threshold: f32) -> Option<Vec<bool>> {
         mask.push(*prob.first()? >= threshold);
 
         let (_, next) = outputs["stateN"].try_extract_tensor::<f32>().ok()?;
-        state = ndarray::Array3::from_shape_vec((2, 1, 128), next.to_vec()).ok()?;
+        *state = ndarray::Array3::from_shape_vec((2, 1, 128), next.to_vec()).ok()?;
     }
 
     if mask.is_empty() {

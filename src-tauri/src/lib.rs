@@ -942,30 +942,46 @@ fn transcripts_list() -> Vec<transcripts::Transcript> {
 }
 
 #[tauri::command]
+fn transcript_get(id: i64) -> Result<transcripts::Transcript, String> {
+    transcripts::load(id)
+}
+
+#[tauri::command]
 fn transcript_delete(id: i64) -> Result<(), String> {
-    if transcribe_job::running() == Some(id) {
-        return Err("Cancel the transcription before deleting it.".into());
-    }
-    transcripts::delete(id)
+    transcribe_job::unless_running(id, "Cancel the transcription before deleting it.", || transcripts::delete(id))
 }
 
 #[tauri::command]
 fn transcript_rename(id: i64, name: String) -> Result<(), String> {
-    let mut t = transcripts::load(id)?;
-    t.name = name.trim().chars().take(200).collect();
-    transcripts::save(&t)
+    transcribe_job::unless_running(id, "Wait for the transcription to finish before renaming it.", || {
+        let mut t = transcripts::load(id)?;
+        t.name = name.trim().chars().take(200).collect();
+        transcripts::save(&t)
+    })
 }
 
-/// Write the transcript to a path the user picked in the Save dialog.
+/// Show the Save dialog here, not in the page, so the page can never pick
+/// where a file is written. Returns the saved path, or None when cancelled.
 #[tauri::command]
-fn transcript_export(id: i64, format: String, path: String) -> Result<(), String> {
-    let path = std::path::PathBuf::from(path);
-    // Only ever write a plain text file, whatever the page asks for.
-    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
-    if !matches!(ext.as_str(), "txt" | "md" | "srt") || ext != format {
-        return Err("Save as .txt, .md or .srt.".into());
-    }
-    std::fs::write(&path, transcripts::render(&transcripts::load(id)?, &format)).map_err(|e| e.to_string())
+async fn transcript_export(app: AppHandle, id: i64) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let t = transcripts::load(id)?;
+    let base = std::path::Path::new(&t.name).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    let Some(picked) = app
+        .dialog()
+        .file()
+        .set_file_name(format!("{}.txt", if base.is_empty() { "transcript" } else { &base }))
+        .add_filter("Plain text", &["txt"])
+        .add_filter("Markdown with timestamps", &["md"])
+        .add_filter("Subtitles", &["srt"])
+        .blocking_save_file()
+    else {
+        return Ok(None);
+    };
+    let path = picked.into_path().map_err(|e| e.to_string())?;
+    let format = transcripts::Format::from_path(&path).ok_or("Save as .txt, .md or .srt.")?;
+    std::fs::write(&path, transcripts::render(&t, format)).map_err(|e| e.to_string())?;
+    Ok(Some(path.to_string_lossy().into_owned()))
 }
 
 // ---------------- History (local JSON file) ----------------
@@ -1374,11 +1390,6 @@ pub fn run() {
             tray::build_tray(app.handle())?;
             overlay::create_overlay(app.handle())?;
 
-            // CI smoke test (scripts/smoke-test.sh): paste once from a tokio
-            // worker, the same thread a real dictation pastes from. macOS kills
-            // the app if the paste touches main-thread-only APIs from there.
-            // The value is a delay in seconds, so the test can focus a text
-            // editor first and then check the text really landed there.
             // Transcribe-a-file check on a real file, no UI needed: waits for the
             // dashboard to push the user's settings (model, language) first.
             if let Some(file) = std::env::var_os("SV_SELFTEST_TRANSCRIBE") {
@@ -1393,6 +1404,11 @@ pub fn run() {
                     let _ = app.emit("nav://to", "/transcribe");
                 });
             }
+            // CI smoke test (scripts/smoke-test.sh): paste once from a tokio
+            // worker, the same thread a real dictation pastes from. macOS kills
+            // the app if the paste touches main-thread-only APIs from there.
+            // The value is a delay in seconds, so the test can focus a text
+            // editor first and then check the text really landed there.
             if let Some(v) = std::env::var_os("SV_SELFTEST_PASTE") {
                 let delay = v.to_str().and_then(|s| s.parse::<u64>().ok()).unwrap_or(0);
                 tauri::async_runtime::spawn(async move {
@@ -1539,6 +1555,7 @@ pub fn run() {
             file_transcribe_start,
             file_transcribe_cancel,
             transcripts_list,
+            transcript_get,
             transcript_delete,
             transcript_rename,
             transcript_export,

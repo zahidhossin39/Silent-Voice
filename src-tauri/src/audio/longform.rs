@@ -3,6 +3,8 @@
 // the pauses between sentences. Audio goes in as it arrives; finished pieces
 // come out, so a 2-hour file never has to sit in memory whole.
 
+use crate::audio::vad::{self, FRAME};
+
 /// A finished piece of audio, ready to transcribe.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Segment {
@@ -14,8 +16,6 @@ pub struct Segment {
     pub speech: bool,
 }
 
-use crate::audio::vad::{self, FRAME};
-
 /// The longest piece handed to a speech engine: Parakeet's memory grows with
 /// length squared and Moonshine loops on long input; whisper's window is 30 s.
 pub const MAX_SEGMENT: usize = 12 * 16_000;
@@ -23,7 +23,9 @@ pub const MAX_SEGMENT: usize = 12 * 16_000;
 /// A chunker on the real Silero VAD, at the user's sensitivity setting.
 pub fn chunker(sensitivity: u32) -> Chunker<impl FnMut(&[f32]) -> Option<Vec<bool>>> {
     let threshold = vad::threshold_for(sensitivity);
-    Chunker::with_vad(MAX_SEGMENT, move |s| vad::speech_mask(s, threshold))
+    // One Silero state for the whole stream, so ~1 s pushes VAD like one clip.
+    let mut state = vad::new_state();
+    Chunker::with_vad(MAX_SEGMENT, move |s| vad::speech_mask_from(s, threshold, &mut state))
 }
 
 pub struct Chunker<V: FnMut(&[f32]) -> Option<Vec<bool>>> {
@@ -34,13 +36,11 @@ pub struct Chunker<V: FnMut(&[f32]) -> Option<Vec<bool>>> {
     mask: Vec<bool>,
     /// Stream offset of `buf[0]`.
     offset: usize,
-    /// False once the VAD is missing or failed: then nothing counts as silence.
-    vad_ok: bool,
 }
 
 impl<V: FnMut(&[f32]) -> Option<Vec<bool>>> Chunker<V> {
     pub fn with_vad(max_samples: usize, vad: V) -> Self {
-        Self { vad, max: max_samples, buf: Vec::new(), mask: Vec::new(), offset: 0, vad_ok: true }
+        Self { vad, max: max_samples, buf: Vec::new(), mask: Vec::new(), offset: 0 }
     }
 
     pub fn push(&mut self, samples: &[f32]) -> Vec<Segment> {
@@ -48,11 +48,11 @@ impl<V: FnMut(&[f32]) -> Option<Vec<bool>>> Chunker<V> {
         // VAD only the frames that just completed.
         let done = self.mask.len() * FRAME;
         let ready = self.buf.len() / FRAME * FRAME;
-        if self.vad_ok && ready > done {
-            match (self.vad)(&self.buf[done..ready]) {
-                Some(flags) => self.mask.extend(flags),
-                None => self.vad_ok = false,
-            }
+        if ready > done {
+            // No VAD (not installed, or it failed on these frames): count them as
+            // speech, so nothing is skipped and the next push tries again.
+            let flags = (self.vad)(&self.buf[done..ready]).unwrap_or_else(|| vec![true; (ready - done) / FRAME]);
+            self.mask.extend(flags);
         }
         let mut out = Vec::new();
         while self.buf.len() > self.max {
@@ -71,7 +71,7 @@ impl<V: FnMut(&[f32]) -> Option<Vec<bool>>> Chunker<V> {
     /// Hand out `buf[..cut]` (cut on a frame boundary) as a segment.
     fn take(&mut self, cut: usize) -> Segment {
         let frames: Vec<bool> = self.mask.drain(..(cut / FRAME).min(self.mask.len())).collect();
-        let seg = Segment { start: self.offset, samples: self.buf.drain(..cut).collect(), speech: !self.vad_ok || frames.contains(&true) };
+        let seg = Segment { start: self.offset, samples: self.buf.drain(..cut).collect(), speech: frames.contains(&true) };
         self.offset += cut;
         seg
     }
@@ -80,7 +80,8 @@ impl<V: FnMut(&[f32]) -> Option<Vec<bool>>> Chunker<V> {
         if self.buf.is_empty() {
             return Vec::new();
         }
-        let speech = !self.vad_ok || self.mask.contains(&true);
+        // A tail under one VAD frame (32 ms) has no flags and counts as silence.
+        let speech = self.mask.contains(&true);
         vec![Segment { start: self.offset, samples: self.buf, speech }]
     }
 }
@@ -89,7 +90,8 @@ impl<V: FnMut(&[f32]) -> Option<Vec<bool>>> Chunker<V> {
 const BREATH_SEARCH: usize = 24_000; // 1.5 s
 
 /// The VAD-frame boundary in `lo..=hi` with the least energy around it (±10 ms).
-/// Only frame boundaries, so the speech flags stay aligned after the cut.
+/// Only frame boundaries, so the speech flags stay aligned after the cut (why
+/// this isn't sherpa_stt's `quietest_cut`, which snaps to any 10 ms step).
 fn quietest_boundary(buf: &[f32], lo: usize, hi: usize) -> usize {
     const AROUND: usize = 160;
     let mut best = (f32::MAX, hi / FRAME * FRAME);
@@ -178,6 +180,34 @@ mod tests {
         assert_eq!(rest.len(), 1);
         assert_eq!(rest[0].start, cut);
         assert_eq!(cut + rest[0].samples.len(), audio.len(), "every sample kept once");
+    }
+
+    #[test]
+    fn with_two_pauses_in_reach_it_cuts_in_the_later_one() {
+        let sr = 16_000;
+        let mut audio = vec![0.5f32; 3 * sr];
+        audio.extend(vec![0.0f32; sr]); // pause at 3-4 s
+        audio.extend(vec![0.5f32; 5 * sr]);
+        audio.extend(vec![0.0f32; sr]); // pause at 9-10 s
+        audio.extend(vec![0.5f32; 6 * sr]);
+        let mut c = Chunker::with_vad(12 * sr, fake_vad);
+        let cut = c.push(&audio)[0].samples.len();
+        assert!(cut > 9 * sr && cut < 10 * sr, "cut at {cut}: the longest piece fits, so take the later pause");
+    }
+
+    #[test]
+    fn a_vad_failure_counts_as_speech_and_the_next_push_retries() {
+        let sr = 16_000;
+        let mut calls = 0;
+        let mut c = Chunker::with_vad(12 * sr, |s: &[f32]| {
+            calls += 1;
+            if calls == 1 { None } else { fake_vad(s) }
+        });
+        let mut segs = c.push(&vec![0.0f32; sr]); // fails: kept as speech
+        segs.extend(c.push(&vec![0.0f32; 13 * sr])); // works: silence found
+        segs.extend(c.finish());
+        assert!(segs[0].speech, "a failed VAD must not drop audio");
+        assert!(segs.iter().skip(1).any(|s| !s.speech), "VAD never came back after one failure");
     }
 
     #[test]
