@@ -8,6 +8,7 @@ mod models;
 mod onnx;
 mod proofread;
 mod system;
+mod meeting_job;
 mod transcribe_job;
 mod transcription;
 mod transcripts;
@@ -936,6 +937,26 @@ fn file_transcribe_cancel() {
     transcribe_job::cancel();
 }
 
+/// Record the mic (You) and the computer's sound (Others) into a live transcript.
+#[tauri::command]
+async fn meeting_start(app: AppHandle) -> Result<transcripts::Transcript, String> {
+    meeting_job::start(&app)
+}
+
+/// The mic and speakers a meeting would record: `[mic, speakers]`.
+#[tauri::command]
+fn meeting_devices(state: State<AppState>) -> [Option<String>; 2] {
+    let mic = state.config.lock().ok().and_then(|c| c.audio_device.clone());
+    let (m, s) = audio::live::device_names(mic.as_deref());
+    [m, s]
+}
+
+/// Stop recording; the transcript finishes the queued pieces, then reads "done".
+#[tauri::command]
+async fn meeting_stop(app: AppHandle) -> Result<(), String> {
+    meeting_job::stop(&app)
+}
+
 #[tauri::command]
 fn transcripts_list() -> Vec<transcripts::Transcript> {
     transcripts::list()
@@ -1395,13 +1416,36 @@ pub fn run() {
             if let Some(file) = std::env::var_os("SV_SELFTEST_TRANSCRIBE") {
                 let app = app.handle().clone();
                 std::thread::spawn(move || {
-                    std::thread::sleep(std::time::Duration::from_secs(20));
+                    while !app.state::<AppState>().config_pushed.load(std::sync::atomic::Ordering::Relaxed) {
+                        std::thread::sleep(std::time::Duration::from_millis(500));
+                    }
                     let r = transcribe_job::start(&app, Some(file.to_string_lossy().into_owned()), None);
                     logging::log_info("selftest", &format!("transcribe started: {:?}", r.map(|t| (t.id, t.model_id))));
                     if let Some(w) = app.get_webview_window("main") {
                         let _ = w.show();
                     }
                     let _ = app.emit("nav://to", "/transcribe");
+                });
+            }
+            // Meeting-recorder check: record for this many seconds, then stop.
+            // Dev builds only: it records with no consent note.
+            #[cfg(debug_assertions)]
+            if let Some(secs) = std::env::var("SV_SELFTEST_MEETING").ok().and_then(|v| v.parse::<u64>().ok()) {
+                let app = app.handle().clone();
+                std::thread::spawn(move || {
+                    // Wait for the dashboard to send the user's settings (model, mic).
+                    while !app.state::<AppState>().config_pushed.load(std::sync::atomic::Ordering::Relaxed) {
+                        std::thread::sleep(std::time::Duration::from_millis(500));
+                    }
+                    std::thread::sleep(std::time::Duration::from_secs(5));
+                    let r = meeting_job::start(&app);
+                    logging::log_info("selftest", &format!("meeting started: {:?}", r.map(|t| t.id)));
+                    if let Some(w) = app.get_webview_window("main") {
+                        let _ = w.show();
+                    }
+                    let _ = app.emit("nav://to", "/notetaker");
+                    std::thread::sleep(std::time::Duration::from_secs(secs));
+                    logging::log_info("selftest", &format!("meeting stop: {:?}", meeting_job::stop(&app)));
                 });
             }
             // CI smoke test (scripts/smoke-test.sh): paste once from a tokio
@@ -1554,6 +1598,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             file_transcribe_start,
             file_transcribe_cancel,
+            meeting_start,
+            meeting_stop,
+            meeting_devices,
             transcripts_list,
             transcript_get,
             transcript_delete,

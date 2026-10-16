@@ -37,9 +37,11 @@ import {
   ThemeIcon,
   ProgressIcon,
   TranscribeIcon,
+  NotetakerIcon,
 } from "./components/shared/NavIcons";
 import Progress from "./components/dashboard/Progress";
 import Transcribe from "./components/dashboard/Transcribe";
+import Notetaker, { useMeetingRecording } from "./components/dashboard/Notetaker";
 import { Titlebar } from "./components/shared/Titlebar";
 import ThemeSwitch from "./components/shared/ThemeSwitch";
 
@@ -47,6 +49,7 @@ const NAV = [
   { to: "/home", label: "Home", Icon: HomeIcon },
   { to: "/progress", label: "Progress", Icon: ProgressIcon },
   { to: "/transcribe", label: "Transcribe", Icon: TranscribeIcon },
+  { to: "/notetaker", label: "Notetaker", Icon: NotetakerIcon },
   { to: "/models", label: "Model Store", Icon: StoreIcon },
   { to: "/modes", label: "Writing styles", Icon: ModesIcon },
   { to: "/theme", label: "Theme", Icon: ThemeIcon },
@@ -119,6 +122,7 @@ function Announcer() {
 }
 
 function Dashboard() {
+  const recordingMeeting = useMeetingRecording();
   const refresh = useModelStore((s) => s.refresh);
   const hydrate = useHistoryStore((s) => s.hydrate);
   const seedStats = useStatsStore((s) => s.seedFromEntries);
@@ -208,6 +212,9 @@ function Dashboard() {
             >
               <n.Icon className="h-[18px] w-[18px] shrink-0" />
               {n.label}
+              {n.to === "/notetaker" && recordingMeeting && (
+                <span className="ml-auto h-2 w-2 animate-pulse rounded-full bg-sv-bad" role="status" aria-label="Recording" />
+              )}
             </NavLink>
           ))}
         </nav>
@@ -281,6 +288,7 @@ function Dashboard() {
           <Route path="/home" element={<Home />} />
           <Route path="/progress" element={<Progress />} />
           <Route path="/transcribe" element={<Transcribe />} />
+          <Route path="/notetaker" element={<Notetaker />} />
           <Route path="/models" element={<ModelStore />} />
           <Route path="/modes" element={<Modes />} />
           <Route path="/theme" element={<Theme />} />

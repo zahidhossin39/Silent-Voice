@@ -78,3 +78,34 @@ fn show_main(app: &AppHandle) {
         let _ = win.set_focus();
     }
 }
+
+/// While a meeting records, the tray icon carries a red dot and says so, so the
+/// recording stays visible with the window closed (hard rule 11: close = hide).
+pub fn set_meeting_recording(app: &AppHandle, on: bool) {
+    let (Some(tray), Some(icon)) = (app.tray_by_id("main-tray"), app.default_window_icon()) else {
+        return;
+    };
+    let icon = if on { with_red_dot(icon) } else { icon.clone() };
+    let _ = tray.set_icon(Some(icon));
+    let _ = tray.set_tooltip(Some(if on { "Silent Voice — recording a meeting" } else { "Silent Voice — idle" }));
+}
+
+/// The app icon with a red dot in its lower-right corner.
+fn with_red_dot(icon: &tauri::image::Image<'_>) -> tauri::image::Image<'static> {
+    let (w, h) = (icon.width() as i64, icon.height() as i64);
+    let mut rgba = icon.rgba().to_vec();
+    let r = w.min(h) * 3 / 10;
+    let (cx, cy) = (w - r - 1, h - r - 1);
+    for y in 0..h {
+        for x in 0..w {
+            let d = (x - cx).pow(2) + (y - cy).pow(2);
+            if d <= r * r {
+                let i = ((y * w + x) * 4) as usize;
+                // A white ring keeps the dot readable on a red-ish icon or taskbar.
+                let px = if d >= (r - r / 4).pow(2) { [255, 255, 255, 255] } else { [239, 68, 68, 255] };
+                rgba[i..i + 4].copy_from_slice(&px);
+            }
+        }
+    }
+    tauri::image::Image::new_owned(rgba, w as u32, h as u32)
+}

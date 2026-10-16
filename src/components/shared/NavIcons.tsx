@@ -129,6 +129,16 @@ export function TranscribeIcon({ className }: IconProps) {
   );
 }
 
+export function NotetakerIcon({ className }: IconProps) {
+  // A record button: "capture this call".
+  return (
+    <svg {...base} className={className}>
+      <circle cx="12" cy="12" r="8.25" />
+      <circle cx="12" cy="12" r="3.25" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
 export function HistoryIcon({ className }: IconProps) {
   // A clean clock face with a small "rewind" notch at the top-left — reads
   // clearly as recents/history, classy rather than busy.

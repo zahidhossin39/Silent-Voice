@@ -808,10 +808,14 @@ export interface TranscriptLine {
   start_ms: number;
   end_ms: number;
   text: string;
+  /** Recorded meetings only: the mic ("you") or the computer's sound ("others"). */
+  speaker?: "you" | "others";
 }
 
 export interface Transcript {
   id: number;
+  /** Missing on transcripts saved before meetings existed: those are files. */
+  kind?: "file" | "meeting";
   name: string;
   source: string;
   created: number;
@@ -826,6 +830,25 @@ export interface Transcript {
 
 /** Paragraph size in lines (~1 min). Must match `PARAGRAPH` in src-tauri/src/transcripts.rs. */
 export const TRANSCRIPT_PARAGRAPH = 6;
+
+/** Runs of the same speaker, at most TRANSCRIPT_PARAGRAPH lines: mirrors `paragraphs` in transcripts.rs. */
+export function transcriptParagraphs(lines: TranscriptLine[]) {
+  const out: { start: number; speaker?: "you" | "others"; text: string }[] = [];
+  let from = 0;
+  for (let i = 1; i <= lines.length; i++) {
+    if (i === lines.length || i - from === TRANSCRIPT_PARAGRAPH || lines[i].speaker !== lines[from].speaker) {
+      const group = lines.slice(from, i);
+      out.push({ start: group[0].start_ms, speaker: group[0].speaker, text: group.map((l) => l.text).join(" ") });
+      from = i;
+    }
+  }
+  return out;
+}
+
+/** "You: " / "Others: " before a meeting paragraph; mirrors `label` in transcripts.rs. */
+export function speakerLabel(speaker?: "you" | "others"): string {
+  return speaker === "you" ? "You: " : speaker === "others" ? "Others: " : "";
+}
 
 export const MEDIA_EXTENSIONS = ["mp3", "m4a", "mp4", "mov", "wav", "flac", "ogg", "mkv", "aac", "m4v"];
 
@@ -871,4 +894,22 @@ export async function pickMediaFile(): Promise<string | null> {
 export async function transcriptSaveAs(id: number): Promise<boolean> {
   if (!isTauri()) return false;
   return (await invoke<string | null>("transcript_export", { id })) !== null;
+}
+
+/** Record the mic and the computer's sound into a live transcript. */
+export async function meetingStart(): Promise<Transcript> {
+  if (!isTauri()) throw new Error("Needs the desktop app");
+  return invoke<Transcript>("meeting_start");
+}
+
+/** Stop recording; the transcript then finishes the queued pieces. */
+export async function meetingStop(): Promise<void> {
+  if (isTauri()) await invoke("meeting_stop");
+}
+
+/** The mic and speakers a meeting would record. */
+export async function meetingDevices(): Promise<{ mic: string | null; speakers: string | null }> {
+  if (!isTauri()) return { mic: null, speakers: null };
+  const [mic, speakers] = await invoke<[string | null, string | null]>("meeting_devices");
+  return { mic, speakers };
 }

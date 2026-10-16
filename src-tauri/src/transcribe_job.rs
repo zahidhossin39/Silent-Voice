@@ -34,6 +34,39 @@ pub fn cancel() {
     }
 }
 
+/// Take the one job slot for `id` (files and meetings share it). The flag is
+/// Cancel for a file; a meeting ends with Stop instead.
+pub(crate) fn claim(id: i64) -> Result<Arc<AtomicBool>, String> {
+    let mut job = JOB.lock().map_err(|e| e.to_string())?;
+    if job.is_some() {
+        return Err("A file is being transcribed or a meeting recorded. Wait for it to finish or stop it first.".into());
+    }
+    let stop = Arc::new(AtomicBool::new(false));
+    *job = Some((id, stop.clone()));
+    Ok(stop)
+}
+
+/// Free the slot of a job that never got going.
+pub(crate) fn release(id: i64) {
+    if let Ok(mut j) = JOB.lock() {
+        if j.as_ref().is_some_and(|(jid, _)| *jid == id) {
+            *j = None;
+        }
+    }
+}
+
+/// Save a job's final state and free the slot, under the job lock, so a rename
+/// can't land in between and be overwritten; then tell the page.
+pub(crate) fn finish(app: &AppHandle, t: &Transcript) {
+    if let Ok(mut j) = JOB.lock() {
+        let _ = transcripts::save(t);
+        if j.as_ref().is_some_and(|(jid, _)| *jid == t.id) {
+            *j = None;
+        }
+    }
+    let _ = app.emit("transcript://update", t);
+}
+
 /// Run `f` on transcript `id` only while no job is writing it. Holds the job
 /// lock throughout, so a job can't start (or finish) halfway through.
 pub fn unless_running<T>(id: i64, busy: &str, f: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
@@ -44,28 +77,31 @@ pub fn unless_running<T>(id: i64, busy: &str, f: impl FnOnce() -> Result<T, Stri
     f()
 }
 
-/// What each piece is transcribed with, read from settings when the job starts.
-struct Cfg {
-    model_id: String,
+/// What each piece is transcribed with, read from settings when a job starts.
+/// Shared with the meeting recorder.
+pub(crate) struct Cfg {
+    pub(crate) model_id: String,
     language: String,
     vocabulary: String,
     use_vocabulary: bool,
     use_gpu: bool,
     threads: u32,
-    english: bool,
-    sensitivity: u32,
+    pub(crate) sensitivity: u32,
+    pub(crate) english: bool,
+    /// The dictation mic from settings (None = system default).
+    pub(crate) mic: Option<String>,
 }
 
-/// Start a new transcript for `path`, or carry on with `resume` from where it stopped.
-pub fn start(app: &AppHandle, path: Option<String>, resume: Option<i64>) -> Result<Transcript, String> {
-    let mut job = JOB.lock().map_err(|e| e.to_string())?;
-    if job.is_some() {
-        return Err("A file is already being transcribed. Wait for it or cancel it first.".into());
-    }
-    let cfg = {
+impl Cfg {
+    pub(crate) fn load(app: &AppHandle) -> Result<Self, String> {
         let state = app.state::<crate::AppState>();
+        // Before the dashboard sends the user's settings, these are the defaults
+        // (a model that may not even be downloaded).
+        if !state.config_pushed.load(Ordering::Relaxed) {
+            return Err("Still loading your settings. Try again in a moment.".into());
+        }
         let c = state.config.lock().map_err(|e| e.to_string())?;
-        Cfg {
+        Ok(Cfg {
             english: crate::system::hotkey::english_text(&c.language, &c.model_id),
             model_id: c.model_id.clone(),
             language: c.language.clone(),
@@ -74,38 +110,37 @@ pub fn start(app: &AppHandle, path: Option<String>, resume: Option<i64>) -> Resu
             use_gpu: c.use_gpu,
             threads: crate::system::hotkey::resolve_thread_count(c.high_performance, c.performance_threads),
             sensitivity: c.input_sensitivity,
-        }
-    };
-    let mut t = match resume {
-        Some(id) => transcripts::load(id)?,
-        None => {
-            let source = path.ok_or("No file given.")?;
-            let id = transcripts::new_id()?;
-            Transcript {
-                id,
-                name: std::path::Path::new(&source).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
-                source,
-                created: id,
-                duration_ms: None,
-                model_id: cfg.model_id.clone(),
-                status: Status::Running,
-                error: None,
-                done_ms: 0,
-                work_ms: 0,
-                lines: Vec::new(),
-            }
-        }
-    };
-    // Open before answering, so "not supported" shows up at once on the page.
-    let mut decoder = FileDecoder::open(std::path::Path::new(&t.source))?;
-    t.duration_ms = decoder.duration_ms().or(t.duration_ms);
-    t.status = Status::Running;
-    t.error = None;
-    transcripts::save(&t)?;
+            mic: c.audio_device.clone(),
+        })
+    }
+}
 
-    let stop = Arc::new(AtomicBool::new(false));
-    *job = Some((t.id, stop.clone()));
-    drop(job);
+/// Start a new transcript for `path`, or carry on with `resume` from where it stopped.
+pub fn start(app: &AppHandle, path: Option<String>, resume: Option<i64>) -> Result<Transcript, String> {
+    let cfg = Cfg::load(app)?;
+    let id = match resume {
+        Some(id) => id,
+        None => transcripts::new_id()?,
+    };
+    let stop = claim(id)?;
+    let prepared = (|| {
+        let mut t = match resume {
+            Some(id) => transcripts::load(id)?,
+            None => {
+                let source = path.ok_or("No file given.")?;
+                let name = std::path::Path::new(&source).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                Transcript::new(id, transcripts::Kind::File, name, source, cfg.model_id.clone())
+            }
+        };
+        // Open before answering, so "not supported" shows up at once on the page.
+        let decoder = FileDecoder::open(std::path::Path::new(&t.source))?;
+        t.duration_ms = decoder.duration_ms().or(t.duration_ms);
+        t.status = Status::Running;
+        t.error = None;
+        transcripts::save(&t)?;
+        Ok::<_, String>((t, decoder))
+    })();
+    let (mut t, mut decoder) = prepared.inspect_err(|_| release(id))?;
 
     let first = t.clone();
     let app = app.clone();
@@ -148,15 +183,7 @@ pub fn start(app: &AppHandle, path: Option<String>, resume: Option<i64>) -> Resu
             "transcribe",
             &format!("{:?} after {:.1} min audio, {:.1} s work", t.status, t.done_ms as f64 / 60_000.0, t.work_ms as f64 / 1000.0),
         );
-        // Save and free the slot under the job lock, so a rename can't land in
-        // between and be overwritten; then tell the page (a new start now works).
-        if let Ok(mut j) = JOB.lock() {
-            let _ = transcripts::save(&t);
-            if j.as_ref().is_some_and(|(jid, _)| *jid == t.id) {
-                *j = None;
-            }
-        }
-        let _ = app.emit("transcript://update", &t);
+        finish(&app, &t);
     });
     Ok(first)
 }
@@ -208,7 +235,7 @@ fn run<V: FnMut(&[f32]) -> Option<Vec<bool>>>(
                     Ok(text) => {
                         fails = 0;
                         if !text.is_empty() {
-                            t.lines.push(Line { start_ms, end_ms, text });
+                            t.lines.push(Line { start_ms, end_ms, text, speaker: None });
                             new_text = true;
                             open += 1;
                             if open == PARAGRAPH {
@@ -236,9 +263,11 @@ fn run<V: FnMut(&[f32]) -> Option<Vec<bool>>>(
     Ok(())
 }
 
-fn transcribe_piece(app: &AppHandle, samples: &[f32], cfg: &Cfg) -> Result<String, String> {
-    // ponytail: one fixed file name, fine while only one job runs at a time.
-    let path = crate::models::registry::audio_dir().join("file-piece.wav");
+/// Transcribe one piece locally and clean it (fillers, repeated words).
+pub(crate) fn transcribe_piece(app: &AppHandle, samples: &[f32], cfg: &Cfg) -> Result<String, String> {
+    // Its own temp file: the meeting recorder transcribes two tracks.
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let path = crate::models::registry::audio_dir().join(format!("piece-{}.wav", NEXT.fetch_add(1, Ordering::Relaxed)));
     capture::write_wav(&path, samples)?;
     let text = tauri::async_runtime::block_on(crate::transcription::whisper::transcribe_dispatch(
         app,
@@ -253,7 +282,9 @@ fn transcribe_piece(app: &AppHandle, samples: &[f32], cfg: &Cfg) -> Result<Strin
         "",
         "",
         "",
-    ))?;
+    ));
+    let _ = std::fs::remove_file(&path);
+    let text = text?;
     Ok(textfmt::collapse_repeated_words(&textfmt::strip_fillers(text.trim())).trim().to_string())
 }
 
@@ -279,7 +310,7 @@ fn repunctuate_tail(t: &mut Transcript, n: usize, english: bool) {
 
 /// Cut `text` into pieces with the same word counts as `like`; None if the
 /// total differs (then the lines are left as they were).
-fn split_like(text: &str, like: &[&str]) -> Option<Vec<String>> {
+pub(crate) fn split_like(text: &str, like: &[&str]) -> Option<Vec<String>> {
     let words: Vec<&str> = text.split_whitespace().collect();
     let counts: Vec<usize> = like.iter().map(|p| p.split_whitespace().count()).collect();
     if words.len() != counts.iter().sum::<usize>() {
@@ -310,6 +341,7 @@ mod tests {
 
     fn blank() -> Transcript {
         Transcript {
+            kind: transcripts::Kind::File,
             id: 1,
             name: "a".into(),
             source: "a".into(),

@@ -12,7 +12,7 @@ section before touching:** overlay/pill, hotkey pipeline, inline proofreading
 
 ## Layout
 
-- `src/` — React frontend. `components/dashboard/` (7 tabs), `components/overlay/`
+- `src/` — React frontend. `components/dashboard/` (sidebar pages), `components/overlay/`
   (pill window), `stores/` (Zustand), `services/tauriBridge.ts` (all invokes,
   browser-safe), `services/catalog.ts` (model catalogs).
 - `src-tauri/src/` — Rust. `lib.rs` (all commands + AppState), `system/`

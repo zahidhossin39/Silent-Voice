@@ -1,35 +1,23 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Page from "../shared/Page";
-import { CopyIcon, TrashIcon } from "../shared/TranscriptCard";
+import TranscriptHeader, { clock } from "../shared/TranscriptHeader";
 import { STT_MODELS } from "../../services/catalog";
 import {
-  copyToClipboard,
   isTauri,
   listenEvent,
   MEDIA_EXTENSIONS,
   pickMediaFile,
   transcribeCancel,
   transcribeStart,
-  transcriptDelete,
   transcriptGet,
-  transcriptRename,
-  transcriptSaveAs,
   transcriptsList,
-  TRANSCRIPT_PARAGRAPH,
+  transcriptParagraphs,
   type Transcript,
 } from "../../services/tauriBridge";
 
 // "Transcribe a file": drop a recording in, read it back with timestamps.
 // The Rust job (transcribe_job.rs) does the work and sends the whole transcript
 // after every finished piece, so this page only mirrors what it's told.
-
-function clock(ms: number): string {
-  const s = Math.floor(ms / 1000);
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const ss = String(s % 60).padStart(2, "0");
-  return h ? `${h}:${String(m).padStart(2, "0")}:${ss}` : `${m}:${ss}`;
-}
 
 function minutes(ms: number): string {
   const min = Math.round(ms / 60_000);
@@ -40,15 +28,6 @@ function minutes(ms: number): string {
 
 function modelLabel(id: string): string {
   return STT_MODELS.find((m) => m.id === id)?.label ?? id;
-}
-
-function paragraphs(t: Transcript) {
-  const out: { start: number; text: string }[] = [];
-  for (let i = 0; i < t.lines.length; i += TRANSCRIPT_PARAGRAPH) {
-    const group = t.lines.slice(i, i + TRANSCRIPT_PARAGRAPH);
-    out.push({ start: group[0].start_ms, text: group.map((l) => l.text).join(" ") });
-  }
-  return out;
 }
 
 export default function Transcribe() {
@@ -75,6 +54,7 @@ export default function Transcribe() {
   selectedRef.current = selected;
   const onUpdate = useCallback(
     (t: Transcript) => {
+      if (t.kind === "meeting") return; // the Notetaker page shows those
       upsert(t);
       if (t.id === selectedRef.current) setFull(t);
     },
@@ -94,7 +74,8 @@ export default function Transcribe() {
   }, [selected]);
 
   useEffect(() => {
-    transcriptsList().then((l) => {
+    transcriptsList().then((all) => {
+      const l = all.filter((t) => t.kind !== "meeting");
       setList(l);
       setSelected((s) => s ?? l[0]?.id ?? null);
       setLoaded(true);
@@ -292,11 +273,7 @@ function Reader({
   onDeleted: () => void;
   onRenamed: (name: string) => void;
 }) {
-  const paras = useMemo(() => paragraphs(t), [t]);
-  const [note, setNote] = useState<{ msg: string; ok: boolean } | null>(null);
-  const noteTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const [renaming, setRenaming] = useState(false);
+  const paras = useMemo(() => transcriptParagraphs(t.lines), [t]);
   const bottom = useRef<HTMLDivElement>(null);
   const running = t.status === "running";
 
@@ -309,106 +286,27 @@ function Reader({
     }
   }, [running, t.lines.length]);
 
-  useEffect(() => {
-    if (!confirmDelete) return;
-    const id = setTimeout(() => setConfirmDelete(false), 4000);
-    return () => clearTimeout(id);
-  }, [confirmDelete]);
-
-  useEffect(() => () => clearTimeout(noteTimer.current), []);
-  const flash = (msg: string, ok = true) => {
-    clearTimeout(noteTimer.current);
-    setNote({ msg, ok });
-    noteTimer.current = setTimeout(() => setNote(null), ok ? 2000 : 4000);
-  };
-
-  const copy = async () => {
-    await copyToClipboard(paras.map((p) => p.text).join("\n\n"));
-    flash("Copied");
-  };
-
-  const saveAs = async () => {
-    try {
-      if (await transcriptSaveAs(t.id)) flash("Saved");
-    } catch (e) {
-      flash(String(e), false);
-    }
-  };
-
-  const remove = async () => {
-    if (!confirmDelete) return setConfirmDelete(true);
-    try {
-      await transcriptDelete(t.id);
-      onDeleted();
-    } catch (e) {
-      flash(String(e), false);
-    }
-  };
-
   const pct = t.duration_ms ? Math.min(100, (t.done_ms / t.duration_ms) * 100) : 0;
   // Speed so far (audio per second of work) predicts the rest.
   const left = t.duration_ms && t.done_ms > 0 && t.work_ms > 0 ? Math.max(0, ((t.duration_ms - t.done_ms) / t.done_ms) * t.work_ms) : null;
 
   return (
     <section className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-sv-border bg-sv-surface">
-      <header className="flex flex-wrap items-start justify-between gap-3 border-b border-sv-border px-6 py-4">
-        <div className="min-w-0 flex-1">
-          {renaming ? (
-            <input
-              autoFocus
-              defaultValue={t.name}
-              aria-label="Transcript name"
-              className="w-full rounded-md border border-sv-accent bg-sv-bg px-2 py-0.5 text-lg font-semibold outline-none"
-              onBlur={() => setRenaming(false)}
-              onKeyDown={async (e) => {
-                if (e.key === "Escape") setRenaming(false);
-                if (e.key === "Enter") {
-                  const name = e.currentTarget.value.trim();
-                  if (name && name !== t.name) {
-                    try {
-                      await transcriptRename(t.id, name);
-                      onRenamed(name);
-                    } catch (err) {
-                      flash(String(err), false);
-                    }
-                  }
-                  setRenaming(false);
-                }
-              }}
-            />
-          ) : (
-            <h2>
-              <button
-                onClick={() => setRenaming(true)}
-                title="Rename"
-                className="max-w-full truncate rounded-md text-left text-lg font-semibold hover:text-sv-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sv-accent"
-              >
-                {t.name}
-              </button>
-            </h2>
-          )}
-          <div className="mt-0.5 text-xs text-sv-muted">
+      <TranscriptHeader
+        id={t.id}
+        title={t.name}
+        name={t.name}
+        details={
+          <>
             {t.duration_ms ? clock(t.duration_ms) : "Length unknown"} · {modelLabel(t.model_id)} ·{" "}
             {new Date(t.created).toLocaleDateString(undefined, { dateStyle: "medium" })}
-          </div>
-        </div>
-        <div className="flex shrink-0 items-center gap-1.5">
-          {note && (
-            <span role="status" className={`mr-1 text-xs font-medium ${note.ok ? "text-sv-good" : "text-sv-bad"}`}>
-              {note.msg}
-            </span>
-          )}
-          <ToolButton onClick={copy} disabled={paras.length === 0} label="Copy">
-            <CopyIcon />
-          </ToolButton>
-          <ToolButton onClick={saveAs} disabled={paras.length === 0} label="Save…">
-            <SaveIcon />
-          </ToolButton>
-          <ToolButton onClick={remove} disabled={running} label={confirmDelete ? "Delete?" : "Delete"} danger={confirmDelete}>
-            <TrashIcon />
-          </ToolButton>
-        </div>
-      </header>
+          </>
+        }
+        copyText={paras.map((p) => p.text).join("\n\n")}
+        busy={running}
+        onRenamed={onRenamed}
+        onDeleted={onDeleted}
+      />
 
       {running && (
         <div className="border-b border-sv-border px-6 py-3">
@@ -479,37 +377,6 @@ function Reader({
   );
 }
 
-function ToolButton({
-  onClick,
-  disabled,
-  label,
-  danger,
-  children,
-}: {
-  onClick: () => void;
-  disabled?: boolean;
-  label: string;
-  danger?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      title={label}
-      aria-label={label}
-      className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sv-accent disabled:cursor-not-allowed disabled:opacity-40 ${
-        danger
-          ? "border-sv-bad bg-sv-bad/10 text-sv-bad"
-          : "border-sv-border text-sv-muted hover:border-sv-accent/60 hover:text-sv-text"
-      }`}
-    >
-      {children}
-      <span className={danger ? "" : "hidden xl:inline"}>{label}</span>
-    </button>
-  );
-}
-
 const icon = {
   viewBox: "0 0 24 24",
   fill: "none",
@@ -524,15 +391,6 @@ function UploadIcon({ className }: { className?: string }) {
     <svg {...icon} className={className} aria-hidden>
       <path d="M12 15V4M7.5 8.5 12 4l4.5 4.5" />
       <path d="M4 14v4.5A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V14" />
-    </svg>
-  );
-}
-
-function SaveIcon() {
-  return (
-    <svg {...icon} className="h-4 w-4" aria-hidden>
-      <path d="M12 4v11M7.5 10.5 12 15l4.5-4.5" />
-      <path d="M4.5 19.5h15" />
     </svg>
   );
 }

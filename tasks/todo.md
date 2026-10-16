@@ -1,74 +1,64 @@
-# Tasks: Transcribe a file (step 1)
+# Record a meeting (Meeting Recorder, step 2): tasks
 
-## Phase 1: Foundation (riskiest first)
+## Phase 1: Capture (highest risk first)
 
-### Task 1: Decode any file to 16 kHz mono, streamed
-**Description:** `audio/decode.rs` with `decode_file(path, on_chunk) -> Result<Info>` using symphonia (mp3, aac, isomp4, flac, wav, ogg/vorbis, mkv). Downmix to mono, resample to 16 kHz with the existing linear resampler, hand out chunks, report total duration up front for progress. Opus and unknown formats return a clear, human message.
+### Task 1: Computer sound as a 16 kHz stream
+**Description:** `audio/live.rs` (mic + loopback): open WASAPI loopback (cpal input stream on the default output device), downmix + resample to 16 kHz mono, pad silence by the wall clock while nothing plays.
 **Acceptance criteria:**
-- [ ] A 44.1 kHz stereo WAV made in the test decodes to the right length at 16 kHz
-- [ ] A real mp3, m4a and mp4 each decode (ignored test with sample files)
-- [ ] An Opus/unknown file returns "This file type isn't supported yet…" not a panic
-**Verification:** `cargo test --lib decode`; real-file ignored test passes
-**Dependencies:** None
-**Files:** `src-tauri/Cargo.toml`, `src-tauri/src/audio/decode.rs`, `src-tauri/src/audio/mod.rs`, `src-tauri/src/audio/capture.rs` (make resampler shared)
-**Scope:** S
+- [ ] 10 min of YouTube playback gives 10 min ±1 s of audio, including paused stretches
+- [ ] Stop returns promptly even while nothing plays
+- [ ] Clock-padding logic unit-tested (gaps become silence of the right length)
+**Verification:** `cargo test --lib loopback`; ignored real-device test with a playback
+**Files:** `src-tauri/src/audio/live.rs`, `src-tauri/src/audio/mod.rs`
 
-### Task 2: Streaming chunker (TDD)
-**Description:** `audio/longform.rs` `Chunker`: `push(&[f32]) -> Vec<Segment>`, `finish() -> Vec<Segment>`. Runs VAD on new frames only, cuts at pause midpoints, ~12 s target, hard-splits long speech at the quietest point. Move `silence_midpoints` / `build_segments` / `quietest_cut` here; `sherpa_stt::transcribe_file` uses the moved helpers. VAD is injectable so tests run without the model.
+### Task 2: Shared "transcribe a piece"
+**Description:** Move piece transcription + cleanup out of `transcribe_job.rs` into one function both jobs use, with a unique temp WAV per call.
 **Acceptance criteria:**
-- [ ] Segments cover every sample exactly once, in order (property test over random masks and push sizes)
-- [ ] No segment longer than the cap; cuts land in silence when silence exists
-- [ ] Existing dictation tests still pass (shared helpers unchanged in behavior)
-**Verification:** `cargo test --lib longform`; full `cargo test --lib`
-**Dependencies:** None
-**Files:** `src-tauri/src/audio/longform.rs`, `src-tauri/src/audio/mod.rs`, `src-tauri/src/system/sherpa_stt.rs`
-**Scope:** S
+- [ ] File transcription unchanged (existing tests green)
+- [ ] No fixed `file-piece.wav` name left
+**Verification:** `cargo test --lib`
+**Files:** `src-tauri/src/transcribe_job.rs`, new shared module or `transcripts.rs`
 
 ## Checkpoint A
-- [ ] All tests pass; a real 10-min mp3 decodes and chunks (log segment count and time)
+- [ ] Tests pass; loopback measured on real playback
 
-## Phase 2: Core flow
+## Phase 2: The meeting job
 
-### Task 3: Transcription job with progress and cancel
-**Description:** `transcribe_job.rs` + commands `file_transcribe_start(path)`, `file_transcribe_cancel()`. Decode → chunker → per segment through the normal local STT path via a temp segment WAV (sherpa engines could take samples directly; not needed at ~5x real time). Clean each segment (fillers, repeats), repunctuate per paragraph (English). One event, `transcript://update`, carries the whole transcript (lines, progress, status); step 2 (meeting recorder) reuses it. One job at a time.
+### Task 3: Two tracks into one live transcript
+**Description:** `meeting_job.rs`: start/stop commands; mic + loopback → two chunkers → one worker; lines carry `speaker`; saved and sent via `transcript://update` like files; Stop finishes the queued pieces.
 **Acceptance criteria:**
-- [ ] A 10-min file produces timestamped segments and a finished event
-- [ ] Cancel stops within one segment and keeps the text so far
-- [ ] A dictation during a job still works
-**Verification:** ignored integration test on a sample file; manual run in `tauri:dev`
-**Dependencies:** 1, 2
-**Files:** `src-tauri/src/transcribe_job.rs`, `src-tauri/src/lib.rs`
-**Scope:** M
+- [ ] Lines from both tracks interleave by start time with You/Others labels
+- [ ] Stop keeps everything heard; closing the app mid-way keeps what's done
+- [ ] One job at a time across files and meetings
+**Verification:** `cargo test --lib meeting` (fake sources); real 10-min run
+**Files:** `src-tauri/src/meeting_job.rs`, `src-tauri/src/transcripts.rs`, `src-tauri/src/lib.rs`
 
-### Task 4: Save, list, export
-**Description:** transcripts stored as JSON (`transcripts/<id>.json`), written as segments arrive with status running/cancelled/done/failed. Commands: list, get, delete, rename, export (.txt, .srt, .md).
+### Task 4: Drop bleed duplicates
+**Description:** A You line whose words mostly match an Others line within ±3 s is dropped.
 **Acceptance criteria:**
-- [ ] Closing the app mid-job leaves a readable partial transcript marked "Stopped at mm:ss"
-- [ ] Resume continues from the last finished segment (decode skips to it) and the result has no gap or duplicate
-- [ ] Export writes valid .srt (checked by a unit test) and plain .txt
+- [ ] Unit test: echoed line dropped, a real reply kept
+**Verification:** `cargo test --lib meeting`
+
+### Task 5: Exports with speakers
+**Description:** .txt/.md/.srt show "You:" / "Others:" when the speaker changes.
+**Acceptance criteria:**
+- [ ] File transcripts export exactly as before
 **Verification:** `cargo test --lib transcripts`
-**Dependencies:** 3
-**Files:** `src-tauri/src/transcripts.rs`, `src-tauri/src/transcribe_job.rs`, `src-tauri/src/lib.rs`
-**Scope:** S
 
 ## Checkpoint B
-- [ ] End to end from a Tauri command: file in, saved transcript out
+- [ ] Tests pass; a real 10-min call (video playing + talking) transcribed live
 
-## Phase 3: The page
+## Phase 3: UI
 
-### Task 5: "Transcribe" page (designed with /impeccable)
-**Description:** New sidebar page in the Progress page's style: drop zone + Browse button, live progress card (percent, elapsed, time left, Cancel), text appearing as it's done, list of past transcripts, reader with timestamps, Copy and Save.
+### Task 6: Record button and live view
+**Description:** Record/Stop with a clear recording indicator, live You/Others lines, Bluetooth-mic warning, headphones hint. Meetings appear in the transcript list.
 **Acceptance criteria:**
-- [ ] Drop or browse a file and watch it fill in live
-- [ ] Past transcripts open, copy, save and delete
-- [ ] Unsupported file shows a friendly message
-**Verification:** `npx tsc --noEmit`, `npx vitest run`, screenshot in light and dark
-**Dependencies:** 3, 4
-**Files:** `src/components/dashboard/Transcribe.tsx`, `src/App.tsx`, `src/services/tauriBridge.ts`, `src/components/shared/NavIcons.tsx`, `src-tauri/capabilities/default.json`
-**Scope:** M
+- [ ] Start, live text, Stop, then read/copy/save like a file transcript
+- [ ] Indicator visible the whole time it records
+**Verification:** `npx tsc --noEmit`, `npx vitest run`, manual run
+**Files:** `src/components/dashboard/Transcribe.tsx` (or a new page), `src/services/tauriBridge.ts`
 
 ## Checkpoint C: Verify for real
-- [ ] Tests + typecheck pass
-- [ ] Real ~10 min file and 1 h file transcribed: time taken and peak memory reported
+- [ ] Real 30-min+ meeting: lag behind live, CPU and memory reported
 - [ ] /code-review on experiment vs main, fixes applied
 - [ ] Handed to the user to test
