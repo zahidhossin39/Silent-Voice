@@ -826,6 +826,8 @@ export interface Transcript {
   done_ms: number;
   work_ms: number;
   lines: TranscriptLine[];
+  /** A meeting's AI-written Overview (Markdown). */
+  summary?: string | null;
 }
 
 /** Paragraph size in lines (~1 min). Must match `PARAGRAPH` in src-tauri/src/transcripts.rs. */
@@ -867,6 +869,20 @@ export async function transcriptsList(): Promise<Transcript[]> {
 }
 
 /** One full transcript (the list only carries headers). */
+/** Which model writes a meeting summary: "local" = bundled llama-server. */
+export interface SummaryWith {
+  source: "local" | "api";
+  model: string;
+  base_url: string;
+  api_key: string;
+}
+
+/** Writes the meeting's Overview; returns the transcript with it saved. */
+export async function meetingSummarize(id: number, w: SummaryWith): Promise<Transcript> {
+  if (!isTauri()) throw new Error("Needs the desktop app");
+  return invoke<Transcript>("meeting_summarize", { id, source: w.source, model: w.model, baseUrl: w.base_url, apiKey: w.api_key });
+}
+
 export async function transcriptGet(id: number): Promise<Transcript> {
   if (!isTauri()) throw new Error("Needs the desktop app");
   return invoke<Transcript>("transcript_get", { id });

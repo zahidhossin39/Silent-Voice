@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Page from "../shared/Page";
 import TranscriptHeader, { clock } from "../shared/TranscriptHeader";
+import MeetingOverview from "./MeetingOverview";
 import {
   listenEvent,
   meetingDevices,
@@ -241,6 +242,7 @@ export default function Notetaker() {
               setList((l) => l.map((x) => (x.id === full.id ? { ...x, name } : x)));
               setFull({ ...full, name });
             }}
+            onSummarized={(next) => setFull((cur) => (cur?.id === next.id ? next : cur))}
           />
         ) : (
           <div className="hidden rounded-2xl border border-sv-border bg-sv-surface md:block" />
@@ -377,11 +379,13 @@ function MeetingPanel({
   stopping,
   onDeleted,
   onRenamed,
+  onSummarized,
 }: {
   t: Transcript;
   stopping: boolean;
   onDeleted: () => void;
   onRenamed: (name: string) => void;
+  onSummarized: (t: Transcript) => void;
 }) {
   const paras = useMemo(() => transcriptParagraphs(t.lines), [t]);
   const scroller = useRef<HTMLDivElement>(null);
@@ -407,7 +411,7 @@ function MeetingPanel({
             {!live && ` · ${clock(t.duration_ms ?? t.done_ms)}`}
           </>
         }
-        copyText={paras.map((p) => speakerLabel(p.speaker) + p.text).join("\n\n")}
+        copyText={(t.summary ? t.summary.trim() + "\n\n---\n\n" : "") + paras.map((p) => speakerLabel(p.speaker) + p.text).join("\n\n")}
         busy={live}
         onRenamed={onRenamed}
         onDeleted={onDeleted}
@@ -420,14 +424,7 @@ function MeetingPanel({
       )}
 
       <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
-        <section aria-labelledby="overview" className="mb-6">
-          <h3 id="overview" className="text-xs font-semibold text-sv-muted">
-            Overview
-          </h3>
-          <p className="mt-1.5 text-sm text-sv-muted">
-            {live ? "The transcript fills in as people talk." : "A summary of this meeting will appear here in a later update."}
-          </p>
-        </section>
+        <MeetingOverview t={t} onSummarized={onSummarized} />
 
         {paras.length === 0 && !live ? (
           <p className="text-sm text-sv-muted">No speech was picked up in this meeting.</p>
