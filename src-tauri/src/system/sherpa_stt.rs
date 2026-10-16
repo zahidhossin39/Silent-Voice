@@ -977,10 +977,20 @@ fn add_punct(text: &str) -> Result<String, String> {
 const SENTENCE_END: [char; 3] = ['.', '?', '!'];
 const PUNCT_MARKS: [char; 4] = ['.', ',', '?', '!'];
 
+/// The punctuation model scatters full stops mid-phrase once its input runs to
+/// ~300 words; ~150-word halves of the same text came out clean.
+const PUNCT_WINDOW: usize = 120;
+
 /// Re-punctuate English text stitched from background chunks (in order).
 /// Returns the plain join when the model is missing or anything fails,
 /// so the user never loses words to this step.
 pub fn repunctuate(chunks: &[&str]) -> String {
+    repunctuate_from(chunks, true)
+}
+
+/// `repunctuate`, where `sentence_start` false means the text carries on a
+/// sentence begun before it (its first word keeps its casing).
+pub fn repunctuate_from(chunks: &[&str], sentence_start: bool) -> String {
     let text = chunks.iter().map(|c| c.trim()).filter(|c| !c.is_empty()).collect::<Vec<_>>().join(" ");
     if text.is_empty() || !crate::models::registry::punct_installed() {
         return text;
@@ -1004,8 +1014,9 @@ pub fn repunctuate(chunks: &[&str]) -> String {
     if bare.iter().any(|w| w.is_empty()) {
         return text.to_string();
     }
-    match add_punct(&bare.join(" ")) {
-        Ok(model) => merge_punct(&words, &model, &seams).unwrap_or_else(|| text.to_string()),
+    let model: Result<Vec<String>, String> = bare.chunks(PUNCT_WINDOW).map(|w| add_punct(&w.join(" "))).collect();
+    match model {
+        Ok(model) => merge_punct(&words, &model.join(" "), &seams, sentence_start).unwrap_or_else(|| text.to_string()),
         Err(e) => {
             crate::logging::log_error("punct", &e);
             text.to_string()
@@ -1018,13 +1029,13 @@ pub fn repunctuate(chunks: &[&str]) -> String {
 /// "GitHub" into "Github". A word Parakeet capitalised only because it had
 /// ended a sentence right before it, or only because a chunk started there
 /// (`seams`), goes back to lowercase. None when the word counts differ.
-fn merge_punct(words: &[&str], model: &str, seams: &[usize]) -> Option<String> {
+fn merge_punct(words: &[&str], model: &str, seams: &[usize], sentence_start: bool) -> Option<String> {
     let m: Vec<&str> = model.split_whitespace().collect();
     if m.len() != words.len() {
         return None;
     }
     let mut out: Vec<String> = Vec::with_capacity(words.len());
-    let mut starts_sentence = true;
+    let mut starts_sentence = sentence_start;
     for (i, (w, mw)) in words.iter().zip(&m).enumerate() {
         let mut tail = &mw[mw.trim_end_matches(PUNCT_MARKS).len()..];
         // No chunk join follows the last word, so Parakeet's own ? or ! there
@@ -1034,6 +1045,10 @@ fn merge_punct(words: &[&str], model: &str, seams: &[usize]) -> Option<String> {
             tail = &w[w.len() - 1..];
         }
         let core = w.trim_end_matches(PUNCT_MARKS);
+        // Parakeet's own "this:" stays as it is, not "this:,".
+        if core.ends_with([':', ';']) {
+            tail = "";
+        }
         // "a.m." and "e.g." keep their own final dot.
         let abbrev = is_abbreviation(core) && w[core.len()..].starts_with('.');
         let core = if starts_sentence {
@@ -1251,7 +1266,7 @@ mod tests {
             .collect();
         let model = "The main thing left is the export feature on github. I think";
         assert_eq!(
-            merge_punct(&words, model, &[]).unwrap(),
+            merge_punct(&words, model, &[], true).unwrap(),
             "The main thing left is the export feature on GitHub. I think."
         );
     }
@@ -1260,18 +1275,18 @@ mod tests {
     fn merge_punct_keeps_i_and_acronyms_after_a_false_stop() {
         let words: Vec<&str> = "Hey Sarah. I wanted the API. Docs".split_whitespace().collect();
         let model = "hey, sarah, i wanted the api docs";
-        assert_eq!(merge_punct(&words, model, &[]).unwrap(), "Hey, Sarah, I wanted the API docs.");
+        assert_eq!(merge_punct(&words, model, &[], true).unwrap(), "Hey, Sarah, I wanted the API docs.");
     }
 
     #[test]
     fn merge_punct_keeps_abbreviations_and_a_final_question() {
         let words: Vec<&str> = "It opens at 9 a.m. Then. Can we go?".split_whitespace().collect();
         let model = "it opens at 9 am. then can we go.";
-        assert_eq!(merge_punct(&words, model, &[]).unwrap(), "It opens at 9 a.m. Then can we go?");
+        assert_eq!(merge_punct(&words, model, &[], true).unwrap(), "It opens at 9 a.m. Then can we go?");
         // A mid-text ? is a chunk-join guess: the model decides there.
         let words: Vec<&str> = "Can we do that? Without the cloud".split_whitespace().collect();
         let model = "can we do that without the cloud";
-        assert_eq!(merge_punct(&words, model, &[]).unwrap(), "Can we do that without the cloud.");
+        assert_eq!(merge_punct(&words, model, &[], true).unwrap(), "Can we do that without the cloud.");
     }
 
     #[test]
@@ -1280,15 +1295,23 @@ mod tests {
         // capitalised it ("I was just Pressing", "it's Kneading").
         let words: Vec<&str> = "when I was just Pressing the key".split_whitespace().collect();
         let model = "when i was just pressing the key";
-        assert_eq!(merge_punct(&words, model, &[4]).unwrap(), "When I was just pressing the key.");
+        assert_eq!(merge_punct(&words, model, &[4], true).unwrap(), "When I was just pressing the key.");
         // Not a seam: Parakeet capitalised it mid-chunk, so it's a name.
-        assert_eq!(merge_punct(&words, model, &[]).unwrap(), "When I was just Pressing the key.");
+        assert_eq!(merge_punct(&words, model, &[], true).unwrap(), "When I was just Pressing the key.");
+    }
+
+    #[test]
+    fn merge_punct_keeps_a_colon_and_can_continue_a_sentence() {
+        let words = ["remember", "this:", "the", "meme", "coin"];
+        let model = "remember this, the meme coin.";
+        assert_eq!(merge_punct(&words, model, &[], true).unwrap(), "Remember this: the meme coin.");
+        assert_eq!(merge_punct(&words, model, &[], false).unwrap(), "remember this: the meme coin.");
     }
 
     #[test]
     fn merge_punct_refuses_misaligned_output() {
         let words: Vec<&str> = "one two three".split_whitespace().collect();
-        assert!(merge_punct(&words, "one two", &[]).is_none());
+        assert!(merge_punct(&words, "one two", &[], true).is_none());
     }
 
     #[test]

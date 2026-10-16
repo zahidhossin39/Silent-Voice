@@ -260,13 +260,16 @@ fn transcribe_piece(app: &AppHandle, samples: &[f32], cfg: &Cfg) -> Result<Strin
 /// Repair punctuation across the last `n` lines as one paragraph. Each piece was
 /// decoded alone, so a pause mid-sentence became a full stop. The model never
 /// changes words, so its output splits back into the same lines by word count.
+/// The previous paragraph's last line goes in again as context: its forced
+/// closing full stop is undone when the sentence actually runs on.
 fn repunctuate_tail(t: &mut Transcript, n: usize, english: bool) {
     if !english {
         return;
     }
-    let from = t.lines.len() - n;
+    let from = (t.lines.len() - n).saturating_sub(1);
+    let sentence_start = from == 0 || t.lines[from - 1].text.ends_with(['.', '?', '!']);
     let parts: Vec<&str> = t.lines[from..].iter().map(|l| l.text.as_str()).collect();
-    let fixed = crate::system::sherpa_stt::repunctuate(&parts);
+    let fixed = crate::system::sherpa_stt::repunctuate_from(&parts, sentence_start);
     if let Some(split) = split_like(&fixed, &parts) {
         for (line, text) in t.lines[from..].iter_mut().zip(split) {
             line.text = text;
