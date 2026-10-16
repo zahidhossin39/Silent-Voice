@@ -8,7 +8,9 @@ mod models;
 mod onnx;
 mod proofread;
 mod system;
+mod transcribe_job;
 mod transcription;
+mod transcripts;
 
 use audio::capture::{self, Recorder};
 use history::HistoryEntry;
@@ -922,6 +924,50 @@ async fn delete_model(model_id: String) -> Result<(), String> {
     downloader::delete_model(&model_id)
 }
 
+// ---------------- Transcribe a file ----------------
+
+#[tauri::command]
+fn file_transcribe_start(app: AppHandle, path: Option<String>, resume: Option<i64>) -> Result<transcripts::Transcript, String> {
+    transcribe_job::start(&app, path, resume)
+}
+
+#[tauri::command]
+fn file_transcribe_cancel() {
+    transcribe_job::cancel();
+}
+
+#[tauri::command]
+fn transcripts_list() -> Vec<transcripts::Transcript> {
+    transcripts::list()
+}
+
+#[tauri::command]
+fn transcript_delete(id: i64) -> Result<(), String> {
+    if transcribe_job::running() == Some(id) {
+        return Err("Cancel the transcription before deleting it.".into());
+    }
+    transcripts::delete(id)
+}
+
+#[tauri::command]
+fn transcript_rename(id: i64, name: String) -> Result<(), String> {
+    let mut t = transcripts::load(id)?;
+    t.name = name.trim().chars().take(200).collect();
+    transcripts::save(&t)
+}
+
+/// Write the transcript to a path the user picked in the Save dialog.
+#[tauri::command]
+fn transcript_export(id: i64, format: String, path: String) -> Result<(), String> {
+    let path = std::path::PathBuf::from(path);
+    // Only ever write a plain text file, whatever the page asks for.
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+    if !matches!(ext.as_str(), "txt" | "md" | "srt") || ext != format {
+        return Err("Save as .txt, .md or .srt.".into());
+    }
+    std::fs::write(&path, transcripts::render(&transcripts::load(id)?, &format)).map_err(|e| e.to_string())
+}
+
 // ---------------- History (local JSON file) ----------------
 
 #[tauri::command]
@@ -1322,6 +1368,8 @@ pub fn run() {
         })
         .setup(|app| {
             let _ = registry::ensure_dirs();
+            // A transcript still "running" means the app closed mid-way.
+            transcripts::mark_interrupted();
             tray::build_tray(app.handle())?;
             overlay::create_overlay(app.handle())?;
 
@@ -1330,6 +1378,16 @@ pub fn run() {
             // the app if the paste touches main-thread-only APIs from there.
             // The value is a delay in seconds, so the test can focus a text
             // editor first and then check the text really landed there.
+            // Transcribe-a-file check on a real file, no UI needed: waits for the
+            // dashboard to push the user's settings (model, language) first.
+            if let Some(file) = std::env::var_os("SV_SELFTEST_TRANSCRIBE") {
+                let app = app.handle().clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_secs(20));
+                    let r = transcribe_job::start(&app, Some(file.to_string_lossy().into_owned()), None);
+                    logging::log_info("selftest", &format!("transcribe started: {:?}", r.map(|t| (t.id, t.model_id))));
+                });
+            }
             if let Some(v) = std::env::var_os("SV_SELFTEST_PASTE") {
                 let delay = v.to_str().and_then(|s| s.parse::<u64>().ok()).unwrap_or(0);
                 tauri::async_runtime::spawn(async move {
@@ -1473,6 +1531,12 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            file_transcribe_start,
+            file_transcribe_cancel,
+            transcripts_list,
+            transcript_delete,
+            transcript_rename,
+            transcript_export,
             package_managed,
             get_hardware_info,
             recommend_device_defaults,

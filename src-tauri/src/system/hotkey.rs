@@ -887,7 +887,7 @@ mod chunk_tests {
 }
 
 /// The punctuation model is English-only.
-fn english_text(language: &str, model_id: &str) -> bool {
+pub(crate) fn english_text(language: &str, model_id: &str) -> bool {
     language.starts_with("en")
         || model_id == "parakeet-tdt-0.6b-v2"
         || model_id.starts_with("moonshine")
