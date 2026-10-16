@@ -57,6 +57,9 @@ pub struct Transcript {
     #[serde(default)]
     pub work_ms: u64,
     pub lines: Vec<Line>,
+    /// The meeting's Overview (Markdown), written by an LLM on request.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
 }
 
 impl Transcript {
@@ -75,6 +78,7 @@ impl Transcript {
             done_ms: 0,
             work_ms: 0,
             lines: Vec::new(),
+            summary: None,
         }
     }
 }
@@ -242,6 +246,9 @@ pub fn render(t: &Transcript, format: Format) -> String {
             .join("\n"),
         Format::Md => {
             let mut s = format!("# {}\n\n", t.name);
+            if let Some(sum) = &t.summary {
+                s += &format!("{}\n\n## Transcript\n\n", sum.trim());
+            }
             for r in paragraphs(&t.lines) {
                 let p = &t.lines[r];
                 s += &format!("**[{}]** {}{}\n\n", clock(p[0].start_ms, false), label(&p[0]), join(p));
@@ -250,7 +257,8 @@ pub fn render(t: &Transcript, format: Format) -> String {
         }
         Format::Txt => {
             let paras: Vec<String> = paragraphs(&t.lines).into_iter().map(|r| format!("{}{}", label(&t.lines[r.start]), join(&t.lines[r]))).collect();
-            paras.join("\n\n") + "\n"
+            let head = t.summary.as_ref().map(|s| format!("{}\n\n---\n\n", s.trim())).unwrap_or_default();
+            head + &paras.join("\n\n") + "\n"
         }
     }
 }
@@ -276,6 +284,7 @@ mod tests {
                 Line { start_ms: 0, end_ms: 11_900, text: "First part.".into(), speaker: None },
                 Line { start_ms: 3_661_005, end_ms: 3_725_500, text: "Last part.".into(), speaker: None },
             ],
+            summary: None,
         }
     }
 

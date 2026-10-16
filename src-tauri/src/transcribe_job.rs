@@ -353,6 +353,7 @@ mod tests {
             done_ms: 0,
             work_ms: 0,
             lines: Vec::new(),
+            summary: None,
         }
     }
 

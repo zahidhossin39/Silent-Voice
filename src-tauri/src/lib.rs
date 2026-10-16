@@ -9,6 +9,7 @@ mod onnx;
 mod proofread;
 mod system;
 mod meeting_job;
+mod meeting_summary;
 mod transcribe_job;
 mod transcription;
 mod transcripts;
@@ -972,6 +973,42 @@ fn transcript_delete(id: i64) -> Result<(), String> {
     transcribe_job::unless_running(id, "Cancel the transcription before deleting it.", || transcripts::delete(id))
 }
 
+/// Writes the meeting's Overview with the provider the page picked: source
+/// "local" = the bundled llama-server, "api" = an OpenAI-compatible provider.
+#[tauri::command]
+async fn meeting_summarize(
+    app: AppHandle,
+    id: i64,
+    source: String,
+    model: String,
+    base_url: String,
+    api_key: String,
+) -> Result<transcripts::Transcript, String> {
+    let t = transcribe_job::unless_running(id, "Wait for the meeting to finish before summarizing it.", || transcripts::load(id))?;
+    let local = source == "local";
+    if model.trim().is_empty() || (!local && base_url.trim().is_empty()) {
+        return Err("Pick a model to summarize with.".into());
+    }
+    let max = if local { meeting_summary::LOCAL_WORDS } else { meeting_summary::CLOUD_WORDS };
+    let summary = meeting_summary::summarize(&t, max, |prompt, text| {
+        let (app, model, base_url, api_key) = (app.clone(), model.clone(), base_url.clone(), api_key.clone());
+        async move {
+            if local {
+                run_local_llm(&app, &model, prompt, &text).await
+            } else {
+                llm::openai::chat(&base_url, &api_key, &model, prompt, &text).await
+            }
+        }
+    })
+    .await
+    .inspect_err(|e| crate::logging::log_error("summary", e))?;
+    // Reload: the user may have renamed it while the model was writing.
+    let mut t = transcripts::load(id)?;
+    t.summary = Some(summary);
+    transcripts::save(&t)?;
+    Ok(t)
+}
+
 #[tauri::command]
 fn transcript_rename(id: i64, name: String) -> Result<(), String> {
     transcribe_job::unless_running(id, "Wait for the transcription to finish before renaming it.", || {
@@ -1605,6 +1642,7 @@ pub fn run() {
             transcript_get,
             transcript_delete,
             transcript_rename,
+            meeting_summarize,
             transcript_export,
             package_managed,
             get_hardware_info,
