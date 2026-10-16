@@ -134,7 +134,7 @@ fn audio_track(format: &dyn FormatReader) -> Result<(u32, CodecParameters, Box<d
 /// pushes so chunk edges leave no clicks or drift.
 // ponytail: box filter + linear, same family as the mic path (capture.rs);
 // swap for a windowed-sinc (rubato) if accuracy on 44.1 kHz files measures worse.
-struct Resampler {
+pub(crate) struct Resampler {
     step: f64, // input samples per output sample
     pos: f64,  // next output position, in `buf` coordinates
     buf: Vec<f32>,
@@ -143,12 +143,12 @@ struct Resampler {
 }
 
 impl Resampler {
-    fn new(from: u32, to: u32) -> Self {
+    pub(crate) fn new(from: u32, to: u32) -> Self {
         let step = from as f64 / to as f64;
         Self { step, pos: 0.0, buf: Vec::new(), width: step.round().max(1.0) as usize, hist: Vec::new() }
     }
 
-    fn push(&mut self, input: &[f32], out: &mut Vec<f32>) {
+    pub(crate) fn push(&mut self, input: &[f32], out: &mut Vec<f32>) {
         if self.width > 1 {
             let mut all = std::mem::take(&mut self.hist);
             all.extend_from_slice(input);
