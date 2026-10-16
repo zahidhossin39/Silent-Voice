@@ -476,6 +476,9 @@ All commands are registered in `src-tauri/src/lib.rs` → `tauri::generate_handl
 | `transcript_get(id)` | One full transcript with its `lines` |
 | `transcript_rename(id, name)` | Rename; refused while that transcript is running |
 | `transcript_delete(id)` | Delete; refused while that transcript is running |
+| `meeting_start` | Record the mic (You) and computer sound (Others) into a live meeting transcript; shares the one job slot with files |
+| `meeting_stop` | Stop recording; the job finishes the queued pieces, repairs punctuation, then marks it done |
+| `meeting_devices` | `[mic, speakers]` names a meeting would use (for the Bluetooth-mic warning) |
 | `transcript_export(id)` | Rust shows the Save dialog, writes .txt/.md/.srt by the chosen extension, returns the path or null if cancelled |
 
 ---

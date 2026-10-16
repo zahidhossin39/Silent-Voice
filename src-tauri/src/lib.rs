@@ -943,6 +943,14 @@ fn meeting_start(app: AppHandle) -> Result<transcripts::Transcript, String> {
     meeting_job::start(&app)
 }
 
+/// The mic and speakers a meeting would record: `[mic, speakers]`.
+#[tauri::command]
+fn meeting_devices(state: State<AppState>) -> [Option<String>; 2] {
+    let mic = state.config.lock().ok().and_then(|c| c.audio_device.clone());
+    let (m, s) = audio::live::device_names(mic.as_deref());
+    [m, s]
+}
+
 /// Stop recording; the transcript finishes the queued pieces, then reads "done".
 #[tauri::command]
 fn meeting_stop() -> Result<(), String> {
@@ -1424,6 +1432,10 @@ pub fn run() {
                     std::thread::sleep(std::time::Duration::from_secs(20));
                     let r = meeting_job::start(&app);
                     logging::log_info("selftest", &format!("meeting started: {:?}", r.map(|t| t.id)));
+                    if let Some(w) = app.get_webview_window("main") {
+                        let _ = w.show();
+                    }
+                    let _ = app.emit("nav://to", "/notetaker");
                     std::thread::sleep(std::time::Duration::from_secs(secs));
                     logging::log_info("selftest", &format!("meeting stop: {:?}", meeting_job::stop()));
                 });
@@ -1580,6 +1592,7 @@ pub fn run() {
             file_transcribe_cancel,
             meeting_start,
             meeting_stop,
+            meeting_devices,
             transcripts_list,
             transcript_get,
             transcript_delete,

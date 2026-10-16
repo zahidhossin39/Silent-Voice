@@ -156,6 +156,14 @@ fn open(source: &Source) -> Result<Opened, String> {
     Ok((stream, rate, raw, failed))
 }
 
+/// Names of the mic (`mic`, or the default) and speakers a recording would use,
+/// so the page can warn about a Bluetooth headset before it starts.
+pub fn device_names(mic: Option<&str>) -> (Option<String>, Option<String>) {
+    let host = cpal::default_host();
+    let mic = mic.map(str::to_string).or_else(|| host.default_input_device().and_then(|d| d.name().ok()));
+    (mic, host.default_output_device().and_then(|d| d.name().ok()))
+}
+
 /// Keeps a track in step with the wall clock.
 struct ClockPad {
     sent: u64,

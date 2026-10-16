@@ -15,7 +15,7 @@ import {
   transcriptRename,
   transcriptSaveAs,
   transcriptsList,
-  TRANSCRIPT_PARAGRAPH,
+  transcriptParagraphs,
   type Transcript,
 } from "../../services/tauriBridge";
 
@@ -23,7 +23,7 @@ import {
 // The Rust job (transcribe_job.rs) does the work and sends the whole transcript
 // after every finished piece, so this page only mirrors what it's told.
 
-function clock(ms: number): string {
+export function clock(ms: number): string {
   const s = Math.floor(ms / 1000);
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
@@ -40,15 +40,6 @@ function minutes(ms: number): string {
 
 function modelLabel(id: string): string {
   return STT_MODELS.find((m) => m.id === id)?.label ?? id;
-}
-
-function paragraphs(t: Transcript) {
-  const out: { start: number; text: string }[] = [];
-  for (let i = 0; i < t.lines.length; i += TRANSCRIPT_PARAGRAPH) {
-    const group = t.lines.slice(i, i + TRANSCRIPT_PARAGRAPH);
-    out.push({ start: group[0].start_ms, text: group.map((l) => l.text).join(" ") });
-  }
-  return out;
 }
 
 export default function Transcribe() {
@@ -75,6 +66,7 @@ export default function Transcribe() {
   selectedRef.current = selected;
   const onUpdate = useCallback(
     (t: Transcript) => {
+      if (t.kind === "meeting") return; // the Notetaker page shows those
       upsert(t);
       if (t.id === selectedRef.current) setFull(t);
     },
@@ -94,7 +86,8 @@ export default function Transcribe() {
   }, [selected]);
 
   useEffect(() => {
-    transcriptsList().then((l) => {
+    transcriptsList().then((all) => {
+      const l = all.filter((t) => t.kind !== "meeting");
       setList(l);
       setSelected((s) => s ?? l[0]?.id ?? null);
       setLoaded(true);
@@ -292,7 +285,7 @@ function Reader({
   onDeleted: () => void;
   onRenamed: (name: string) => void;
 }) {
-  const paras = useMemo(() => paragraphs(t), [t]);
+  const paras = useMemo(() => transcriptParagraphs(t.lines), [t]);
   const [note, setNote] = useState<{ msg: string; ok: boolean } | null>(null);
   const noteTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -479,7 +472,7 @@ function Reader({
   );
 }
 
-function ToolButton({
+export function ToolButton({
   onClick,
   disabled,
   label,
@@ -528,7 +521,7 @@ function UploadIcon({ className }: { className?: string }) {
   );
 }
 
-function SaveIcon() {
+export function SaveIcon() {
   return (
     <svg {...icon} className="h-4 w-4" aria-hidden>
       <path d="M12 4v11M7.5 10.5 12 15l4.5-4.5" />
