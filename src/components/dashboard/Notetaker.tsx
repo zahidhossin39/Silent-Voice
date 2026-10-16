@@ -1,18 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Page from "../shared/Page";
-import { CopyIcon, TrashIcon } from "../shared/TranscriptCard";
-import { clock, SaveIcon, ToolButton } from "./Transcribe";
+import TranscriptHeader, { clock } from "../shared/TranscriptHeader";
 import {
-  copyToClipboard,
   listenEvent,
   meetingDevices,
   meetingStart,
   meetingStop,
-  transcriptDelete,
   transcriptGet,
+  speakerLabel,
   transcriptParagraphs,
-  transcriptRename,
-  transcriptSaveAs,
   transcriptsList,
   type Transcript,
 } from "../../services/tauriBridge";
@@ -38,8 +34,9 @@ export function useMeetingRecording(): boolean {
   return on;
 }
 
+/** Windows names a Bluetooth headset's mic "Headset (… Hands-Free AG Audio)". */
 function bluetooth(name: string | null): boolean {
-  return !!name && /hands-free|headset|airpods|buds|bluetooth|\bbt\b/i.test(name);
+  return !!name && /hands-free|bluetooth/i.test(name);
 }
 
 function dayLabel(ms: number): string {
@@ -56,9 +53,9 @@ function timeOf(ms: number): string {
   return new Date(ms).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 }
 
-/** "Meeting" until renamed: show when it was instead. */
+/** Unnamed until the user names it: show when it was instead. */
 function title(t: Transcript): string {
-  return t.name === "Meeting" ? `Meeting at ${timeOf(t.created)}` : t.name;
+  return t.name || `Meeting at ${timeOf(t.created)}`;
 }
 
 export default function Notetaker() {
@@ -387,10 +384,6 @@ function MeetingPanel({
   onRenamed: (name: string) => void;
 }) {
   const paras = useMemo(() => transcriptParagraphs(t.lines), [t]);
-  const [note, setNote] = useState<{ msg: string; ok: boolean } | null>(null);
-  const noteTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const [renaming, setRenaming] = useState(false);
   const scroller = useRef<HTMLDivElement>(null);
   const bottom = useRef<HTMLDivElement>(null);
   const live = t.status === "running";
@@ -402,104 +395,29 @@ function MeetingPanel({
     }
   }, [live, t.lines.length]);
 
-  useEffect(() => {
-    if (!confirmDelete) return;
-    const id = setTimeout(() => setConfirmDelete(false), 4000);
-    return () => clearTimeout(id);
-  }, [confirmDelete]);
-
-  useEffect(() => () => clearTimeout(noteTimer.current), []);
-  const flash = (msg: string, ok = true) => {
-    clearTimeout(noteTimer.current);
-    setNote({ msg, ok });
-    noteTimer.current = setTimeout(() => setNote(null), ok ? 2000 : 4000);
-  };
-
-  const copy = async () => {
-    const who = (s?: string) => (s === "you" ? "You: " : s === "others" ? "Others: " : "");
-    await copyToClipboard(paras.map((p) => who(p.speaker) + p.text).join("\n\n"));
-    flash("Copied");
-  };
-
-  const saveAs = async () => {
-    try {
-      if (await transcriptSaveAs(t.id)) flash("Saved");
-    } catch (e) {
-      flash(String(e), false);
-    }
-  };
-
-  const remove = async () => {
-    if (!confirmDelete) return setConfirmDelete(true);
-    try {
-      await transcriptDelete(t.id);
-      onDeleted();
-    } catch (e) {
-      flash(String(e), false);
-    }
-  };
-
   return (
     <section className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-sv-border bg-sv-surface">
-      <header className="flex flex-wrap items-start justify-between gap-3 border-b border-sv-border px-6 py-4">
-        <div className="min-w-0 flex-1">
-          {renaming ? (
-            <input
-              autoFocus
-              defaultValue={t.name === "Meeting" ? "" : t.name}
-              placeholder={title(t)}
-              aria-label="Meeting name"
-              className="w-full rounded-md border border-sv-accent bg-sv-bg px-2 py-0.5 text-lg font-semibold outline-none"
-              onBlur={() => setRenaming(false)}
-              onKeyDown={async (e) => {
-                if (e.key === "Escape") setRenaming(false);
-                if (e.key === "Enter") {
-                  const name = e.currentTarget.value.trim();
-                  if (name && name !== t.name) {
-                    try {
-                      await transcriptRename(t.id, name);
-                      onRenamed(name);
-                    } catch (err) {
-                      flash(String(err), false);
-                    }
-                  }
-                  setRenaming(false);
-                }
-              }}
-            />
-          ) : (
-            <h2>
-              <button
-                onClick={() => setRenaming(true)}
-                title="Rename"
-                className="max-w-full truncate rounded-md text-left text-lg font-semibold hover:text-sv-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sv-accent"
-              >
-                {title(t)}
-              </button>
-            </h2>
-          )}
-          <div className="mt-0.5 text-xs text-sv-muted">
+      <TranscriptHeader
+        id={t.id}
+        title={title(t)}
+        name={t.name}
+        details={
+          <>
             {dayLabel(t.created)} · {timeOf(t.created)}
             {!live && ` · ${clock(t.duration_ms ?? t.done_ms)}`}
-          </div>
-        </div>
-        <div className="flex shrink-0 items-center gap-1.5">
-          {note && (
-            <span role="status" className={`mr-1 text-xs font-medium ${note.ok ? "text-sv-good" : "text-sv-bad"}`}>
-              {note.msg}
-            </span>
-          )}
-          <ToolButton onClick={copy} disabled={paras.length === 0} label="Copy">
-            <CopyIcon />
-          </ToolButton>
-          <ToolButton onClick={saveAs} disabled={paras.length === 0 || live} label="Save…">
-            <SaveIcon />
-          </ToolButton>
-          <ToolButton onClick={remove} disabled={live} label={confirmDelete ? "Delete?" : "Delete"} danger={confirmDelete}>
-            <TrashIcon />
-          </ToolButton>
-        </div>
-      </header>
+          </>
+        }
+        copyText={paras.map((p) => speakerLabel(p.speaker) + p.text).join("\n\n")}
+        busy={live}
+        onRenamed={onRenamed}
+        onDeleted={onDeleted}
+      />
+
+      {t.error && (
+        <p role="alert" className="border-b border-sv-border bg-sv-warn/10 px-6 py-2.5 text-xs text-sv-warn">
+          {t.error}
+        </p>
+      )}
 
       <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
         <section aria-labelledby="overview" className="mb-6">

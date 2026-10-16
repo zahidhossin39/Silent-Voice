@@ -20,6 +20,9 @@ const TICK: Duration = Duration::from_millis(100);
 /// Silence is added only once a track is this far (0.2 s) behind the clock:
 /// devices deliver in bursts a little late, and those must pass untouched.
 const LAG: u64 = 3_200;
+/// Most silence added per tick, so waking from sleep catches up in steps
+/// instead of allocating hours of silence at once.
+const MAX_PAD: u64 = 10 * SR;
 
 pub enum Source {
     /// A microphone by name, or the default one.
@@ -35,14 +38,27 @@ pub struct Live {
 }
 
 impl Live {
-    /// Start capturing; `on_audio` gets 16 kHz mono chunks on a capture thread.
+    /// Start capturing; `on_audio` gets 16 kHz mono chunks on a capture thread,
+    /// and `on_failed` the reason if the device dies mid-way (unplugged).
     /// Fails at once if the device can't be opened.
-    pub fn start(source: Source, on_audio: impl FnMut(Vec<f32>) + Send + 'static) -> Result<Self, String> {
+    pub fn start(
+        source: Source,
+        on_audio: impl FnMut(Vec<f32>) + Send + 'static,
+        on_failed: impl FnOnce(String) + Send + 'static,
+    ) -> Result<Self, String> {
         let stop = Arc::new(AtomicBool::new(false));
         let (ready_tx, ready_rx) = mpsc::channel();
         let stop2 = stop.clone();
         // cpal streams can't move between threads on Windows: open it on the one that runs it.
-        let thread = std::thread::spawn(move || run(source, on_audio, &stop2, ready_tx));
+        let thread = std::thread::spawn(move || {
+            let r = run(source, on_audio, &stop2, ready_tx);
+            if let Err(e) = &r {
+                if !stop2.load(Ordering::Relaxed) {
+                    on_failed(e.clone());
+                }
+            }
+            r
+        });
         match ready_rx.recv() {
             Ok(Ok(())) => Ok(Self { stop, thread }),
             Ok(Err(e)) => Err(e),
@@ -171,12 +187,19 @@ struct ClockPad {
 
 impl ClockPad {
     /// `got`: new 16 kHz samples; `due`: how many the clock says exist by now.
-    fn fill(&mut self, mut got: Vec<f32>, due: u64) -> Vec<f32> {
-        if got.is_empty() && due > self.sent + LAG {
-            got.resize((due - LAG - self.sent) as usize, 0.0);
-        }
-        self.sent += got.len() as u64;
-        got
+    /// A track more than LAG behind gets silence before `got`: that's when
+    /// nothing came in (loopback stalls while nothing plays, or the PC slept).
+    fn fill(&mut self, got: Vec<f32>, due: u64) -> Vec<f32> {
+        let have = self.sent + got.len() as u64;
+        let out = if due > have + LAG {
+            let mut out = vec![0.0; (due - LAG - have).min(MAX_PAD) as usize];
+            out.extend(got);
+            out
+        } else {
+            got
+        };
+        self.sent += out.len() as u64;
+        out
     }
 }
 
@@ -189,7 +212,7 @@ mod tests {
         let mut pad = ClockPad { sent: 0 };
         let out = pad.fill(Vec::new(), 16_000); // 1 s passed, nothing played
         assert!(out.iter().all(|&s| s == 0.0));
-        assert!(out.len() as u64 >= 16_000 - LAG && out.len() as u64 <= 16_000, "padded {}", out.len());
+        assert_eq!(out.len() as u64, 16_000 - LAG, "pads to just behind the clock");
     }
 
     #[test]
@@ -211,6 +234,24 @@ mod tests {
         assert_eq!(pad.sent, (silence + 1_600) as u64);
     }
 
+    #[test]
+    fn audio_arriving_after_a_stall_gets_the_missing_silence_before_it() {
+        let mut pad = ClockPad { sent: 0 };
+        // 2 s of nothing, then sound resumes within the same tick.
+        let out = pad.fill(vec![0.5; 1_600], 32_000);
+        assert_eq!(out.len() as u64, 32_000 - LAG);
+        assert!(out[..out.len() - 1_600].iter().all(|&s| s == 0.0), "silence must come first");
+        assert!(out[out.len() - 1_600..].iter().all(|&s| s == 0.5), "the real audio must come last, untouched");
+    }
+
+    #[test]
+    fn waking_from_sleep_catches_up_in_steps() {
+        let mut pad = ClockPad { sent: 0 };
+        let hour = 3_600 * 16_000;
+        assert_eq!(pad.fill(Vec::new(), hour).len() as u64, MAX_PAD);
+        assert_eq!(pad.fill(Vec::new(), hour).len() as u64, MAX_PAD);
+    }
+
     /// Real devices: plays a 1.5 s tone, then nothing, while capturing the
     /// speakers and the mic for 5 s. `cargo test --lib real_loopback -- --ignored --nocapture`
     #[test]
@@ -221,8 +262,8 @@ mod tests {
         let g = got.clone();
         let m = mic_got.clone();
         let t0 = Instant::now();
-        let speakers = Live::start(Source::Speakers, move |c| g.lock().unwrap().extend(c)).unwrap();
-        let mic = Live::start(Source::Mic(None), move |c| *m.lock().unwrap() += c.len()).unwrap();
+        let speakers = Live::start(Source::Speakers, move |c| g.lock().unwrap().extend(c), |e| panic!("{e}")).unwrap();
+        let mic = Live::start(Source::Mic(None), move |c| *m.lock().unwrap() += c.len(), |e| panic!("{e}")).unwrap();
         {
             let (_out, handle) = rodio::OutputStream::try_default().unwrap();
             let sink = rodio::Sink::try_new(&handle).unwrap();

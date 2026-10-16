@@ -34,15 +34,25 @@ pub fn cancel() {
     }
 }
 
-/// Take the one job slot for `id` (files and meetings share it).
+/// Take the one job slot for `id` (files and meetings share it). The flag is
+/// Cancel for a file; a meeting ends with Stop instead.
 pub(crate) fn claim(id: i64) -> Result<Arc<AtomicBool>, String> {
     let mut job = JOB.lock().map_err(|e| e.to_string())?;
     if job.is_some() {
-        return Err("A file is being transcribed or a meeting recorded. Wait for it or stop it first.".into());
+        return Err("A file is being transcribed or a meeting recorded. Wait for it to finish or stop it first.".into());
     }
     let stop = Arc::new(AtomicBool::new(false));
     *job = Some((id, stop.clone()));
     Ok(stop)
+}
+
+/// Free the slot of a job that never got going.
+pub(crate) fn release(id: i64) {
+    if let Ok(mut j) = JOB.lock() {
+        if j.as_ref().is_some_and(|(jid, _)| *jid == id) {
+            *j = None;
+        }
+    }
 }
 
 /// Save a job's final state and free the slot, under the job lock, so a rename
@@ -102,42 +112,30 @@ impl Cfg {
 
 /// Start a new transcript for `path`, or carry on with `resume` from where it stopped.
 pub fn start(app: &AppHandle, path: Option<String>, resume: Option<i64>) -> Result<Transcript, String> {
-    let mut job = JOB.lock().map_err(|e| e.to_string())?;
-    if job.is_some() {
-        return Err("A file is already being transcribed. Wait for it or cancel it first.".into());
-    }
     let cfg = Cfg::load(app)?;
-    let mut t = match resume {
-        Some(id) => transcripts::load(id)?,
-        None => {
-            let source = path.ok_or("No file given.")?;
-            let id = transcripts::new_id()?;
-            Transcript {
-                kind: transcripts::Kind::File,
-                id,
-                name: std::path::Path::new(&source).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
-                source,
-                created: id,
-                duration_ms: None,
-                model_id: cfg.model_id.clone(),
-                status: Status::Running,
-                error: None,
-                done_ms: 0,
-                work_ms: 0,
-                lines: Vec::new(),
-            }
-        }
+    let id = match resume {
+        Some(id) => id,
+        None => transcripts::new_id()?,
     };
-    // Open before answering, so "not supported" shows up at once on the page.
-    let mut decoder = FileDecoder::open(std::path::Path::new(&t.source))?;
-    t.duration_ms = decoder.duration_ms().or(t.duration_ms);
-    t.status = Status::Running;
-    t.error = None;
-    transcripts::save(&t)?;
-
-    let stop = Arc::new(AtomicBool::new(false));
-    *job = Some((t.id, stop.clone()));
-    drop(job);
+    let stop = claim(id)?;
+    let prepared = (|| {
+        let mut t = match resume {
+            Some(id) => transcripts::load(id)?,
+            None => {
+                let source = path.ok_or("No file given.")?;
+                let name = std::path::Path::new(&source).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                Transcript::new(id, transcripts::Kind::File, name, source, cfg.model_id.clone())
+            }
+        };
+        // Open before answering, so "not supported" shows up at once on the page.
+        let decoder = FileDecoder::open(std::path::Path::new(&t.source))?;
+        t.duration_ms = decoder.duration_ms().or(t.duration_ms);
+        t.status = Status::Running;
+        t.error = None;
+        transcripts::save(&t)?;
+        Ok::<_, String>((t, decoder))
+    })();
+    let (mut t, mut decoder) = prepared.inspect_err(|_| release(id))?;
 
     let first = t.clone();
     let app = app.clone();
@@ -290,7 +288,7 @@ pub(crate) fn transcribe_piece(app: &AppHandle, samples: &[f32], cfg: &Cfg) -> R
 /// changes words, so its output splits back into the same lines by word count.
 /// The previous paragraph's last line goes in again as context: its forced
 /// closing full stop is undone when the sentence actually runs on.
-pub(crate) fn repunctuate_tail(t: &mut Transcript, n: usize, english: bool) {
+fn repunctuate_tail(t: &mut Transcript, n: usize, english: bool) {
     if !english {
         return;
     }

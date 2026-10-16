@@ -61,7 +61,7 @@ Silent voice/
 │   ├── styles.css                   ← Tailwind + CSS variables + sv-bar keyframe
 │   ├── types/index.ts               ← all shared TypeScript interfaces
 │   ├── components/
-│   │   ├── dashboard/               ← 7 tabs: Home, ModelStore, Modes, ApiKeys, Settings, History, Guide
+│   │   ├── dashboard/               ← sidebar pages: Home, Progress, Transcribe, Notetaker, ModelStore, Modes, Theme, Settings, History, ApiKeys, Guide
 │   │   ├── overlay/
 │   │   │   ├── OverlayApp.tsx       ← the always-on-top pill window app
 │   │   │   └── RecordingOverlay.tsx ← pill content (idle line / recording dot+waveform)
@@ -493,7 +493,7 @@ All commands are registered in `src-tauri/src/lib.rs` → `tauri::generate_handl
 | `pipeline://partial` | Rust → Overlay | `string` | Live-preview text while recording (when enabled) |
 | `download://progress` | Rust → Frontend | `{model_id, downloaded_bytes, total_bytes, status, error?}` | Progress bars in Model Store |
 | `overlay://opacity` | Rust → Overlay | `number` | (dead code — kept but not used) |
-| `transcript://update` | Rust → Frontend | full `Transcript` (with `lines`) | Transcribe page; fires on new text, status change, and at most ~1/s for progress |
+| `transcript://update` | Rust → Frontend | full `Transcript` (with `lines`, `kind`) | Transcribe page (files) and Notetaker (meetings, by `kind`); files: new text, status change, ≤ ~1/s progress; meetings: new text, a device problem, and the end |
 | `tray://toggle-record` | Rust → Frontend | `()` | Tray menu record toggle |
 | `tray://toggle-listen` | Rust → Frontend | `()` | Tray menu always-listen toggle |
 | `tts://state` | Rust → Frontend | `"synthesizing"\|"speaking"\|"idle"` | TTS playback state (for future UI indicator) |

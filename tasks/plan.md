@@ -27,7 +27,7 @@ Step 1 is archived in `step1-plan.md` / `step1-todo.md`.
 - **Audio size:** 16 kHz mono WAV is 115 MB/h per track (FLAC ~half).
 
 ## Architecture Decisions
-- **New `audio/loopback.rs`:** system sound as 16 kHz mono chunks, silence padded
+- **New `audio/live.rs`:** (built as one module for the mic and loopback) system sound as 16 kHz mono chunks, silence padded
   by the clock. Same output shape as the mic, so both feed a `longform::Chunker`.
 - **New `meeting_job.rs`:** two capture sources → two chunkers → one transcribe
   worker → one `Transcript` with a `speaker` on each line. Reuses step 1's storage,

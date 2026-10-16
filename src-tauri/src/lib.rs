@@ -939,7 +939,7 @@ fn file_transcribe_cancel() {
 
 /// Record the mic (You) and the computer's sound (Others) into a live transcript.
 #[tauri::command]
-fn meeting_start(app: AppHandle) -> Result<transcripts::Transcript, String> {
+async fn meeting_start(app: AppHandle) -> Result<transcripts::Transcript, String> {
     meeting_job::start(&app)
 }
 
@@ -953,8 +953,8 @@ fn meeting_devices(state: State<AppState>) -> [Option<String>; 2] {
 
 /// Stop recording; the transcript finishes the queued pieces, then reads "done".
 #[tauri::command]
-fn meeting_stop() -> Result<(), String> {
-    meeting_job::stop()
+async fn meeting_stop(app: AppHandle) -> Result<(), String> {
+    meeting_job::stop(&app)
 }
 
 #[tauri::command]
@@ -1426,6 +1426,8 @@ pub fn run() {
                 });
             }
             // Meeting-recorder check: record for this many seconds, then stop.
+            // Dev builds only: it records with no consent note.
+            #[cfg(debug_assertions)]
             if let Some(secs) = std::env::var("SV_SELFTEST_MEETING").ok().and_then(|v| v.parse::<u64>().ok()) {
                 let app = app.handle().clone();
                 std::thread::spawn(move || {
@@ -1437,7 +1439,7 @@ pub fn run() {
                     }
                     let _ = app.emit("nav://to", "/notetaker");
                     std::thread::sleep(std::time::Duration::from_secs(secs));
-                    logging::log_info("selftest", &format!("meeting stop: {:?}", meeting_job::stop()));
+                    logging::log_info("selftest", &format!("meeting stop: {:?}", meeting_job::stop(&app)));
                 });
             }
             // CI smoke test (scripts/smoke-test.sh): paste once from a tokio

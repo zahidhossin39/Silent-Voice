@@ -3,13 +3,13 @@
 ## Phase 1: Capture (highest risk first)
 
 ### Task 1: Computer sound as a 16 kHz stream
-**Description:** `audio/loopback.rs`: open WASAPI loopback (cpal input stream on the default output device), downmix + resample to 16 kHz mono, pad silence by the wall clock while nothing plays.
+**Description:** `audio/live.rs` (mic + loopback): open WASAPI loopback (cpal input stream on the default output device), downmix + resample to 16 kHz mono, pad silence by the wall clock while nothing plays.
 **Acceptance criteria:**
 - [ ] 10 min of YouTube playback gives 10 min ±1 s of audio, including paused stretches
 - [ ] Stop returns promptly even while nothing plays
 - [ ] Clock-padding logic unit-tested (gaps become silence of the right length)
 **Verification:** `cargo test --lib loopback`; ignored real-device test with a playback
-**Files:** `src-tauri/src/audio/loopback.rs`, `src-tauri/src/audio/mod.rs`
+**Files:** `src-tauri/src/audio/live.rs`, `src-tauri/src/audio/mod.rs`
 
 ### Task 2: Shared "transcribe a piece"
 **Description:** Move piece transcription + cleanup out of `transcribe_job.rs` into one function both jobs use, with a unique temp WAV per call.

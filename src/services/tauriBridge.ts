@@ -845,6 +845,11 @@ export function transcriptParagraphs(lines: TranscriptLine[]) {
   return out;
 }
 
+/** "You: " / "Others: " before a meeting paragraph; mirrors `label` in transcripts.rs. */
+export function speakerLabel(speaker?: "you" | "others"): string {
+  return speaker === "you" ? "You: " : speaker === "others" ? "Others: " : "";
+}
+
 export const MEDIA_EXTENSIONS = ["mp3", "m4a", "mp4", "mov", "wav", "flac", "ogg", "mkv", "aac", "m4v"];
 
 export async function transcribeStart(opts: { path?: string; resume?: number }): Promise<Transcript> {

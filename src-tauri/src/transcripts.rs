@@ -22,10 +22,10 @@ pub struct Line {
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum Speaker {
-    /// The microphone.
-    You,
+    /// The microphone. Also its track number in a meeting.
+    You = 0,
     /// The computer's sound: everyone else on the call.
-    Others,
+    Others = 1,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Default)]
@@ -57,6 +57,26 @@ pub struct Transcript {
     #[serde(default)]
     pub work_ms: u64,
     pub lines: Vec<Line>,
+}
+
+impl Transcript {
+    /// A new, running transcript with no text yet.
+    pub fn new(id: i64, kind: Kind, name: String, source: String, model_id: String) -> Self {
+        Self {
+            id,
+            kind,
+            name,
+            source,
+            created: id,
+            duration_ms: None,
+            model_id,
+            status: Status::Running,
+            error: None,
+            done_ms: 0,
+            work_ms: 0,
+            lines: Vec::new(),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
