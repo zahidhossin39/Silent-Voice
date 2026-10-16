@@ -1308,6 +1308,7 @@ pub fn run() {
 
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
@@ -1386,6 +1387,10 @@ pub fn run() {
                     std::thread::sleep(std::time::Duration::from_secs(20));
                     let r = transcribe_job::start(&app, Some(file.to_string_lossy().into_owned()), None);
                     logging::log_info("selftest", &format!("transcribe started: {:?}", r.map(|t| (t.id, t.model_id))));
+                    if let Some(w) = app.get_webview_window("main") {
+                        let _ = w.show();
+                    }
+                    let _ = app.emit("nav://to", "/transcribe");
                 });
             }
             if let Some(v) = std::env::var_os("SV_SELFTEST_PASTE") {

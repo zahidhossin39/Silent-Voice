@@ -801,3 +801,79 @@ export async function noticeHide(): Promise<void> {
 export async function noticeOpenSettings(): Promise<void> {
   if (isTauri()) await invoke<void>("notice_open_settings");
 }
+
+// ---------- Transcribe a file ----------
+
+export interface TranscriptLine {
+  start_ms: number;
+  end_ms: number;
+  text: string;
+}
+
+export interface Transcript {
+  id: number;
+  name: string;
+  source: string;
+  created: number;
+  duration_ms: number | null;
+  model_id: string;
+  status: "running" | "done" | "stopped" | "failed";
+  error?: string | null;
+  done_ms: number;
+  work_ms: number;
+  lines: TranscriptLine[];
+}
+
+/** Same grouping the Rust side uses for .txt/.md paragraphs (~1 min each). */
+export const TRANSCRIPT_PARAGRAPH = 6;
+
+export const MEDIA_EXTENSIONS = ["mp3", "m4a", "mp4", "mov", "wav", "flac", "ogg", "mkv", "aac", "m4v"];
+
+export async function transcribeStart(opts: { path?: string; resume?: number }): Promise<Transcript> {
+  if (!isTauri()) throw new Error("Needs the desktop app");
+  return invoke<Transcript>("file_transcribe_start", { path: opts.path ?? null, resume: opts.resume ?? null });
+}
+
+export async function transcribeCancel(): Promise<void> {
+  if (isTauri()) await invoke("file_transcribe_cancel");
+}
+
+export async function transcriptsList(): Promise<Transcript[]> {
+  if (!isTauri()) return [];
+  return invoke<Transcript[]>("transcripts_list").catch(() => []);
+}
+
+export async function transcriptDelete(id: number): Promise<void> {
+  await invoke("transcript_delete", { id });
+}
+
+export async function transcriptRename(id: number, name: string): Promise<void> {
+  await invoke("transcript_rename", { id, name });
+}
+
+/** Browse for an audio/video file. Null when cancelled. */
+export async function pickMediaFile(): Promise<string | null> {
+  if (!isTauri()) return null;
+  const { open } = await import("@tauri-apps/plugin-dialog");
+  const r = await open({ multiple: false, filters: [{ name: "Audio or video", extensions: MEDIA_EXTENSIONS }] });
+  return typeof r === "string" ? r : null;
+}
+
+/** Save-as dialog, then write the transcript in the format the extension names. */
+export async function transcriptSaveAs(t: Transcript): Promise<boolean> {
+  if (!isTauri()) return false;
+  const { save } = await import("@tauri-apps/plugin-dialog");
+  const base = t.name.replace(/\.[^.]+$/, "") || "transcript";
+  const path = await save({
+    defaultPath: `${base}.txt`,
+    filters: [
+      { name: "Plain text", extensions: ["txt"] },
+      { name: "Markdown with timestamps", extensions: ["md"] },
+      { name: "Subtitles", extensions: ["srt"] },
+    ],
+  });
+  if (!path) return false;
+  const format = (path.split(".").pop() ?? "txt").toLowerCase();
+  await invoke("transcript_export", { id: t.id, format, path });
+  return true;
+}

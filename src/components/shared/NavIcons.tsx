@@ -119,6 +119,16 @@ export function ProgressIcon({ className }: IconProps) {
   );
 }
 
+export function TranscribeIcon({ className }: IconProps) {
+  // A sound wave turning into lines of text: "recording in, words out".
+  return (
+    <svg {...base} className={className}>
+      <path d="M3.5 9v6M7 6.5v11M10.5 10v4" />
+      <path d="M14 8h6.5M14 12h6.5M14 16h4" />
+    </svg>
+  );
+}
+
 export function HistoryIcon({ className }: IconProps) {
   // A clean clock face with a small "rewind" notch at the top-left — reads
   // clearly as recents/history, classy rather than busy.
