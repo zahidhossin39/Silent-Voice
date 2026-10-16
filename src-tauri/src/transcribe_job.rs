@@ -44,8 +44,9 @@ pub fn unless_running<T>(id: i64, busy: &str, f: impl FnOnce() -> Result<T, Stri
     f()
 }
 
-/// What each piece is transcribed with, read from settings when the job starts.
-struct Cfg {
+/// What each piece is transcribed with, read from settings when a job starts.
+/// Shared with the meeting recorder.
+pub(crate) struct Cfg {
     model_id: String,
     language: String,
     vocabulary: String,
@@ -53,19 +54,14 @@ struct Cfg {
     use_gpu: bool,
     threads: u32,
     english: bool,
-    sensitivity: u32,
+    pub(crate) sensitivity: u32,
 }
 
-/// Start a new transcript for `path`, or carry on with `resume` from where it stopped.
-pub fn start(app: &AppHandle, path: Option<String>, resume: Option<i64>) -> Result<Transcript, String> {
-    let mut job = JOB.lock().map_err(|e| e.to_string())?;
-    if job.is_some() {
-        return Err("A file is already being transcribed. Wait for it or cancel it first.".into());
-    }
-    let cfg = {
+impl Cfg {
+    pub(crate) fn load(app: &AppHandle) -> Result<Self, String> {
         let state = app.state::<crate::AppState>();
         let c = state.config.lock().map_err(|e| e.to_string())?;
-        Cfg {
+        Ok(Cfg {
             english: crate::system::hotkey::english_text(&c.language, &c.model_id),
             model_id: c.model_id.clone(),
             language: c.language.clone(),
@@ -74,8 +70,17 @@ pub fn start(app: &AppHandle, path: Option<String>, resume: Option<i64>) -> Resu
             use_gpu: c.use_gpu,
             threads: crate::system::hotkey::resolve_thread_count(c.high_performance, c.performance_threads),
             sensitivity: c.input_sensitivity,
-        }
-    };
+        })
+    }
+}
+
+/// Start a new transcript for `path`, or carry on with `resume` from where it stopped.
+pub fn start(app: &AppHandle, path: Option<String>, resume: Option<i64>) -> Result<Transcript, String> {
+    let mut job = JOB.lock().map_err(|e| e.to_string())?;
+    if job.is_some() {
+        return Err("A file is already being transcribed. Wait for it or cancel it first.".into());
+    }
+    let cfg = Cfg::load(app)?;
     let mut t = match resume {
         Some(id) => transcripts::load(id)?,
         None => {
@@ -236,9 +241,11 @@ fn run<V: FnMut(&[f32]) -> Option<Vec<bool>>>(
     Ok(())
 }
 
-fn transcribe_piece(app: &AppHandle, samples: &[f32], cfg: &Cfg) -> Result<String, String> {
-    // ponytail: one fixed file name, fine while only one job runs at a time.
-    let path = crate::models::registry::audio_dir().join("file-piece.wav");
+/// Transcribe one piece locally and clean it (fillers, repeated words).
+pub(crate) fn transcribe_piece(app: &AppHandle, samples: &[f32], cfg: &Cfg) -> Result<String, String> {
+    // Its own temp file: the meeting recorder transcribes two tracks.
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let path = crate::models::registry::audio_dir().join(format!("piece-{}.wav", NEXT.fetch_add(1, Ordering::Relaxed)));
     capture::write_wav(&path, samples)?;
     let text = tauri::async_runtime::block_on(crate::transcription::whisper::transcribe_dispatch(
         app,
@@ -253,7 +260,9 @@ fn transcribe_piece(app: &AppHandle, samples: &[f32], cfg: &Cfg) -> Result<Strin
         "",
         "",
         "",
-    ))?;
+    ));
+    let _ = std::fs::remove_file(&path);
+    let text = text?;
     Ok(textfmt::collapse_repeated_words(&textfmt::strip_fillers(text.trim())).trim().to_string())
 }
 
@@ -262,7 +271,7 @@ fn transcribe_piece(app: &AppHandle, samples: &[f32], cfg: &Cfg) -> Result<Strin
 /// changes words, so its output splits back into the same lines by word count.
 /// The previous paragraph's last line goes in again as context: its forced
 /// closing full stop is undone when the sentence actually runs on.
-fn repunctuate_tail(t: &mut Transcript, n: usize, english: bool) {
+pub(crate) fn repunctuate_tail(t: &mut Transcript, n: usize, english: bool) {
     if !english {
         return;
     }
