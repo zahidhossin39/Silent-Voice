@@ -24,6 +24,8 @@ const ECHO_WINDOW_MS: u64 = 3_000;
 /// With no new text the page needs no update (its timer runs on its own), so
 /// progress is only saved now and then, for a crash to keep it.
 const PROGRESS_EVERY: Duration = Duration::from_secs(10);
+/// Pieces failing in a row before the page is told.
+const MAX_FAILS_IN_A_ROW: usize = 3;
 
 enum Msg {
     Audio(Speaker, Vec<f32>),
@@ -129,7 +131,6 @@ fn work(app: AppHandle, mut t: Transcript, rx: Receiver<Msg>, cfg: Cfg) {
         |samples| {
             transcribe_job::transcribe_piece(&app, samples, &cfg)
                 .inspect_err(|e| crate::logging::log_error("meeting", &format!("piece skipped: {e}")))
-                .unwrap_or_default()
         },
         |t, news| {
             if news {
@@ -162,18 +163,37 @@ fn run<V: FnMut(&[f32]) -> Option<Vec<bool>>>(
     t: &mut Transcript,
     rx: Receiver<Msg>,
     chunkers: [longform::Chunker<V>; 2],
-    mut transcribe: impl FnMut(&[f32]) -> String,
+    mut transcribe: impl FnMut(&[f32]) -> Result<String, String>,
     mut changed: impl FnMut(&mut Transcript, bool),
 ) {
     let mut heard = [0u64; 2];
+    let mut fails = 0;
     let mut chunkers = chunkers.map(Some);
     // True when a line was added.
     let mut add = |t: &mut Transcript, speaker: Speaker, pieces: Vec<longform::Segment>| {
         let mut added = false;
         for piece in pieces.into_iter().filter(|p| p.speech) {
-            let text = transcribe(&piece.samples);
+            let text = match transcribe(&piece.samples) {
+                Ok(text) => {
+                    fails = 0;
+                    text
+                }
+                // One bad piece is skipped quietly; pieces failing in a row
+                // (no model, say) mean nothing is being written: say why.
+                Err(e) => {
+                    fails += 1;
+                    if fails == MAX_FAILS_IN_A_ROW {
+                        t.error = Some(format!("Nothing is being transcribed: {e}. The audio is still being saved."));
+                        added = true;
+                    }
+                    continue;
+                }
+            };
             if text.is_empty() {
                 continue;
+            }
+            if fails < MAX_FAILS_IN_A_ROW && t.error.as_deref().is_some_and(|e| e.starts_with("Nothing is being transcribed")) {
+                t.error = None;
             }
             let start_ms = piece.start as u64 * 1000 / SR;
             let end_ms = start_ms + piece.samples.len() as u64 * 1000 / SR;
@@ -374,7 +394,7 @@ mod tests {
         }
         drop(tx);
         let mut t = Transcript::new(1, Kind::Meeting, String::new(), String::new(), "m".into());
-        run(&mut t, rx, chunkers(), |s| if s.contains(&0.5) { "mine".into() } else { "theirs".into() }, |_, _| {});
+        run(&mut t, rx, chunkers(), |s| Ok(if s.contains(&0.5) { "mine".into() } else { "theirs".into() }), |_, _| {});
         assert_eq!(t.done_ms, 9_000);
         let said: Vec<(Option<Speaker>, &str)> = t.lines.iter().map(|l| (l.speaker, l.text.as_str())).collect();
         assert_eq!(said, vec![(Some(Speaker::You), "mine"), (Some(Speaker::Others), "theirs")]);
@@ -388,8 +408,21 @@ mod tests {
         tx.send(Msg::Audio(Speaker::You, vec![0.0; 16_000])).unwrap();
         drop(tx);
         let mut t = Transcript::new(1, Kind::Meeting, String::new(), String::new(), "m".into());
-        run(&mut t, rx, chunkers(), |_| String::new(), |_, _| {});
+        run(&mut t, rx, chunkers(), |_| Ok(String::new()), |_, _| {});
         assert_eq!(t.done_ms, 2_000, "audio after the failure was lost");
         assert!(t.error.as_deref().is_some_and(|e| e.contains("computer's sound") && e.contains("0:01")), "{:?}", t.error);
+    }
+
+    #[test]
+    fn pieces_failing_in_a_row_say_why_on_the_page() {
+        let (tx, rx) = channel();
+        // 20 s of talk on the mic: several pieces, none of them transcribable.
+        for _ in 0..200 {
+            tx.send(Msg::Audio(Speaker::You, vec![0.5; 1_600])).unwrap();
+        }
+        drop(tx);
+        let mut t = Transcript::new(1, Kind::Meeting, String::new(), String::new(), "m".into());
+        run(&mut t, rx, chunkers(), |_| Err("model 'base.en' is not downloaded".into()), |_, _| {});
+        assert!(t.error.as_deref().is_some_and(|e| e.contains("not downloaded")), "{:?}", t.error);
     }
 }

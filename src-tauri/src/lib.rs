@@ -1416,7 +1416,9 @@ pub fn run() {
             if let Some(file) = std::env::var_os("SV_SELFTEST_TRANSCRIBE") {
                 let app = app.handle().clone();
                 std::thread::spawn(move || {
-                    std::thread::sleep(std::time::Duration::from_secs(20));
+                    while !app.state::<AppState>().config_pushed.load(std::sync::atomic::Ordering::Relaxed) {
+                        std::thread::sleep(std::time::Duration::from_millis(500));
+                    }
                     let r = transcribe_job::start(&app, Some(file.to_string_lossy().into_owned()), None);
                     logging::log_info("selftest", &format!("transcribe started: {:?}", r.map(|t| (t.id, t.model_id))));
                     if let Some(w) = app.get_webview_window("main") {
@@ -1431,7 +1433,11 @@ pub fn run() {
             if let Some(secs) = std::env::var("SV_SELFTEST_MEETING").ok().and_then(|v| v.parse::<u64>().ok()) {
                 let app = app.handle().clone();
                 std::thread::spawn(move || {
-                    std::thread::sleep(std::time::Duration::from_secs(20));
+                    // Wait for the dashboard to send the user's settings (model, mic).
+                    while !app.state::<AppState>().config_pushed.load(std::sync::atomic::Ordering::Relaxed) {
+                        std::thread::sleep(std::time::Duration::from_millis(500));
+                    }
+                    std::thread::sleep(std::time::Duration::from_secs(5));
                     let r = meeting_job::start(&app);
                     logging::log_info("selftest", &format!("meeting started: {:?}", r.map(|t| t.id)));
                     if let Some(w) = app.get_webview_window("main") {

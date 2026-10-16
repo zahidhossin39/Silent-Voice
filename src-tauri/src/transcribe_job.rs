@@ -95,6 +95,11 @@ pub(crate) struct Cfg {
 impl Cfg {
     pub(crate) fn load(app: &AppHandle) -> Result<Self, String> {
         let state = app.state::<crate::AppState>();
+        // Before the dashboard sends the user's settings, these are the defaults
+        // (a model that may not even be downloaded).
+        if !state.config_pushed.load(Ordering::Relaxed) {
+            return Err("Still loading your settings. Try again in a moment.".into());
+        }
         let c = state.config.lock().map_err(|e| e.to_string())?;
         Ok(Cfg {
             english: crate::system::hotkey::english_text(&c.language, &c.model_id),
