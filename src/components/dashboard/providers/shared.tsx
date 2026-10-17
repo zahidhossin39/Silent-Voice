@@ -3,7 +3,7 @@ import { useSettingsStore } from "../../../stores/settingsStore";
 import { apiGenerate, apiListModels, apiTestStt } from "../../../services/tauriBridge";
 import type { ApiProvider, ApiUse } from "../../../types";
 
-// Shared by the Cloud providers page designs: the presets, the actions
+// The Cloud providers page: the presets, the actions
 // (load models, test, toggle a use) and the controls they are built from.
 
 // `sttModel` is only set for providers this app knows how to call for
@@ -389,50 +389,6 @@ export function KeyInput({ p, api, id }: { p: ApiProvider; api: ProvidersApi; id
   );
 }
 
-export function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
-  return (
-    <input
-      spellCheck={false}
-      style={{ outline: "none" }}
-      {...props}
-      className={`h-10 w-full rounded-lg border border-sv-border bg-sv-bg px-3 text-sm outline-none transition placeholder:text-sv-muted focus:border-sv-accent ${props.className ?? ""}`}
-    />
-  );
-}
-
-/** A switch row: what the provider is used for. */
-export function UseSwitch({
-  on,
-  onChange,
-  title,
-  hint,
-  disabled,
-}: {
-  on: boolean;
-  onChange: () => void;
-  title: string;
-  hint: string;
-  disabled?: boolean;
-}) {
-  return (
-    <button
-      role="switch"
-      aria-checked={on}
-      onClick={onChange}
-      disabled={disabled}
-      className="flex w-full items-center gap-3 rounded-lg px-1 py-1.5 text-left disabled:cursor-not-allowed disabled:opacity-50"
-    >
-      <span className="min-w-0 flex-1">
-        <span className="block text-sm">{title}</span>
-        <span className="block text-xs text-sv-muted">{hint}</span>
-      </span>
-      <span className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${on ? "bg-sv-accent" : "bg-sv-surface-2 ring-1 ring-inset ring-sv-border"}`}>
-        <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-[left] duration-200 ${on ? "left-[18px]" : "left-0.5"}`} />
-      </span>
-    </button>
-  );
-}
-
 export function StatusDot({ s }: { s: Status }) {
   const bg =
     s === "connected" ? "bg-sv-good" : s === "failed" ? "bg-sv-bad" : s === "needs-key" || s === "needs-model" ? "bg-sv-warn" : "bg-sv-muted/60";
@@ -522,11 +478,4 @@ export const Icon = {
   eyeOff: svg(<path d="M3 3l18 18M10.6 5.6A9.7 9.7 0 0 1 12 5.5C18 5.5 21.5 12 21.5 12a17 17 0 0 1-3 3.8M6.6 6.6C3.9 8.3 2.5 12 2.5 12S6 18.5 12 18.5a9 9 0 0 0 4.4-1.1M9.9 9.9a2.75 2.75 0 0 0 4.2 4.2" />),
   trash: svg(<path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l.8 12.5h9.4L17.5 7" />),
   bolt: svg(<path d="M13 3 5 13.5h6L10 21l8-10.5h-6L13 3Z" />),
-  settings: svg(
-    <>
-      <path d="M4 7h10M18 7h2M4 17h4M12 17h8" />
-      <circle cx="16" cy="7" r="2" />
-      <circle cx="10" cy="17" r="2" />
-    </>
-  ),
 };

@@ -18,10 +18,10 @@ import {
   type ProvidersApi,
 } from "./shared";
 
-// Design C, "Control cards": one compact card per provider with everything
+// Cloud providers as cards: one compact card per provider with everything
 // on it at once; the model list opens wide inside the card, not as a dropdown.
 
-export default function VariantC({ api, onRemove }: { api: ProvidersApi; onRemove: (p: ApiProvider) => void }) {
+export default function ProviderCards({ api, onRemove }: { api: ProvidersApi; onRemove: (p: ApiProvider) => void }) {
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-3">
