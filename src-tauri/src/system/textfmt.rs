@@ -575,7 +575,11 @@ fn symbol_words(line: &str) -> String {
         for &(phrase, sym, gl, gr) in SYMBOL_WORDS {
             if let Some((n, punct)) = phrase_at(&toks, i, phrase) {
                 match out.last_mut() {
-                    Some(prev) if gl && !prev.ends_with(|c: char| ",;:!?".contains(c)) => prev.push_str(sym),
+                    // "use the slash goal" → "use the /goal": after a filler word like "the"/"use" a
+                    // spoken slash starts a command, it doesn't join ("and/or" stays joined).
+                    Some(prev) if gl && !prev.ends_with(|c: char| ",;:!?".contains(c))
+                        && !(sym == "/" && !matches!(prev.to_lowercase().as_str(), "and" | "or")
+                            && STANDALONE_BEFORE.contains(&prev.to_lowercase().as_str())) => prev.push_str(sym),
                     _ => out.push(sym.to_string()),
                 }
                 out.last_mut().unwrap().push_str(&punct);
@@ -1132,6 +1136,11 @@ mod tests {
         assert_eq!(spoken_symbols("hashtag rust is great"), "#rust is great");
         assert_eq!(spoken_symbols("fifty percent sign off"), "fifty% off");
         assert_eq!(spoken_symbols("and slash or"), "and/or");
+        assert_eq!(spoken_symbols("use the slash impeccable skill"), "use the /impeccable skill");
+        assert_eq!(spoken_symbols("go to the slash goal"), "go to the /goal");
+        assert_eq!(spoken_symbols("try the slash prototype"), "try the /prototype");
+        assert_eq!(spoken_symbols("speed in km slash h"), "speed in km/h");
+        assert_eq!(spoken_symbols("open 24 slash 7"), "open 24/7");
         assert_eq!(spoken_symbols("a quick dash home"), "a quick dash home");
         assert_eq!(spoken_symbols("zaid at sign home"), "zaid@home");
         // web addresses
