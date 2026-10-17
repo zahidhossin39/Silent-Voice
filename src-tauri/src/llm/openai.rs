@@ -17,7 +17,9 @@ struct ChatRequest<'a> {
     // penalty directly discourages the repeated-token loops. Both are standard
     // OpenAI fields, honoured by cloud providers and llama.cpp alike.
     temperature: f32,
-    frequency_penalty: f32,
+    // Google's OpenAI-compatible layer rejects this field (400 "Cannot find field").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    frequency_penalty: Option<f32>,
 }
 
 #[derive(Serialize)]
@@ -131,7 +133,7 @@ async fn send(
         ],
         stream: false,
         temperature: 0.3,
-        frequency_penalty: 0.3,
+        frequency_penalty: (!base_url.contains("generativelanguage.googleapis.com")).then_some(0.3),
     };
 
     let mut req = client().post(&url).timeout(timeout).json(&body);
@@ -361,5 +363,27 @@ async fn transcribe_audio_openrouter(
             .await
             .map_err(|e| format!("Unexpected response shape from provider: {e}"))?;
         return Ok(parsed.text.trim().to_string());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// Real call to a provider: SV_TEST_BASE / SV_TEST_KEY / SV_TEST_MODEL.
+    #[test]
+    #[ignore]
+    fn real_provider_chats_and_summarizes() {
+        let (base, key, model) = (std::env::var("SV_TEST_BASE").unwrap(), std::env::var("SV_TEST_KEY").unwrap(), std::env::var("SV_TEST_MODEL").unwrap());
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let ok = rt.block_on(super::chat(&base, &key, &model, "You are a connection test. Reply with exactly: OK", "ping"));
+        println!("chat: {ok:?}");
+        let notes = rt.block_on(super::chat_long(
+            &base,
+            &key,
+            &model,
+            crate::meeting_summary::SUMMARY_PROMPT,
+            "You: Let's ship the beta on Friday.\n\nOthers: Fine, I'll write the release notes by Thursday.",
+        ));
+        println!("summary: {notes:?}");
+        assert!(ok.is_ok() && notes.is_ok());
     }
 }
