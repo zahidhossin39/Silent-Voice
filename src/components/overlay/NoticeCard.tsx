@@ -10,7 +10,7 @@ import {
 } from "../../services/tauriBridge";
 
 // The on-screen problem card (system/notice.rs): bottom-center, above the
-// taskbar, gone after a few seconds unless hovered. Opaque window, so the
+// taskbar, gone after a few seconds. Opaque window, so the
 // card fills it edge to edge and DWM rounds the corners.
 const SHOW_MS = 7000;
 const BG = "#0b0b0d";
@@ -25,7 +25,6 @@ const BUTTON: Record<Notice["action"], string> = {
 export default function NoticeCard() {
   const [n, setN] = useState<Notice | null>(null);
   const [seq, setSeq] = useState(0); // restarts the countdown per notice
-  const [paused, setPaused] = useState(false);
   const [copied, setCopied] = useState(false);
   const timer = useRef<number | undefined>(undefined);
 
@@ -47,9 +46,9 @@ export default function NoticeCard() {
 
   useEffect(() => {
     window.clearTimeout(timer.current);
-    if (n && !paused) timer.current = window.setTimeout(() => void noticeHide(), SHOW_MS);
+    if (n) timer.current = window.setTimeout(() => void noticeHide(), SHOW_MS);
     return () => window.clearTimeout(timer.current);
-  }, [n, seq, paused]);
+  }, [n, seq]);
 
   if (!n) return null;
 
@@ -67,8 +66,6 @@ export default function NoticeCard() {
   const len = 2 * Math.PI * r;
   return (
     <div
-      onMouseEnter={() => setPaused(true)}
-      onMouseLeave={() => setPaused(false)}
       style={{
         height: "100vh",
         boxSizing: "border-box",
@@ -108,7 +105,7 @@ export default function NoticeCard() {
               stroke="rgba(255,255,255,0.7)"
               strokeWidth="2"
               strokeDasharray={len}
-              style={{ animation: `sv-ring ${SHOW_MS}ms linear forwards`, animationPlayState: paused ? "paused" : "running" }}
+              style={{ animation: `sv-ring ${SHOW_MS}ms linear forwards` }}
             />
           </svg>
           <span style={{ position: "relative", fontSize: 15 }}>✕</span>

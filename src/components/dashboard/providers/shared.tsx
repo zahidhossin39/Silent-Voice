@@ -19,16 +19,6 @@ export interface Preset {
 }
 
 export const PRESETS: Preset[] = [
-  { name: "OpenAI", base_url: "https://api.openai.com/v1", model: "gpt-4o-mini", sttModel: "whisper-1", blurb: "GPT models and Whisper" },
-  { name: "Groq", base_url: "https://api.groq.com/openai/v1", model: "llama-3.3-70b-versatile", sttModel: "whisper-large-v3-turbo", blurb: "Very fast open models and Whisper" },
-  { name: "OpenRouter", base_url: "https://openrouter.ai/api/v1", model: "anthropic/claude-sonnet-4-6", sttModel: "openai/whisper-large-v3-turbo", blurb: "Hundreds of models with one key" },
-  {
-    name: "Google (Gemini)",
-    base_url: "https://generativelanguage.googleapis.com/v1beta/openai",
-    model: "",
-    blurb: "Gemini models",
-    note: "Uses Google's OpenAI-compatible layer for chat. It has no speech-to-text this app can use.",
-  },
   {
     name: "Anthropic (Claude)",
     base_url: "https://api.anthropic.com/v1",
@@ -36,13 +26,23 @@ export const PRESETS: Preset[] = [
     blurb: "Claude models",
     note: "Anthropic calls its OpenAI-compatible layer a testing aid, so expect rough edges. No speech-to-text.",
   },
-  { name: "Together", base_url: "https://api.together.xyz/v1", model: "meta-llama/Llama-3.3-70B-Instruct-Turbo", blurb: "Open models" },
-  { name: "Mistral AI", base_url: "https://api.mistral.ai/v1", model: "", blurb: "Mistral models" },
-  { name: "DeepSeek", base_url: "https://api.deepseek.com/v1", model: "deepseek-chat", blurb: "DeepSeek chat and reasoning" },
+  {
+    name: "Google (Gemini)",
+    base_url: "https://generativelanguage.googleapis.com/v1beta/openai",
+    model: "",
+    blurb: "Gemini models",
+    note: "Uses Google's OpenAI-compatible layer for chat. It has no speech-to-text this app can use.",
+  },
+  { name: "OpenAI", base_url: "https://api.openai.com/v1", model: "gpt-4o-mini", sttModel: "whisper-1", blurb: "GPT models and Whisper" },
+  { name: "OpenRouter", base_url: "https://openrouter.ai/api/v1", model: "anthropic/claude-sonnet-4-6", sttModel: "openai/whisper-large-v3-turbo", blurb: "Hundreds of models with one key" },
   { name: "xAI (Grok)", base_url: "https://api.x.ai/v1", model: "", blurb: "Grok models" },
+  { name: "DeepSeek", base_url: "https://api.deepseek.com/v1", model: "deepseek-chat", blurb: "DeepSeek chat and reasoning" },
+  { name: "Mistral AI", base_url: "https://api.mistral.ai/v1", model: "", blurb: "Mistral models" },
+  { name: "Groq", base_url: "https://api.groq.com/openai/v1", model: "llama-3.3-70b-versatile", sttModel: "whisper-large-v3-turbo", blurb: "Very fast open models and Whisper" },
+  { name: "Perplexity", base_url: "https://api.perplexity.ai", model: "", blurb: "Search-backed models" },
+  { name: "Together", base_url: "https://api.together.xyz/v1", model: "meta-llama/Llama-3.3-70B-Instruct-Turbo", blurb: "Open models" },
   { name: "Fireworks AI", base_url: "https://api.fireworks.ai/inference/v1", model: "", blurb: "Open models" },
   { name: "DeepInfra", base_url: "https://api.deepinfra.com/v1/openai", model: "", blurb: "Open models" },
-  { name: "Perplexity", base_url: "https://api.perplexity.ai", model: "", blurb: "Search-backed models" },
   {
     name: "Custom",
     base_url: "",
