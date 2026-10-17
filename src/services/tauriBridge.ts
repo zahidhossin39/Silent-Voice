@@ -868,7 +868,6 @@ export async function transcriptsList(): Promise<Transcript[]> {
   return invoke<Transcript[]>("transcripts_list").catch(() => []);
 }
 
-/** One full transcript (the list only carries headers). */
 /** Which model writes a meeting summary: "local" = bundled llama-server. */
 export interface SummaryWith {
   source: "local" | "api";
@@ -883,6 +882,7 @@ export async function meetingSummarize(id: number, w: SummaryWith): Promise<Tran
   return invoke<Transcript>("meeting_summarize", { id, source: w.source, model: w.model, baseUrl: w.base_url, apiKey: w.api_key });
 }
 
+/** One full transcript (the list only carries headers). */
 export async function transcriptGet(id: number): Promise<Transcript> {
   if (!isTauri()) throw new Error("Needs the desktop app");
   return invoke<Transcript>("transcript_get", { id });

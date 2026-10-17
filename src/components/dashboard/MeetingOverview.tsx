@@ -131,7 +131,7 @@ export default function MeetingOverview({ t, onSummarized }: { t: Transcript; on
       )}
 
       {busy && !t.summary ? (
-        <p className="mt-1.5 text-sm text-sv-muted">Writing the summary. A long meeting can take a minute or two.</p>
+        <p className="mt-1.5 text-sm text-sv-muted">Writing the summary. A long meeting can take several minutes, more with a model on this PC.</p>
       ) : t.summary ? (
         <div className={`mt-2 max-w-[72ch] transition-opacity ${busy ? "opacity-50" : ""}`}>{renderNotes(t.summary)}</div>
       ) : (

@@ -197,7 +197,7 @@ impl Format {
     }
 }
 
-fn join(lines: &[Line]) -> String {
+pub(crate) fn join(lines: &[Line]) -> String {
     lines.iter().map(|l| l.text.as_str()).collect::<Vec<_>>().join(" ")
 }
 
@@ -226,7 +226,7 @@ pub fn paragraphs(lines: &[Line]) -> Vec<std::ops::Range<usize>> {
     out
 }
 
-fn label(l: &Line) -> &'static str {
+pub(crate) fn label(l: &Line) -> &'static str {
     match l.speaker {
         Some(Speaker::You) => "You: ",
         Some(Speaker::Others) => "Others: ",

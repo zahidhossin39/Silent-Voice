@@ -272,6 +272,12 @@ pub async fn run_local_llm(
     system_prompt: &str,
     text: &str,
 ) -> Result<String, String> {
+    ensure_local_llm(app, model_id).await?;
+    llm::openai::chat(&llm::llama::base_url(), "", model_id, system_prompt, text).await
+}
+
+/// Start the bundled llama-server with `model_id` unless it already runs it.
+pub async fn ensure_local_llm(app: &AppHandle, model_id: &str) -> Result<(), String> {
     let model_path = registry::llm_model_path(model_id);
     if !model_path.exists() {
         return Err(format!("Local model '{model_id}' is not downloaded"));
@@ -296,7 +302,7 @@ pub async fn run_local_llm(
     if needs_wait {
         llm::llama::wait_ready(std::time::Duration::from_secs(120)).await?;
     }
-    llm::openai::chat(&llm::llama::base_url(), "", model_id, system_prompt, text).await
+    Ok(())
 }
 
 /// True when a system package manager owns this install (the Arch/AUR
@@ -984,29 +990,40 @@ async fn meeting_summarize(
     base_url: String,
     api_key: String,
 ) -> Result<transcripts::Transcript, String> {
-    let t = transcribe_job::unless_running(id, "Wait for the meeting to finish before summarizing it.", || transcripts::load(id))?;
-    let local = source == "local";
+    const BUSY: &str = "Wait for the meeting to finish before summarizing it.";
+    let local = match source.as_str() {
+        "local" => true,
+        "api" => false,
+        _ => return Err(format!("Unknown model source '{source}'.")),
+    };
     if model.trim().is_empty() || (!local && base_url.trim().is_empty()) {
         return Err("Pick a model to summarize with.".into());
     }
-    let max = if local { meeting_summary::LOCAL_WORDS } else { meeting_summary::CLOUD_WORDS };
-    let summary = meeting_summary::summarize(&t, max, |prompt, text| {
+    let _busy = meeting_summary::claim(id)?;
+    let t = transcribe_job::unless_running(id, BUSY, || transcripts::load(id))?;
+    let budget = if local { meeting_summary::LOCAL_TOKENS } else { meeting_summary::CLOUD_TOKENS };
+    let base_url = if local { llm::llama::base_url() } else { base_url };
+    // ponytail: a dictation with a different local model restarts llama-server
+    // and fails this summary; the user presses Summarize again.
+    let summary = meeting_summary::summarize(&t, budget, |prompt, text| {
         let (app, model, base_url, api_key) = (app.clone(), model.clone(), base_url.clone(), api_key.clone());
         async move {
             if local {
-                run_local_llm(&app, &model, prompt, &text).await
-            } else {
-                llm::openai::chat(&base_url, &api_key, &model, prompt, &text).await
+                ensure_local_llm(&app, &model).await?;
             }
+            llm::openai::chat_long(&base_url, &api_key, &model, prompt, &text).await
         }
     })
     .await
     .inspect_err(|e| crate::logging::log_error("summary", e))?;
-    // Reload: the user may have renamed it while the model was writing.
-    let mut t = transcripts::load(id)?;
-    t.summary = Some(summary);
-    transcripts::save(&t)?;
-    Ok(t)
+    // Reload under the job lock, like rename and delete: the user may have
+    // renamed it while the model wrote, and a deleted meeting stays deleted.
+    transcribe_job::unless_running(id, BUSY, || {
+        let mut t = transcripts::load(id)?;
+        t.summary = Some(summary);
+        transcripts::save(&t)?;
+        Ok(t)
+    })
 }
 
 #[tauri::command]

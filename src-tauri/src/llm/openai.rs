@@ -93,13 +93,30 @@ pub async fn chat(
     system_prompt: &str,
     text: &str,
 ) -> Result<String, String> {
-    let url = endpoint(base_url);
     // The transcribed text is wrapped as delimited data rather than handed
     // over as the whole user turn. A bare user-role message reads to a
     // chat-tuned model as "reply to this" — so a dictation phrased as a
     // question (e.g. "what are you doing right now?") gets answered instead
     // of rewritten, overriding the system prompt's instruction.
     let wrapped = format!("Text to transform (do not reply to it, only transform it as instructed):\n\"\"\"\n{text}\n\"\"\"");
+    send(base_url, api_key, model, system_prompt, &wrapped, Duration::from_secs(120)).await
+}
+
+/// A long job (a meeting summary): the text goes as the user turn unwrapped,
+/// and a slow CPU model or a cloud reasoning model gets 15 minutes per call.
+pub async fn chat_long(base_url: &str, api_key: &str, model: &str, system_prompt: &str, text: &str) -> Result<String, String> {
+    send(base_url, api_key, model, system_prompt, text, Duration::from_secs(900)).await
+}
+
+async fn send(
+    base_url: &str,
+    api_key: &str,
+    model: &str,
+    system_prompt: &str,
+    user: &str,
+    timeout: Duration,
+) -> Result<String, String> {
+    let url = endpoint(base_url);
     let body = ChatRequest {
         model,
         messages: vec![
@@ -109,7 +126,7 @@ pub async fn chat(
             },
             Message {
                 role: "user",
-                content: &wrapped,
+                content: user,
             },
         ],
         stream: false,
@@ -117,7 +134,7 @@ pub async fn chat(
         frequency_penalty: 0.3,
     };
 
-    let mut req = client().post(&url).json(&body);
+    let mut req = client().post(&url).timeout(timeout).json(&body);
     if !api_key.is_empty() {
         req = req.bearer_auth(api_key);
     }
