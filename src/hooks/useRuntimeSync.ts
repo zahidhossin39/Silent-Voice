@@ -17,6 +17,11 @@ import {
 import type { ResolvedAppProfile } from "../services/tauriBridge";
 import type { Mode, ApiProvider } from "../types";
 
+/** A cloud style's own model, else the provider's default. */
+function apiModel(mode: Mode, provider?: ApiProvider): string {
+  return mode.api_model || provider?.model || "";
+}
+
 // Resolve a mode the same way set_active_mode does: for "api" modes pull the
 // provider's base URL / key / model; local modes use the mode's own model id.
 function resolveMode(
@@ -28,7 +33,7 @@ function resolveMode(
     return {
       mode_source: "api",
       mode_prompt: mode.system_prompt,
-      mode_model: provider?.model ?? mode.model_id,
+      mode_model: apiModel(mode, provider),
       mode_base_url: provider?.base_url ?? "",
       mode_api_key: provider?.api_key ?? "",
     };
@@ -215,7 +220,7 @@ export function useRuntimeSync() {
         mode.id,
         "api",
         mode.system_prompt,
-        provider?.model ?? mode.model_id,
+        apiModel(mode, provider),
         provider?.base_url ?? "",
         provider?.api_key ?? ""
       );

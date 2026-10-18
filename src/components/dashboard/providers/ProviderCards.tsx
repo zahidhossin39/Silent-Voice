@@ -156,7 +156,7 @@ function Card({ p, api, onRemove }: { p: ApiProvider; api: ProvidersApi; onRemov
           <KeyInput p={p} api={api} />
         </div>
         <div>
-          <div className="mb-1.5 text-xs font-medium text-sv-muted">Model</div>
+          <div className="mb-1.5 text-xs font-medium text-sv-muted" title="Used wherever you have not picked another model for this provider">Default model</div>
           <button
             onClick={() => setBrowsing((b) => !b)}
             aria-expanded={browsing}

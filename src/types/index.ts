@@ -133,6 +133,7 @@ export interface Mode {
   model_source: ModelSource; // "none" => raw transcription, no LLM
   model_id: string;
   provider_id?: string; // for model_source "api": which ApiProvider to use
+  api_model?: string; // for model_source "api": its model; empty = the provider's default
   hotkey?: string;
   builtin: boolean;
   pinned?: boolean;

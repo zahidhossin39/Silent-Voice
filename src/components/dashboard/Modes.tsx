@@ -10,6 +10,7 @@ import { localLlmGenerate, apiGenerate } from "../../services/tauriBridge";
 import { LLM_MODELS } from "../../services/catalog";
 import { formatGB } from "../../services/format";
 import { SAMPLE_INPUT } from "../../services/modes";
+import { ModelPicker as CloudModelPicker, isChatModel, useProviders } from "./providers/shared";
 import type { HardwareInfo, LlmModel, Mode, ModelSource } from "../../types";
 
 const EMPTY: Mode = {
@@ -48,7 +49,7 @@ export default function Modes() {
       if (m.model_source === "api") {
         const p = providers.find((p) => p.id === m.provider_id);
         if (!p) throw new Error("No provider");
-        out = await apiGenerate(p.base_url, p.api_key, p.model, m.system_prompt, SAMPLE_INPUT);
+        out = await apiGenerate(p.base_url, p.api_key, m.api_model || p.model, m.system_prompt, SAMPLE_INPUT);
       } else {
         out = await localLlmGenerate(m.model_id, m.system_prompt, SAMPLE_INPUT);
       }
@@ -289,6 +290,7 @@ function Editor({
     return () => window.removeEventListener("keydown", onKey);
   }, [onCancel]);
 
+  const providerApi = useProviders();
   const provider =
     mode.model_source === "api"
       ? providers.find((p) => p.id === mode.provider_id)
@@ -391,21 +393,34 @@ function Editor({
             </Select>
           </label>
           {mode.model_source === "api" ? (
+            <>
             <label className="block">
               <span className="mb-1 block text-sv-muted">Provider</span>
               <Select
                 value={mode.provider_id ?? ""}
-                onChange={(v) => onChange({ ...mode, provider_id: v })}
+                onChange={(v) => onChange({ ...mode, provider_id: v, api_model: "" })}
                 className="w-full"
               >
                 <option value="">Select provider…</option>
                 {providers.map((p) => (
                   <option key={p.id} value={p.id}>
-                    {p.name} ({p.model})
+                    {p.name}
                   </option>
                 ))}
               </Select>
             </label>
+            {provider && (
+              <div>
+                <span className="mb-1 block text-sv-muted">Model</span>
+                <CloudModelPicker
+                  p={provider}
+                  api={providerApi}
+                  value={mode.api_model || (isChatModel(provider.model) ? provider.model : "")}
+                  onPick={(m) => onChange({ ...mode, api_model: m })}
+                />
+              </div>
+            )}
+            </>
           ) : mode.model_source === "local" ? (
             <div>
               <span className="mb-1 block text-sv-muted">Local model</span>

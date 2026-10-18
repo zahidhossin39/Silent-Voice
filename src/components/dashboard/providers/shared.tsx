@@ -149,6 +149,9 @@ export type ProvidersApi = ReturnType<typeof useProviders>;
 /** Model ids that are not chat models (images, video, audio, embeddings…). */
 const NOT_CHAT = /(embed|veo|imagen|lyria|tts|whisper|dall-e|moderation|banana|image|audio|realtime|transcribe|aqa|learnlm)/i;
 
+/** A model id that can write text (not image, audio, embeddings…). */
+export const isChatModel = (m: string) => !!m && !NOT_CHAT.test(m);
+
 export const showModel = (m: string) => m.replace(/^models\//, "");
 
 /** Splits "openai/gpt-4o" into a family to group by; ids without a slash share one group. */
@@ -166,12 +169,18 @@ export function ModelPicker({
   api,
   inline = false,
   onPicked,
+  value,
+  onPick,
 }: {
   p: ApiProvider;
   api: ProvidersApi;
   inline?: boolean;
   onPicked?: () => void;
+  /** Pick a model for one place instead of changing the provider's default. */
+  value?: string;
+  onPick?: (model: string) => void;
 }) {
+  const current = value ?? p.model;
   const [open, setOpen] = useState(inline);
   const [q, setQ] = useState("");
   const [active, setActive] = useState(0);
@@ -213,7 +222,8 @@ export function ModelPicker({
   }, [active]);
 
   const pick = (m: string) => {
-    api.update(p.id, { model: m });
+    if (onPick) onPick(m);
+    else api.update(p.id, { model: m });
     setQ("");
     if (!inline) setOpen(false);
     onPicked?.();
@@ -276,7 +286,7 @@ export function ModelPicker({
           const fam = m === custom ? null : family(m);
           const header = fam !== null && fam !== lastFamily && fam !== "" ? fam : null;
           if (fam !== null) lastFamily = fam;
-          const selected = p.model === m;
+          const selected = current === m;
           return (
             <li key={`${m}-${i}`}>
               {header && <div className="px-3 pb-1 pt-2.5 text-[11px] font-medium text-sv-muted">{header}</div>}
@@ -326,7 +336,7 @@ export function ModelPicker({
           open ? "border-sv-accent" : "border-sv-border hover:border-sv-muted/60"
         }`}
       >
-        <span className={`min-w-0 flex-1 truncate ${p.model ? "" : "text-sv-muted"}`}>{p.model ? showModel(p.model) : "Choose a model"}</span>
+        <span className={`min-w-0 flex-1 truncate ${current ? "" : "text-sv-muted"}`}>{current ? showModel(current) : "Choose a model"}</span>
         <Icon.chevron className={`h-4 w-4 shrink-0 text-sv-muted transition ${open ? "rotate-180" : ""}`} />
       </button>
       {open && panel}

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import ProviderLogo from "../shared/ProviderLogo";
-import { Icon, showModel } from "./providers/shared";
+import { Icon, ModelPicker, isChatModel, showModel, useProviders } from "./providers/shared";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { LLM_MODELS } from "../../services/catalog";
 import { listDownloadedLlm, meetingSummarize, type SummaryWith, type Transcript } from "../../services/tauriBridge";
@@ -9,9 +9,13 @@ import { listDownloadedLlm, meetingSummarize, type SummaryWith, type Transcript 
 // action items (meeting_summary.rs), with the model the user picks here.
 
 const WITH_KEY = "sv-notetaker-summary-with";
+/** Per provider, the model picked for summaries: the provider's default may be a transcription model. */
+const MODELS_KEY = "sv-notetaker-summary-models";
 
 interface Choice extends SummaryWith {
   key: string;
+  /** Provider id, or the local model id. */
+  id: string;
   /** Provider name, or the local model's name. */
   label: string;
   /** Short model id ("gemini-2.5-flash-lite"), empty for local. */
@@ -19,7 +23,7 @@ interface Choice extends SummaryWith {
 }
 
 /** Cloud providers set up for AI, then the local models on this PC. */
-function useChoices(): Choice[] {
+function useChoices(models: Record<string, string>): Choice[] {
   const providers = useSettingsStore((s) => s.providers);
   const [local, setLocal] = useState<string[]>([]);
   useEffect(() => {
@@ -28,18 +32,23 @@ function useChoices(): Choice[] {
   return useMemo(
     () => [
       ...providers
-        .filter((p) => p.uses.includes("llm") && p.base_url && p.model)
-        .map((p) => ({
+        .filter((p) => p.uses.includes("llm") && p.base_url)
+        .map((p) => {
+          const model = models[p.id] || (isChatModel(p.model) ? p.model : "");
+          return {
           key: `api:${p.id}`,
+          id: p.id,
           label: p.name,
-          detail: showModel(p.model).split("/").pop() ?? p.model,
+          detail: model ? (showModel(model).split("/").pop() ?? model) : "Choose a model",
           source: "api" as const,
-          model: p.model,
+          model,
           base_url: p.base_url,
           api_key: p.api_key,
-        })),
+          };
+        }),
       ...local.map((id) => ({
         key: `local:${id}`,
+        id,
         label: LLM_MODELS.find((m) => m.id === id)?.name ?? id,
         detail: "",
         source: "local" as const,
@@ -48,21 +57,37 @@ function useChoices(): Choice[] {
         api_key: "",
       })),
     ],
-    [providers, local]
+    [providers, local, models]
   );
 }
 
-function readKey(): string {
+function read(key: string): string {
   try {
-    return localStorage.getItem(WITH_KEY) ?? "";
+    return localStorage.getItem(key) ?? "";
   } catch {
     return "";
   }
 }
 
+function write(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    /* remembered for this visit only */
+  }
+}
+
 export default function MeetingOverview({ t, onSummarized }: { t: Transcript; onSummarized: (t: Transcript) => void }) {
-  const choices = useChoices();
-  const [key, setKey] = useState(readKey);
+  const [models, setModels] = useState<Record<string, string>>(() => {
+    try {
+      return JSON.parse(read(MODELS_KEY) || "{}");
+    } catch {
+      return {};
+    }
+  });
+  const choices = useChoices(models);
+  const providerApi = useProviders();
+  const [key, setKey] = useState(() => read(WITH_KEY));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const live = t.status === "running";
@@ -70,15 +95,17 @@ export default function MeetingOverview({ t, onSummarized }: { t: Transcript; on
 
   const pick = (k: string) => {
     setKey(k);
-    try {
-      localStorage.setItem(WITH_KEY, k);
-    } catch {
-      /* remembered for this visit only */
-    }
+    write(WITH_KEY, k);
   };
+  const pickModel = (providerId: string, model: string) => {
+    const next = { ...models, [providerId]: model };
+    setModels(next);
+    write(MODELS_KEY, JSON.stringify(next));
+  };
+  const provider = chosen?.source === "api" ? providerApi.providers.find((p) => p.id === chosen.id) : undefined;
 
   const run = async () => {
-    if (!chosen) return;
+    if (!chosen?.model) return;
     setBusy(true);
     setError(null);
     try {
@@ -95,10 +122,15 @@ export default function MeetingOverview({ t, onSummarized }: { t: Transcript; on
   const controls = !live && hasText && chosen && (
     <div className="flex flex-wrap items-center gap-2">
       <Picker choices={choices} chosen={chosen} disabled={busy} onPick={pick} />
+      {provider && (
+        <div className="min-w-[12rem] flex-1">
+          <ModelPicker p={provider} api={providerApi} value={chosen.model} onPick={(m) => pickModel(provider.id, m)} />
+        </div>
+      )}
       <button
         onClick={run}
-        disabled={busy}
-        className={`inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg px-3 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sv-accent disabled:cursor-not-allowed disabled:opacity-60 ${
+        disabled={busy || !chosen.model}
+        className={`inline-flex h-10 shrink-0 items-center gap-1.5 rounded-lg px-3 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sv-accent disabled:cursor-not-allowed disabled:opacity-60 ${
           t.summary
             ? "border border-sv-border text-sv-text hover:bg-sv-surface-2"
             : "bg-sv-accent text-white hover:brightness-110"
@@ -191,7 +223,7 @@ function Picker({
   ].filter((g) => g.items.length);
 
   return (
-    <div ref={box} className="relative min-w-[14rem] flex-1">
+    <div ref={box} className="relative min-w-[11rem] flex-1">
       <button
         type="button"
         disabled={disabled}
@@ -199,12 +231,12 @@ function Picker({
         aria-expanded={open}
         aria-label={`Summarize with ${chosen.label}`}
         onClick={() => setOpen((o) => !o)}
-        className="flex h-9 w-full min-w-0 items-center gap-2 rounded-lg border border-sv-border bg-sv-bg px-2 text-left transition hover:border-sv-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sv-accent disabled:opacity-60"
+        className="flex h-10 w-full min-w-0 items-center gap-2 rounded-lg border border-sv-border bg-sv-bg px-2 text-left transition hover:border-sv-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sv-accent disabled:opacity-60"
       >
         <Logo c={chosen} size={22} />
         <span className="min-w-0 flex-1 truncate text-sm">
           <span className="text-sv-text">{chosen.label}</span>
-          {chosen.detail && <span className="text-sv-muted"> · {chosen.detail}</span>}
+          {chosen.source === "local" && chosen.detail && <span className="text-sv-muted"> · {chosen.detail}</span>}
         </span>
         <Icon.chevron className={`h-4 w-4 shrink-0 text-sv-muted transition ${open ? "rotate-180" : ""}`} />
       </button>
