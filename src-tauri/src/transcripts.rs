@@ -212,18 +212,26 @@ fn clock(ms: u64, srt: bool) -> String {
     }
 }
 
-/// Runs of the same speaker, at most PARAGRAPH lines each: one paragraph in
+/// Runs of the same speaker, about PARAGRAPH lines each: one paragraph in
 /// the reader and the exports, and one punctuation repair for meetings.
+/// A full paragraph waits for the end of a sentence, up to twice as long, so
+/// lines cut every few seconds don't split a sentence across paragraphs.
 pub fn paragraphs(lines: &[Line]) -> Vec<std::ops::Range<usize>> {
     let mut out = Vec::new();
     let mut from = 0;
     for i in 1..=lines.len() {
-        if i == lines.len() || i - from == PARAGRAPH || lines[i].speaker != lines[from].speaker {
+        let n = i - from;
+        let full = n >= 2 * PARAGRAPH || (n >= PARAGRAPH && ends_sentence(&lines[i - 1].text));
+        if i == lines.len() || full || lines[i].speaker != lines[from].speaker {
             out.push(from..i);
             from = i;
         }
     }
     out
+}
+
+fn ends_sentence(text: &str) -> bool {
+    text.trim_end().trim_end_matches(['"', '\'', '”', '’', ')']).ends_with(['.', '?', '!', '…', '。', '？', '！'])
 }
 
 pub(crate) fn label(l: &Line) -> &'static str {
@@ -336,9 +344,19 @@ mod tests {
 
     #[test]
     fn paragraphs_split_on_speaker_change_and_length() {
-        let mut lines: Vec<Line> = (0..8).map(|i| said(Speaker::Others, i * 3_000, "a b c")).collect();
+        let mut lines: Vec<Line> = (0..8).map(|i| said(Speaker::Others, i * 3_000, "a b c.")).collect();
         lines.push(said(Speaker::You, 30_000, "d e f"));
         assert_eq!(paragraphs(&lines), vec![0..6, 6..8, 8..9]);
+    }
+
+    #[test]
+    fn a_full_paragraph_waits_for_the_end_of_a_sentence() {
+        let mut lines: Vec<Line> = (0..30).map(|i| said(Speaker::Others, i * 3_000, "and then it")).collect();
+        lines[7].text = "so that is how it works.".into();
+        lines[8].text = "Is that \"clear?\"".into();
+        // Breaks after the sentence ending at line 7, not mid-sentence at line 6;
+        // then after line 8 is too soon; with no sentence end it stops at 12 lines.
+        assert_eq!(paragraphs(&lines)[..3], [0..8, 8..20, 20..30]);
     }
 
     #[test]

@@ -833,12 +833,16 @@ export interface Transcript {
 /** Paragraph size in lines (~1 min). Must match `PARAGRAPH` in src-tauri/src/transcripts.rs. */
 export const TRANSCRIPT_PARAGRAPH = 6;
 
-/** Runs of the same speaker, at most TRANSCRIPT_PARAGRAPH lines: mirrors `paragraphs` in transcripts.rs. */
+const ENDS_SENTENCE = /[.?!…。？！]["'”’)]*\s*$/;
+
+/** Runs of the same speaker, about TRANSCRIPT_PARAGRAPH lines, ending on a sentence end when one comes within twice that: mirrors `paragraphs` in transcripts.rs. */
 export function transcriptParagraphs(lines: TranscriptLine[]) {
   const out: { start: number; speaker?: "you" | "others"; text: string }[] = [];
   let from = 0;
   for (let i = 1; i <= lines.length; i++) {
-    if (i === lines.length || i - from === TRANSCRIPT_PARAGRAPH || lines[i].speaker !== lines[from].speaker) {
+    const n = i - from;
+    const full = n >= 2 * TRANSCRIPT_PARAGRAPH || (n >= TRANSCRIPT_PARAGRAPH && ENDS_SENTENCE.test(lines[i - 1].text));
+    if (i === lines.length || full || lines[i].speaker !== lines[from].speaker) {
       const group = lines.slice(from, i);
       out.push({ start: group[0].start_ms, speaker: group[0].speaker, text: group.map((l) => l.text).join(" ") });
       from = i;

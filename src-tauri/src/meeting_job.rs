@@ -298,8 +298,15 @@ fn repunctuate(t: &mut Transcript, range: std::ops::Range<usize>, english: bool)
     if !english || range.is_empty() {
         return;
     }
-    let parts: Vec<&str> = t.lines[range.clone()].iter().map(|l| l.text.as_str()).collect();
-    let fixed = crate::system::sherpa_stt::repunctuate(&parts);
+    // Context on both sides, so a paragraph cut mid-sentence doesn't get a
+    // full stop at the cut: the line after is read but not rewritten.
+    let speaker = t.lines[range.start].speaker;
+    let sentence_start = range.start == 0
+        || t.lines[range.start - 1].speaker != speaker
+        || t.lines[range.start - 1].text.ends_with(['.', '?', '!']);
+    let end = if t.lines.get(range.end).is_some_and(|l| l.speaker == speaker) { range.end + 1 } else { range.end };
+    let parts: Vec<&str> = t.lines[range.start..end].iter().map(|l| l.text.as_str()).collect();
+    let fixed = crate::system::sherpa_stt::repunctuate_from(&parts, sentence_start);
     if let Some(split) = transcribe_job::split_like(&fixed, &parts) {
         for (line, text) in t.lines[range].iter_mut().zip(split) {
             line.text = text;
@@ -314,6 +321,19 @@ mod tests {
 
     fn line(speaker: Speaker, start_ms: u64, text: &str) -> Line {
         Line { start_ms, end_ms: start_ms + 2_000, text: text.into(), speaker: Some(speaker) }
+    }
+
+    #[test]
+    #[ignore] // needs the downloaded punctuation model; SV_TEST_TRANSCRIPT = a saved meeting .json
+    fn repair_keeps_sentences_whole_across_paragraphs() {
+        let path = std::env::var("SV_TEST_TRANSCRIPT").expect("SV_TEST_TRANSCRIPT");
+        let mut t: Transcript = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        for range in paragraphs(&t.lines) {
+            repunctuate(&mut t, range, true);
+        }
+        for r in paragraphs(&t.lines) {
+            println!("[{}..{}] ...{}", r.start, r.end, t.lines[r.end - 1].text.chars().rev().take(50).collect::<String>().chars().rev().collect::<String>());
+        }
     }
 
     #[test]
