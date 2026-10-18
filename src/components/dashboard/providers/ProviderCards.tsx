@@ -179,7 +179,8 @@ function Card({ p, api, onRemove }: { p: ApiProvider; api: ProvidersApi; onRemov
       {preset?.note && <p className="px-5 pt-3 text-xs text-sv-muted">{preset.note}</p>}
 
       <footer className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-sv-border px-5 py-3">
-        <div role="group" aria-label="Use it for" className="flex rounded-lg bg-sv-bg p-0.5">
+        <div role="group" aria-label="Use it for" className="flex items-center gap-2">
+          <span className="text-xs text-sv-muted">Use for</span>
           <Seg on={p.uses.includes("llm")} onClick={() => api.toggleUse(p, "llm")}>
             AI writing
           </Seg>
@@ -218,10 +219,16 @@ function Seg({ on, onClick, disabled, title, children }: { on: boolean; onClick:
       onClick={onClick}
       disabled={disabled}
       title={title}
-      className={`h-7 rounded-md px-3 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-40 ${
-        on ? "bg-sv-surface-2 text-sv-text shadow-[0_1px_2px_rgb(0_0_0/0.25)]" : "text-sv-muted hover:text-sv-text"
+      className={`flex h-8 items-center gap-2 rounded-lg border px-3 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-40 ${
+        on ? "border-sv-accent/60 bg-sv-accent/10 text-sv-text" : "border-sv-border text-sv-muted hover:border-sv-muted/60 hover:text-sv-text"
       }`}
     >
+      <span
+        aria-hidden
+        className={`flex h-3.5 w-3.5 items-center justify-center rounded-[4px] border ${on ? "border-sv-accent bg-sv-accent text-white" : "border-sv-muted/60"}`}
+      >
+        {on && <Icon.check className="h-3 w-3" />}
+      </span>
       {children}
     </button>
   );

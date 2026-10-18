@@ -38,7 +38,7 @@ export const PRESETS: Preset[] = [
   { name: "xAI (Grok)", base_url: "https://api.x.ai/v1", model: "", blurb: "Grok models" },
   { name: "DeepSeek", base_url: "https://api.deepseek.com/v1", model: "deepseek-chat", blurb: "DeepSeek chat and reasoning" },
   { name: "Mistral AI", base_url: "https://api.mistral.ai/v1", model: "", blurb: "Mistral models" },
-  { name: "Groq", base_url: "https://api.groq.com/openai/v1", model: "llama-3.3-70b-versatile", sttModel: "whisper-large-v3-turbo", blurb: "Very fast open models and Whisper" },
+  { name: "Groq", base_url: "https://api.groq.com/openai/v1", model: "openai/gpt-oss-120b", sttModel: "whisper-large-v3-turbo", blurb: "Very fast open models and Whisper" },
   { name: "Perplexity", base_url: "https://api.perplexity.ai", model: "", blurb: "Search-backed models" },
   { name: "Together", base_url: "https://api.together.xyz/v1", model: "meta-llama/Llama-3.3-70B-Instruct-Turbo", blurb: "Open models" },
   { name: "Fireworks AI", base_url: "https://api.fireworks.ai/inference/v1", model: "", blurb: "Open models" },
@@ -127,16 +127,22 @@ export function useProviders() {
     const set = (t: TestState) => setTests((s) => ({ ...s, [p.id]: t }));
     if (!p.api_key && !isLocalUrl(p.base_url)) return set({ kind: "fail", msg: "Paste an API key first." });
     set({ kind: "running" });
+    // Each use that is on is tested, and named, so a failure says which one broke.
+    const parts: string[] = [];
     try {
-      if (p.uses.includes("stt") && !p.uses.includes("llm")) {
-        set({ kind: "ok", msg: await apiTestStt(p.base_url, p.api_key, p.stt_model) });
-      } else {
+      if (p.uses.includes("llm")) {
         const out = await apiGenerate(p.base_url, p.api_key, p.model, "You are a connection test. Reply with exactly: OK", "ping");
-        set({ kind: "ok", msg: `${p.model.replace(/^models\//, "")} replied "${out.slice(0, 40)}"` });
+        parts.push(`AI writing: ${showModel(p.model)} replied "${out.slice(0, 40)}"`);
       }
     } catch (e) {
-      set({ kind: "fail", msg: String(e) });
+      return set({ kind: "fail", msg: `AI writing (${showModel(p.model)}): ${e}` });
     }
+    try {
+      if (p.uses.includes("stt")) parts.push(`Speech-to-text: ${await apiTestStt(p.base_url, p.api_key, p.stt_model)}`);
+    } catch (e) {
+      return set({ kind: "fail", msg: `Speech-to-text (${p.stt_model}): ${e}` });
+    }
+    set(parts.length ? { kind: "ok", msg: parts.join(" · ") } : { kind: "fail", msg: "Turn on AI writing or Speech-to-text first." });
   }
 
   return { providers, add, update, remove, toggleUse, test, tests, models, loading, modelError, loadModels };
@@ -147,7 +153,7 @@ export type ProvidersApi = ReturnType<typeof useProviders>;
 // ---------------- Model picker ----------------
 
 /** Model ids that are not chat models (images, video, audio, embeddings…). */
-const NOT_CHAT = /(embed|veo|imagen|lyria|tts|whisper|dall-e|moderation|banana|image|audio|realtime|transcribe|aqa|learnlm)/i;
+const NOT_CHAT = /(embed|veo|imagen|lyria|tts|whisper|dall-e|moderation|banana|image|audio|realtime|transcribe|aqa|learnlm|orpheus|playai|guard)/i;
 
 /** A model id that can write text (not image, audio, embeddings…). */
 export const isChatModel = (m: string) => !!m && !NOT_CHAT.test(m);

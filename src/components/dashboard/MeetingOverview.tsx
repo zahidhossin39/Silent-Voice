@@ -12,7 +12,7 @@ const WITH_KEY = "sv-notetaker-summary-with";
 /** Per provider, the model picked for summaries: the provider's default may be a transcription model. */
 const MODELS_KEY = "sv-notetaker-summary-models";
 
-interface Choice extends SummaryWith {
+export interface Choice extends SummaryWith {
   key: string;
   /** Provider id, or the local model id. */
   id: string;
@@ -77,7 +77,8 @@ function write(key: string, value: string) {
   }
 }
 
-export default function MeetingOverview({ t, onSummarized }: { t: Transcript; onSummarized: (t: Transcript) => void }) {
+/** The summary model the user picked in Notetaker settings, shared by the settings panel and the Overview. */
+export function useSummaryChoice() {
   const [models, setModels] = useState<Record<string, string>>(() => {
     try {
       return JSON.parse(read(MODELS_KEY) || "{}");
@@ -88,10 +89,7 @@ export default function MeetingOverview({ t, onSummarized }: { t: Transcript; on
   const choices = useChoices(models);
   const providerApi = useProviders();
   const [key, setKey] = useState(() => read(WITH_KEY));
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const live = t.status === "running";
-  const chosen = choices.find((c) => c.key === key) ?? choices[0];
+  const chosen: Choice | undefined = choices.find((c) => c.key === key) ?? choices[0];
 
   const pick = (k: string) => {
     setKey(k);
@@ -103,9 +101,41 @@ export default function MeetingOverview({ t, onSummarized }: { t: Transcript; on
     write(MODELS_KEY, JSON.stringify(next));
   };
   const provider = chosen?.source === "api" ? providerApi.providers.find((p) => p.id === chosen.id) : undefined;
+  return { choices, chosen, pick, pickModel, provider, providerApi };
+}
+
+export type SummaryChoice = ReturnType<typeof useSummaryChoice>;
+
+/** The summary model fields in Notetaker settings. */
+export function SummarySettings({ s }: { s: SummaryChoice }) {
+  if (!s.chosen) return <p className="text-xs text-sv-muted">Add a cloud provider in Cloud providers, or download a model in the Model Store.</p>;
+  return (
+    <div className="flex flex-col gap-2">
+      <Picker choices={s.choices} chosen={s.chosen} disabled={false} onPick={s.pick} />
+      {s.provider && (
+        <ModelPicker p={s.provider} api={s.providerApi} value={s.chosen.model} onPick={(m) => s.pickModel(s.provider!.id, m)} />
+      )}
+    </div>
+  );
+}
+
+export default function MeetingOverview({
+  t,
+  onSummarized,
+  chosen,
+  onSettings,
+}: {
+  t: Transcript;
+  onSummarized: (t: Transcript) => void;
+  chosen?: Choice;
+  onSettings: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const live = t.status === "running";
 
   const run = async () => {
-    if (!chosen?.model) return;
+    if (!chosen?.model) return onSettings();
     setBusy(true);
     setError(null);
     try {
@@ -119,17 +149,21 @@ export default function MeetingOverview({ t, onSummarized }: { t: Transcript; on
 
   const hasText = t.lines.length > 0;
 
-  const controls = !live && hasText && chosen && (
+  const ready = !!chosen?.model;
+  const controls = !live && hasText && (
     <div className="flex flex-wrap items-center gap-2">
-      <Picker choices={choices} chosen={chosen} disabled={busy} onPick={pick} />
-      {provider && (
-        <div className="min-w-[12rem] flex-1">
-          <ModelPicker p={provider} api={providerApi} value={chosen.model} onPick={(m) => pickModel(provider.id, m)} />
-        </div>
-      )}
+      {!ready ? (
+        <button
+          onClick={onSettings}
+          className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-sv-accent px-3 text-sm font-medium text-white transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sv-accent"
+        >
+          <GearIcon className="h-4 w-4" />
+          Choose a summary model
+        </button>
+      ) : (
       <button
         onClick={run}
-        disabled={busy || !chosen.model}
+        disabled={busy}
         className={`inline-flex h-10 shrink-0 items-center gap-1.5 rounded-lg px-3 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sv-accent disabled:cursor-not-allowed disabled:opacity-60 ${
           t.summary
             ? "border border-sv-border text-sv-text hover:bg-sv-surface-2"
@@ -139,6 +173,7 @@ export default function MeetingOverview({ t, onSummarized }: { t: Transcript; on
         {busy ? <Spinner /> : t.summary ? <Icon.refresh className="h-4 w-4" /> : <Icon.bolt className="h-4 w-4" />}
         {busy ? "Writing" : t.summary ? "Redo" : "Summarize"}
       </button>
+      )}
     </div>
   );
 
@@ -146,11 +181,11 @@ export default function MeetingOverview({ t, onSummarized }: { t: Transcript; on
     ? ["The transcript fills in as people talk.", "Summarize it when the meeting ends."]
     : !hasText
       ? ["There is nothing to summarize.", "This meeting has no transcript."]
-      : choices.length === 0
-        ? ["No AI model is set up yet.", "Add one in Cloud providers, or download a model in the Model Store."]
+      : !ready
+        ? ["Get the main points, decisions and action items.", "First choose the model that writes summaries."]
         : busy
           ? ["Writing the summary…", "A long meeting can take a few minutes, longer with a model on this PC."]
-          : ["Get the main points, decisions and action items.", "Pick the model to write it with."];
+          : ["Get the main points, decisions and action items.", "Written with the summary model from Notetaker settings."];
 
   return (
     <section aria-labelledby="overview" className="mb-6" aria-busy={busy}>
@@ -177,6 +212,15 @@ export default function MeetingOverview({ t, onSummarized }: { t: Transcript; on
         </p>
       )}
     </section>
+  );
+}
+
+export function GearIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden>
+      <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" />
+    </svg>
   );
 }
 

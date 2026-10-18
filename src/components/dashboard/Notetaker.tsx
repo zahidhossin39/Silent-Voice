@@ -3,7 +3,7 @@ import Page from "../shared/Page";
 import Select from "../shared/Select";
 import { useSettingsStore } from "../../stores/settingsStore";
 import TranscriptHeader, { clock } from "../shared/TranscriptHeader";
-import MeetingOverview from "./MeetingOverview";
+import MeetingOverview, { GearIcon, SummarySettings, useSummaryChoice, type Choice, type SummaryChoice } from "./MeetingOverview";
 import {
   listenEvent,
   meetingDevices,
@@ -134,6 +134,8 @@ export default function Notetaker() {
     }
   });
   const cloud = sttProviders.find((p) => p.id === sttKey);
+  const summary = useSummaryChoice();
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const pickStt = (v: string) => {
     setSttKey(v);
     try {
@@ -195,7 +197,19 @@ export default function Notetaker() {
       title="Notetaker"
       subtitle={`Record a call and get a live transcript of who said what. ${cloud ? `Audio is sent to ${cloud.name} to transcribe; recordings and text stay on this PC.` : "Audio and text stay on this PC."}`}
       actions={
-        recording ? (
+        <div className="relative flex items-center gap-2">
+          <button
+            onClick={() => setSettingsOpen((o) => !o)}
+            aria-expanded={settingsOpen}
+            aria-label="Notetaker settings"
+            title="Notetaker settings"
+            className={`flex h-10 w-10 items-center justify-center rounded-xl border transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sv-accent ${
+              settingsOpen ? "border-sv-accent text-sv-text" : "border-sv-border text-sv-muted hover:text-sv-text"
+            }`}
+          >
+            <GearIcon className="h-[18px] w-[18px]" />
+          </button>
+        {recording ? (
           <RecordingPill startedAt={recording.created} stopping={stopping} onStop={stop} />
         ) : (
           <button
@@ -208,7 +222,33 @@ export default function Notetaker() {
             </span>
             {starting ? "Starting…" : "Start recording"}
           </button>
-        )
+        )}
+          {settingsOpen && (
+            <NotetakerSettings
+              onClose={() => setSettingsOpen(false)}
+              summary={summary}
+              stt={
+                <Select value={cloud ? cloud.id : "local"} onChange={pickStt} className="w-full" disabled={!!recording}>
+                  <option value="local">On this PC (your voice model)</option>
+                  {sttProviders.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} · {p.stt_model}
+                    </option>
+                  ))}
+                </Select>
+              }
+              sttNote={
+                recording
+                  ? "Applies to the next meeting."
+                  : cloud
+                    ? `Audio is sent to ${cloud.name}. If a call fails, that part is transcribed on this PC.`
+                    : sttProviders.length === 0
+                      ? "To transcribe in the cloud, turn on Speech-to-text for a provider in Cloud providers."
+                      : "Nothing leaves this PC."
+              }
+            />
+          )}
+        </div>
       }
     >
       <div className="grid min-h-0 flex-1 gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)]">
@@ -220,16 +260,6 @@ export default function Notetaker() {
               btMic={btMic}
               showConsent={!consentSeen}
               onConsentSeen={dismissConsent}
-              stt={
-                <Select value={cloud ? cloud.id : "local"} onChange={pickStt} className="w-full">
-                  <option value="local">On this PC</option>
-                  {sttProviders.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name} · {p.stt_model}
-                    </option>
-                  ))}
-                </Select>
-              }
             />
           )}
           {error && (
@@ -275,12 +305,63 @@ export default function Notetaker() {
               setFull({ ...full, name });
             }}
             onSummarized={(next) => setFull((cur) => (cur?.id === next.id ? next : cur))}
+            summaryWith={summary.chosen}
+            onSettings={() => setSettingsOpen(true)}
           />
         ) : (
           <div className="hidden rounded-2xl border border-sv-border bg-sv-surface md:block" />
         )}
       </div>
     </Page>
+  );
+}
+
+/** The models the Notetaker uses, kept out of the way behind the gear button. */
+function NotetakerSettings({
+  onClose,
+  summary,
+  stt,
+  sttNote,
+}: {
+  onClose: () => void;
+  summary: SummaryChoice;
+  stt: React.ReactNode;
+  sttNote: string;
+}) {
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const away = (e: MouseEvent) => {
+      // The model list opens inside the panel; anything outside closes it.
+      if (!box.current?.contains(e.target as Node) && !(e.target as Element).closest?.('[aria-label="Notetaker settings"]')) onClose();
+    };
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    document.addEventListener("mousedown", away);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("mousedown", away);
+      document.removeEventListener("keydown", esc);
+    };
+  }, [onClose]);
+
+  return (
+    <div
+      ref={box}
+      role="dialog"
+      aria-label="Notetaker settings"
+      className="absolute right-0 top-[calc(100%+8px)] z-40 w-[min(26rem,calc(100vw-2rem))] space-y-5 rounded-2xl border border-sv-border bg-sv-surface p-5 text-left shadow-[0_16px_40px_-12px_rgb(0_0_0/0.5)]"
+    >
+      <section>
+        <h3 className="text-sm font-semibold">Transcription</h3>
+        <p className="mb-2 mt-0.5 text-xs text-sv-muted">Turns the meeting's audio into text as people talk.</p>
+        {stt}
+        <p className="mt-1.5 text-xs text-sv-muted">{sttNote}</p>
+      </section>
+      <section className="border-t border-sv-border pt-4">
+        <h3 className="text-sm font-semibold">Summary</h3>
+        <p className="mb-2 mt-0.5 text-xs text-sv-muted">Writes the Overview: key points, decisions and action items.</p>
+        <SummarySettings s={summary} />
+      </section>
+    </div>
   );
 }
 
@@ -321,9 +402,7 @@ function Setup({
   btMic,
   showConsent,
   onConsentSeen,
-  stt,
 }: {
-  stt: React.ReactNode;
   mic: string | null;
   speakers: string | null;
   btMic: boolean;
@@ -341,8 +420,7 @@ function Setup({
         <dd className="truncate" title={speakers ?? undefined}>
           {speakers ? `What plays on ${speakers}` : "What plays on your speakers"}
         </dd>
-        <dt className="self-center text-sv-muted">Text</dt>
-        <dd className="min-w-0">{stt}</dd>
+
       </dl>
       {btMic ? (
         <p className="rounded-lg bg-sv-warn/10 px-3 py-2 text-xs leading-relaxed text-sv-warn">
@@ -416,12 +494,16 @@ function MeetingPanel({
   onDeleted,
   onRenamed,
   onSummarized,
+  summaryWith,
+  onSettings,
 }: {
   t: Transcript;
   stopping: boolean;
   onDeleted: () => void;
   onRenamed: (name: string) => void;
   onSummarized: (t: Transcript) => void;
+  summaryWith?: Choice;
+  onSettings: () => void;
 }) {
   const paras = useMemo(() => transcriptParagraphs(t.lines), [t]);
   const scroller = useRef<HTMLDivElement>(null);
@@ -460,7 +542,7 @@ function MeetingPanel({
       )}
 
       <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
-        <MeetingOverview t={t} onSummarized={onSummarized} />
+        <MeetingOverview t={t} onSummarized={onSummarized} chosen={summaryWith} onSettings={onSettings} />
 
         {paras.length === 0 && !live ? (
           <p className="text-sm text-sv-muted">No speech was picked up in this meeting.</p>
