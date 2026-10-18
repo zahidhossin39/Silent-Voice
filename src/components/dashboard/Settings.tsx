@@ -1,3 +1,4 @@
+import { hasDedicatedGpu } from "../../services/recommend";
 // Settings: a rail of five topics with search. Each topic page shows the
 // settings a beginner needs, then a fold-open "Advanced" card that previews
 // what's inside before you open it. Explanations live behind info icons.
@@ -75,7 +76,7 @@ export default function Settings() {
     },
     hotkeyError,
     devices,
-    gpuName: hardware?.gpu_vram_gb && hardware.gpu_vram_gb >= 1 ? hardware.gpu_name ?? "your GPU" : null,
+    gpuName: hasDedicatedGpu(hardware) ? hardware?.gpu_name ?? "your GPU" : null,
     coeditReady,
     setCoeditReady,
     gectorReady,

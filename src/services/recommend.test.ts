@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { llmCompatibility } from "./recommend";
+import { hasDedicatedGpu, llmCompatibility } from "./recommend";
 import type { HardwareInfo, LlmModel } from "../types";
 
 function hw(over: Partial<HardwareInfo> = {}): HardwareInfo {
@@ -59,5 +59,17 @@ describe("llmCompatibility", () => {
     expect(
       llmCompatibility(llm({ tier: "large" }), hw({ gpu_vram_gb: 8 })).level
     ).toBe("good");
+  });
+});
+
+describe("hasDedicatedGpu", () => {
+  const hw = (gpu_vendor: string, gpu_vram_gb: number) => ({ gpu_vendor, gpu_vram_gb }) as never;
+  it("does not count Intel graphics built into the CPU", () => {
+    expect(hasDedicatedGpu(hw("Intel", 0.125))).toBe(false);
+    expect(hasDedicatedGpu(hw("Intel", 4))).toBe(false);
+  });
+  it("counts a real card with its own memory", () => {
+    expect(hasDedicatedGpu(hw("NVIDIA", 6))).toBe(true);
+    expect(hasDedicatedGpu(hw("AMD", 2))).toBe(false);
   });
 });

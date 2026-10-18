@@ -1,3 +1,4 @@
+import { hasDedicatedGpu } from "../../services/recommend";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import WaveformVisualizer from "../shared/WaveformVisualizer";
@@ -376,8 +377,8 @@ export default function Home() {
                 <DeviceTile
                   value={hardware.gpu_name ?? "None detected"}
                   sub={
-                    hardware.gpu_vram_gb && hardware.gpu_vram_gb >= 1
-                      ? `${formatGB(hardware.gpu_vram_gb)} — GPU models`
+                    hasDedicatedGpu(hardware)
+                      ? `${formatGB(hardware.gpu_vram_gb ?? 0)} — GPU models`
                       : "CPU models"
                   }
                 />

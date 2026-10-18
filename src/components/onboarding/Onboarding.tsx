@@ -1,3 +1,4 @@
+import { hasDedicatedGpu } from "../../services/recommend";
 import { useEffect, useMemo, useState } from "react";
 import { useHardwareInfo } from "../../hooks/useHardwareInfo";
 import { useSettingsStore } from "../../stores/settingsStore";
@@ -32,7 +33,7 @@ const CHOICES: { id: string; tagline: string; preset: SttPreset }[] = [
 // dedicated GPU, so the default lean is toward the fast small models.
 function recommendId(hw: HardwareInfo | null): string {
   if (!hw) return "parakeet-tdt-0.6b-v2";
-  const vram = hw.gpu_vram_gb ?? 0;
+  const vram = hasDedicatedGpu(hw) ? hw.gpu_vram_gb ?? 0 : 0;
   if (vram >= 4) return "distil-large-v3.5"; // real dedicated GPU
   // Parakeet is light (640MB, ~1.4GB RAM) and fast even on CPU alone, so it's
   // the default reach for anything past a bare-minimum machine.
@@ -214,7 +215,7 @@ export default function Onboarding() {
                 Your PC
               </div>
               <div className="mt-1 text-[12.5px]">
-                {hardware.logical_cores} cores · {hardware.gpu_vram_gb ? "dedicated GPU" : "no dedicated GPU"}
+                {hardware.logical_cores} cores · {hasDedicatedGpu(hardware) ? "dedicated GPU" : "no dedicated GPU"}
               </div>
               <div className="mt-1 text-[11px] text-sv-muted">
                 {reco?.reason ?? "Smaller models will feel faster here."}
