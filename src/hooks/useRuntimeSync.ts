@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useSettingsStore } from "../stores/settingsStore";
 import {
+  recommendDeviceDefaults,
   updateRuntimeConfig,
   setHotkey,
   setActiveMode,
@@ -50,6 +51,17 @@ function resolveMode(
 // Keeps the Rust-side runtime config (used by the global-hotkey pipeline) in
 // sync with the frontend settings store.
 export function useRuntimeSync() {
+  // Once per install: a strong graphics card (hardware.rs `fast_gpu`) gets Use
+  // GPU on. Users who finished onboarding before this existed never got it.
+  const gpuChecked = useSettingsStore((s) => s.settings.gpu_auto_checked);
+  useEffect(() => {
+    if (gpuChecked) return;
+    recommendDeviceDefaults().then((r) => {
+      if (!r) return;
+      useSettingsStore.getState().setSettings(r.use_gpu ? { gpu_auto_checked: true, use_gpu: true } : { gpu_auto_checked: true });
+    });
+  }, [gpuChecked]);
+
   const model = useSettingsStore((s) => s.settings.active_stt_model);
   const language = useSettingsStore((s) => s.settings.language);
   const device = useSettingsStore((s) => s.settings.audio_device);

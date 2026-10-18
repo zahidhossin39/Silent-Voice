@@ -130,6 +130,13 @@ pub struct DeviceRecommendation {
 /// STT, no heavy grammar); a strong CPU or a real discrete GPU unlocks quality.
 /// A usable discrete GPU = non-Intel vendor with >= 3 GB dedicated VRAM (Intel
 /// entries here are integrated and not worth offloading these small models to).
+/// A card strong enough that running models on it beats the CPU: NVIDIA or
+/// AMD with >= 4 GB of its own memory. Weaker ones (2 GB laptop cards, Intel
+/// graphics in the CPU) were slower than the CPU in testing, so they stay off.
+pub fn fast_gpu(hw: &HardwareInfo) -> bool {
+    hw.gpu_vram_gb.unwrap_or(0.0) >= 4.0 && matches!(hw.gpu_vendor.as_deref(), Some("NVIDIA") | Some("AMD"))
+}
+
 pub fn recommend(hw: &HardwareInfo) -> DeviceRecommendation {
     let cores = hw.physical_cores.max(1);
     let ram = hw.total_ram_gb;
@@ -139,6 +146,7 @@ pub fn recommend(hw: &HardwareInfo) -> DeviceRecommendation {
             .as_deref()
             .map(|v| v != "Intel")
             .unwrap_or(false);
+    let use_gpu = fast_gpu(hw);
 
     if cores <= 4 || ram < 8.0 {
         return DeviceRecommendation {
@@ -147,7 +155,7 @@ pub fn recommend(hw: &HardwareInfo) -> DeviceRecommendation {
             high_performance: false,
             performance_threads: 0,
             coedit_enabled: false,
-            use_gpu: has_dgpu,
+            use_gpu,
             reason: format!(
                 "{cores} cores / {ram:.0} GB RAM — keeping dictation responsive; \
                  grammar correction off by default"
@@ -162,7 +170,7 @@ pub fn recommend(hw: &HardwareInfo) -> DeviceRecommendation {
             high_performance: true,
             performance_threads: 0,
             coedit_enabled: true,
-            use_gpu: has_dgpu,
+            use_gpu,
             reason: format!(
                 "{cores} cores / {ram:.0} GB RAM{} — full quality",
                 if has_dgpu { " + discrete GPU" } else { "" }
@@ -176,7 +184,7 @@ pub fn recommend(hw: &HardwareInfo) -> DeviceRecommendation {
         high_performance: false,
         performance_threads: 0,
         coedit_enabled: true,
-        use_gpu: has_dgpu,
+        use_gpu,
         reason: format!("{cores} cores / {ram:.0} GB RAM — balanced quality and speed"),
     }
 }
@@ -284,4 +292,37 @@ fn detect_gpu() -> (Option<String>, Option<String>, Option<f64>) {
             Some((Some(vendor_from_name(&name).to_string()), Some(name), None))
         })
         .unwrap_or((None, None, None))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn gpu(vendor: &str, vram: f64) -> HardwareInfo {
+        HardwareInfo {
+            cpu_brand: String::new(),
+            physical_cores: 8,
+            logical_cores: 16,
+            total_ram_gb: 16.0,
+            available_ram_gb: 8.0,
+            has_avx2: true,
+            has_avx512: false,
+            gpu_vendor: Some(vendor.into()),
+            gpu_name: None,
+            gpu_vram_gb: Some(vram),
+            free_disk_gb: 100.0,
+            os: String::new(),
+        }
+    }
+
+    #[test]
+    fn only_a_strong_card_turns_the_gpu_on() {
+        assert!(fast_gpu(&gpu("NVIDIA", 6.0)));
+        assert!(fast_gpu(&gpu("AMD", 4.0)));
+        assert!(!fast_gpu(&gpu("NVIDIA", 2.0)), "2 GB laptop card is slower than the CPU");
+        assert!(!fast_gpu(&gpu("Intel", 0.125)), "graphics built into the CPU");
+        assert!(!fast_gpu(&gpu("Intel", 8.0)));
+        assert!(recommend(&gpu("NVIDIA", 8.0)).use_gpu);
+        assert!(!recommend(&gpu("NVIDIA", 3.0)).use_gpu);
+    }
 }

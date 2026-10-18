@@ -95,6 +95,7 @@ export default function Onboarding() {
     if (reco) {
       setSettings({
         use_gpu: reco.use_gpu,
+        gpu_auto_checked: true,
         high_performance: reco.high_performance,
         performance_threads: reco.performance_threads,
         coedit_enabled: reco.coedit_enabled,

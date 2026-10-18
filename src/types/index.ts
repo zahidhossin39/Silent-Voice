@@ -204,6 +204,8 @@ export interface Settings {
   stt_preset: SttPreset;
   language: string; // "auto" or ISO code
   use_gpu: boolean;
+  /** Set once the app has turned Use GPU on for a strong card (or found none), so a later "off" stays off. */
+  gpu_auto_checked?: boolean;
   high_performance: boolean;
   performance_threads: number; // 0 = auto (all cores); only used when high_performance
   audio_device: string | null;
