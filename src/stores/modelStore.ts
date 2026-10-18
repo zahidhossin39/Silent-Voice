@@ -5,6 +5,7 @@ import {
   listDownloadedModels,
   downloadModel as bridgeDownload,
   downloadSttArchive as bridgeDownloadSttArchive,
+  downloadLlamaAsr,
   pauseDownload as bridgePause,
   cancelDownload as bridgeCancel,
   deleteModel as bridgeDelete,
@@ -104,7 +105,9 @@ export const useModelStore = create<ModelState>()(
       // Sherpa models (Moonshine, SenseVoice) are a .tar.bz2 archive extracted
       // into a folder; Whisper models are a single ggml .bin file.
       const ok =
-        isSherpaEngine(model.engine)
+        model.engine === "llama-asr"
+          ? await downloadLlamaAsr(modelId, model.url!, model.mmproj_url!)
+          : isSherpaEngine(model.engine)
           ? await bridgeDownloadSttArchive(modelId, model.url!)
           : await bridgeDownload(
               modelId,

@@ -205,6 +205,8 @@ pub enum SttEngine {
     Moonshine,
     SenseVoice,
     Transducer,
+    /// Speech LLM (Qwen3-ASR) run by the bundled llama-server: a model GGUF plus its audio `mmproj`.
+    LlamaAsr,
 }
 
 pub fn stt_engine(model_id: &str) -> SttEngine {
@@ -212,6 +214,8 @@ pub fn stt_engine(model_id: &str) -> SttEngine {
         SttEngine::SenseVoice
     } else if model_id.starts_with("moonshine") {
         SttEngine::Moonshine
+    } else if model_id.starts_with("qwen3-asr") {
+        SttEngine::LlamaAsr
     } else if model_id.starts_with("parakeet") {
         SttEngine::Transducer
     } else {
@@ -221,11 +225,30 @@ pub fn stt_engine(model_id: &str) -> SttEngine {
 
 /// True if `model_id` names a fully-installed sherpa STT model of any family
 /// (Moonshine or SenseVoice) — the two live in the same directory shape.
+/// A llama-server speech model's `(model, mmproj)` GGUF files, once both are downloaded.
+pub fn llama_asr_paths(model_id: &str) -> Option<(PathBuf, PathBuf)> {
+    let (mut model, mut mmproj) = (None, None);
+    for e in std::fs::read_dir(stt_model_dir(model_id)).ok()?.flatten() {
+        let name = e.file_name().to_string_lossy().to_lowercase();
+        // A download in progress is a .part file, so it never matches.
+        if !name.ends_with(".gguf") {
+            continue;
+        }
+        if name.starts_with("mmproj") {
+            mmproj = Some(e.path());
+        } else {
+            model = Some(e.path());
+        }
+    }
+    Some((model?, mmproj?))
+}
+
 pub fn sherpa_stt_installed(model_id: &str) -> bool {
     match stt_engine(model_id) {
         SttEngine::Moonshine => moonshine_installed(model_id),
         SttEngine::SenseVoice => sense_voice_installed(model_id),
         SttEngine::Transducer => transducer_installed(model_id),
+        SttEngine::LlamaAsr => llama_asr_paths(model_id).is_some(),
         SttEngine::Whisper => false,
     }
 }

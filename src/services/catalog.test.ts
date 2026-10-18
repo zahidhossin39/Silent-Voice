@@ -14,7 +14,7 @@ describe("STT_MODELS", () => {
   // ship as a .tar.bz2 archive extracted into a folder, not a ggml .bin file.
   it("follows the ggml-<id>.bin filename convention", () => {
     for (const model of STT_MODELS) {
-      if (isSherpaEngine(model.engine)) continue;
+      if (model.engine && model.engine !== "whisper") continue;
       expect(model.file, `Model ${model.id} filename convention`).toBe(`ggml-${model.id}.bin`);
     }
   });

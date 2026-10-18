@@ -154,6 +154,12 @@ export async function downloadSttArchive(
   return invoke<boolean>("download_stt_archive", { modelId, url });
 }
 
+/// Download a llama-server speech model (Qwen3-ASR): the model GGUF and its audio mmproj.
+export async function downloadLlamaAsr(modelId: string, modelUrl: string, mmprojUrl: string): Promise<boolean> {
+  if (!isTauri()) return false;
+  return invoke<boolean>("download_llama_asr", { modelId, modelUrl, mmprojUrl });
+}
+
 export async function pauseDownload(modelId: string): Promise<void> {
   if (!isTauri()) return;
   await invoke<void>("pause_download", { modelId });

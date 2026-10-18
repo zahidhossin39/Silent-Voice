@@ -17,6 +17,11 @@ export function hasDedicatedGpu(hw: HardwareInfo | null): boolean {
   return !!hw && (hw.gpu_vram_gb ?? 0) >= 3 && hw.gpu_vendor !== "Intel";
 }
 
+/** Strong enough that models run faster on it than on the CPU. Mirrors `fast_gpu` in hardware.rs. */
+export function fastGpu(hw: HardwareInfo | null): boolean {
+  return !!hw && (hw.gpu_vram_gb ?? 0) >= 4 && (hw.gpu_vendor === "NVIDIA" || hw.gpu_vendor === "AMD");
+}
+
 // Mirror of the Rust-side recommendation logic — build plan §6.
 // Green = runs smoothly, Yellow = compatible but may be slow, Red = insufficient.
 

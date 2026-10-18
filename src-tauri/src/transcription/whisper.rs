@@ -108,6 +108,10 @@ pub async fn transcribe(
     // path. `vocabulary`/`use_gpu` don't apply (CPU, no prompt-biasing hook);
     // `language` is ignored too — Moonshine is English-only and SenseVoice
     // auto-detects per clip.
+    if registry::stt_engine(model_id) == registry::SttEngine::LlamaAsr {
+        crate::logging::log_info("stt", &format!("llama-server: model '{model_id}'"));
+        return crate::llm::llama::transcribe_asr(app, std::path::Path::new(audio_path), model_id, threads, use_gpu).await;
+    }
     if registry::stt_engine(model_id) != registry::SttEngine::Whisper {
         if !registry::sherpa_stt_installed(model_id) {
             return Err(format!("model '{model_id}' is not downloaded"));
@@ -413,6 +417,9 @@ pub async fn preload(app: &AppHandle) -> Result<(), String> {
                 server.mark_ready();
             }
         }
+    } else if registry::stt_engine(&model_id) == registry::SttEngine::LlamaAsr {
+        // Loads on the first dictation: preloading would evict a local AI writing model.
+        return Ok(());
     } else {
         if !registry::sherpa_stt_installed(&model_id) {
             return Ok(());

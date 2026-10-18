@@ -23,7 +23,7 @@ export function isSherpaEngine(engine: SttModel["engine"]): boolean {
 // Bangla comes back as fluent English: the setting looked applied and was not.
 export function honorsLanguage(model?: SttModel): boolean {
   if (!model) return true;
-  return !isSherpaEngine(model.engine) && model.multilingual;
+  return (!model.engine || model.engine === "whisper") && model.multilingual;
 }
 
 export const STT_MODELS: SttModel[] = [
@@ -59,6 +59,24 @@ export const STT_MODELS: SttModel[] = [
     multilingual: true,
     preset: "accuracy",
     best_for: "Highest accuracy multilingual, punctuation + capitalization",
+  },
+  {
+    id: "qwen3-asr-1.7b",
+    file: "qwen3-asr-1.7b",
+    url: "https://huggingface.co/ggml-org/Qwen3-ASR-1.7B-GGUF/resolve/main/Qwen3-ASR-1.7B-Q8_0.gguf",
+    mmproj_url: "https://huggingface.co/ggml-org/Qwen3-ASR-1.7B-GGUF/resolve/main/mmproj-Qwen3-ASR-1.7B-Q8_0.gguf",
+    engine: "llama-asr",
+    needs_fast_gpu: true,
+    family: "Qwen",
+    provider: "Alibaba Qwen",
+    label: "Qwen3-ASR 1.7B (Multilingual)",
+    size_mb: 2400,
+    ram_mb: 3500,
+    speed_label: "fast on a strong GPU; about real time on a CPU",
+    wer: "~2.3%",
+    multilingual: true,
+    preset: "accuracy",
+    best_for: "Most accurate; 52 languages incl. Hindi, Arabic, Chinese (not Bengali). Needs a strong graphics card",
   },
   {
     id: "large-v3-turbo",

@@ -5,7 +5,7 @@ import ConfirmDialog from "../../shared/ConfirmDialog";
 import Select from "../../shared/Select";
 import { useHardwareInfo } from "../../../hooks/useHardwareInfo";
 import { LLM_MODELS } from "../../../services/catalog";
-import { llmCompatibility } from "../../../services/recommend";
+import { fastGpu, llmCompatibility } from "../../../services/recommend";
 import { FIT_ORDER, FitCheckDialog, FitGroupHeading, fitForRamGb, formatGb, memoryWhy, usableRamGb, type Fit, type FitCheck } from "./fit";
 import { hfSearchModels, hfModelDetails } from "../../../services/tauriBridge";
 import { useModelStore } from "../../../stores/modelStore";
@@ -131,6 +131,34 @@ export function MetricBar({
         <div className="min-w-[38px] text-right text-[13px] font-semibold tabular-nums text-sv-text">{caption}</div>
       )}
     </div>
+  );
+}
+
+/** A collapsed section: a full-width row with a count and a turning chevron. */
+function Fold({ title, note, count, children }: { title: string; note?: string; count?: number; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <section className="mt-3 rounded-xl border border-sv-border bg-sv-surface">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left transition hover:bg-sv-surface-2/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sv-accent"
+      >
+        <span className="min-w-0 flex-1">
+          <span className="text-sm font-medium text-sv-text">{title}</span>
+          {count !== undefined && <span className="ml-2 rounded-full bg-sv-surface-2 px-2 py-0.5 text-[11px] text-sv-muted">{count}</span>}
+          {note && <span className="mt-0.5 block truncate text-xs text-sv-muted">{note}</span>}
+        </span>
+        <span className="flex shrink-0 items-center gap-1.5 rounded-lg border border-sv-border px-2.5 py-1 text-xs text-sv-muted">
+          {open ? "Hide" : "Show"}
+          <svg viewBox="0 0 24 24" className={`h-4 w-4 transition-transform ${open ? "rotate-180" : ""}`} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <path d="m6 9 6 6 6-6" />
+          </svg>
+        </span>
+      </button>
+      {open && <div className="flex flex-col gap-2 border-t border-sv-border p-3">{children}</div>}
+    </section>
   );
 }
 
@@ -335,11 +363,69 @@ export default function HfBrowser({ track }: { track: "llm" | "stt" }) {
   const staffFit = (m: any): Fit =>
     !hardware ? "good" : track === "stt" ? fitForRamGb(m.ram_mb / 1024, hardware) : llmCompatibility(m, hardware).level;
 
+  // Models too heavy for this PC, or only worth it on a strong graphics card:
+  // still downloadable, just out of the main list.
+  const isStronger = (m: any) => staffFit(m) === "bad" || (m.needs_fast_gpu && !fastGpu(hardware));
+  const mainPicks = staffPicksSorted.filter((m: any) => !isStronger(m));
+  const strongerPicks = staffPicksSorted.filter(isStronger);
+
+
   const hfResultsVisible = searchResults.filter(item => {
     if (hfShowIncompatible) return true;
     const fit = estimateFitFromParams(item.params_b, hardware, item.id.split("/")[1]);
     return fit !== "bad";
   }).sort(sortHfResults);
+
+  const hfList = (
+    <>
+      {loadingSearch ? (
+            [1, 2, 3, 4].map((i) => (
+              <div key={i} className="flex animate-pulse items-start gap-3 rounded-xl border border-sv-border bg-sv-surface px-4 py-3">
+                <div className="h-9 w-9 shrink-0 rounded-full bg-sv-border"></div>
+                <div className="flex-1 flex flex-col gap-2 pt-1">
+                  <div className="h-3.5 w-1/4 rounded bg-sv-border"></div>
+                  <div className="h-2.5 w-1/3 rounded bg-sv-border"></div>
+                </div>
+              </div>
+            ))
+          ) : searchError ? (
+            <div className="p-4 text-center text-sm text-sv-bad">{!debouncedQuery ? "Hugging Face unreachable" : searchError}</div>
+          ) : hfResultsVisible.length === 0 ? (
+            <div className="p-4 text-center text-sm text-sv-muted">No models found.</div>
+          ) : (
+            hfResultsVisible.map((item) => {
+              const isExpanded = selectedHfId === item.id;
+              return (
+                <HfRow
+                  key={item.id}
+                  item={item}
+                  hardware={hardware}
+                  pinned={pinnedSet.has(item.id)}
+                  onTogglePin={() => togglePinned(item.id)}
+                  isExpanded={isExpanded}
+                  onToggleExpand={() => setSelectedHfId(isExpanded ? null : item.id)}
+                  track={track}
+                >
+                  {isExpanded && (
+                    <div className="mt-3 border-t border-sv-border pt-3">
+                      {loadingDetails ? (
+                        <div className="flex justify-center p-4">
+                          <div className="h-6 w-6 animate-spin rounded-full border-2 border-sv-accent border-t-transparent"></div>
+                        </div>
+                      ) : hfDetailsError ? (
+                        <div className="p-4 text-center text-sm text-sv-bad">{hfDetailsError}</div>
+                      ) : hfDetails ? (
+                        <HfDetail details={hfDetails} hardware={hardware} track={track} />
+                      ) : null}
+                    </div>
+                  )}
+                </HfRow>
+              );
+            })
+          )}
+    </>
+  );
+
 
   const activeFilters = (track === "stt" ? ((category !== "all" ? 1 : 0) + (language !== "all" ? 1 : 0)) : 0) + (hfShowIncompatible ? 1 : 0);
 
@@ -400,7 +486,7 @@ export default function HfBrowser({ track }: { track: "llm" | "stt" }) {
           <div className="flex flex-col gap-2">
             <h3 className="mb-2 text-[10px] font-medium uppercase tracking-wider text-sv-muted">Staff Picks</h3>
             {FIT_ORDER.map((fit) => {
-              const group = staffPicksSorted.filter((m: any) => staffFit(m) === fit);
+              const group = mainPicks.filter((m: any) => staffFit(m) === fit);
               if (group.length === 0) return null;
               return (
                 <div key={fit} className="flex flex-col gap-2">
@@ -437,82 +523,37 @@ export default function HfBrowser({ track }: { track: "llm" | "stt" }) {
           </div>
         )}
 
-        {!debouncedQuery && moreLanguages.length > 0 && (
-          <details className="group mt-3 rounded-xl border border-sv-border bg-sv-surface">
-            <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-sm">
-              <span>
-                <span className="font-medium">More languages</span>
-                <span className="ml-2 text-xs text-sv-muted">
-                  {[...new Set(moreLanguages.map(sttLanguage))].join(", ")}
-                </span>
-              </span>
-              <span className="text-xs text-sv-muted transition group-open:rotate-180">▾</span>
-            </summary>
-            <div className="flex flex-col gap-2 border-t border-sv-border p-3">
-              {moreLanguages.map((m: any) => (
-                <SttRow
-                  key={m.id}
-                  model={m}
-                  hardware={hardware}
-                  pinned={pinnedSet.has(m.id)}
-                  onTogglePin={() => togglePinned(m.id)}
-                  recommended={false}
-                  alternative={sttAlternative}
-                />
-              ))}
-            </div>
-          </details>
+        {!debouncedQuery && strongerPicks.length > 0 && (
+          <Fold
+            title="For stronger PCs"
+            count={strongerPicks.length}
+            note="Too heavy for this PC, or made for a strong graphics card. You can still download them; they will run slowly here."
+          >
+            {strongerPicks.map((m: any) =>
+              track === "stt" ? (
+                <SttRow key={m.id} model={m} hardware={hardware} pinned={pinnedSet.has(m.id)} onTogglePin={() => togglePinned(m.id)} recommended={false} alternative={sttAlternative} />
+              ) : (
+                <LlmRow key={m.id} model={m} hardware={hardware} pinned={pinnedSet.has(m.id)} onTogglePin={() => togglePinned(m.id)} alternative={llmAlternative} />
+              )
+            )}
+          </Fold>
         )}
 
-        <div className="flex flex-col gap-2">
-          {!debouncedQuery && <h3 className="mt-5 mb-2 text-[10px] font-medium uppercase tracking-wider text-sv-muted">Trending on Hugging Face</h3>}
-          
-          {loadingSearch ? (
-            [1, 2, 3, 4].map((i) => (
-              <div key={i} className="flex animate-pulse items-start gap-3 rounded-xl border border-sv-border bg-sv-surface px-4 py-3">
-                <div className="h-9 w-9 shrink-0 rounded-full bg-sv-border"></div>
-                <div className="flex-1 flex flex-col gap-2 pt-1">
-                  <div className="h-3.5 w-1/4 rounded bg-sv-border"></div>
-                  <div className="h-2.5 w-1/3 rounded bg-sv-border"></div>
-                </div>
-              </div>
-            ))
-          ) : searchError ? (
-            <div className="p-4 text-center text-sm text-sv-bad">{!debouncedQuery ? "Hugging Face unreachable" : searchError}</div>
-          ) : hfResultsVisible.length === 0 ? (
-            <div className="p-4 text-center text-sm text-sv-muted">No models found.</div>
-          ) : (
-            hfResultsVisible.map((item) => {
-              const isExpanded = selectedHfId === item.id;
-              return (
-                <HfRow
-                  key={item.id}
-                  item={item}
-                  hardware={hardware}
-                  pinned={pinnedSet.has(item.id)}
-                  onTogglePin={() => togglePinned(item.id)}
-                  isExpanded={isExpanded}
-                  onToggleExpand={() => setSelectedHfId(isExpanded ? null : item.id)}
-                  track={track}
-                >
-                  {isExpanded && (
-                    <div className="mt-3 border-t border-sv-border pt-3">
-                      {loadingDetails ? (
-                        <div className="flex justify-center p-4">
-                          <div className="h-6 w-6 animate-spin rounded-full border-2 border-sv-accent border-t-transparent"></div>
-                        </div>
-                      ) : hfDetailsError ? (
-                        <div className="p-4 text-center text-sm text-sv-bad">{hfDetailsError}</div>
-                      ) : hfDetails ? (
-                        <HfDetail details={hfDetails} hardware={hardware} track={track} />
-                      ) : null}
-                    </div>
-                  )}
-                </HfRow>
-              );
-            })
-          )}
-        </div>
+        {!debouncedQuery && moreLanguages.length > 0 && (
+          <Fold title="More languages" count={moreLanguages.length} note={[...new Set(moreLanguages.map(sttLanguage))].join(", ")}>
+            {moreLanguages.map((m) => (
+              <SttRow key={m.id} model={m} hardware={hardware} pinned={pinnedSet.has(m.id)} onTogglePin={() => togglePinned(m.id)} recommended={false} alternative={sttAlternative} />
+            ))}
+          </Fold>
+        )}
+
+        {debouncedQuery ? (
+          <div className="flex flex-col gap-2">{hfList}</div>
+        ) : (
+          <Fold title="Trending on Hugging Face" note="Popular models from the community. Unchecked by us, so results vary.">
+            {hfList}
+          </Fold>
+        )}
       </div>
     </div>
   );

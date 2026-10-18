@@ -693,7 +693,7 @@ pub fn ensure_engine(
                 crate::models::registry::SttEngine::Moonshine => {
                     SherpaSttEngine::load_moonshine(&dir, threads as i32)?
                 }
-                crate::models::registry::SttEngine::Whisper => unreachable!(),
+                crate::models::registry::SttEngine::Whisper | crate::models::registry::SttEngine::LlamaAsr => unreachable!(),
             },
         );
         *slot = Some((key, eng));

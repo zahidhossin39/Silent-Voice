@@ -285,6 +285,32 @@ pub async fn download_stt_archive(
     Ok(true)
 }
 
+/// Download a llama-server speech model (Qwen3-ASR): its audio `mmproj` GGUF,
+/// then the model GGUF, into models_dir()/<model_id>/ under their own names.
+pub async fn download_llama_asr(
+    app: AppHandle,
+    model_id: String,
+    model_url: String,
+    mmproj_url: String,
+    stop_flag: Option<&DownloadStopFlag>,
+) -> Result<bool, String> {
+    safe_id(&model_id)?;
+    let dir = registry::stt_model_dir(&model_id);
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    for url in [mmproj_url, model_url] {
+        let name = url.split('?').next().unwrap_or_default().rsplit('/').next().unwrap_or_default().to_string();
+        safe_id(&name)?;
+        let dest = dir.join(&name);
+        if !dest.exists() && !download_to(app.clone(), model_id.clone(), url, dest, stop_flag).await? {
+            return Ok(false);
+        }
+    }
+    if !registry::sherpa_stt_installed(&model_id) {
+        return Err("the model files did not download completely".into());
+    }
+    Ok(true)
+}
+
 pub async fn download_vad_model(app: AppHandle, stop_flag: Option<&DownloadStopFlag>) -> Result<bool, String> {
     registry::ensure_dirs().map_err(|e| e.to_string())?;
     let dir = registry::vad_dir();

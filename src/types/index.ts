@@ -51,7 +51,12 @@ export interface SttModel {
   // "moonshine"/"sense-voice" = sherpa-onnx, downloaded as a .tar.bz2 archive
   // (`url`) and extracted into a folder. Faster + natively punctuated;
   // Moonshine is English-only, SenseVoice is multilingual.
-  engine?: "whisper" | "moonshine" | "sense-voice" | "transducer";
+  // "llama-asr" = a speech LLM (Qwen3-ASR) run by the bundled llama-server:
+  // `url` is the model GGUF and `mmproj_url` its audio projector.
+  engine?: "whisper" | "moonshine" | "sense-voice" | "transducer" | "llama-asr";
+  mmproj_url?: string;
+  /** Only worth it on a strong graphics card (`fastGpu`); elsewhere it waits under "For stronger PCs". */
+  needs_fast_gpu?: boolean;
 }
 
 // ---------- LLM models (for AI processing) ----------

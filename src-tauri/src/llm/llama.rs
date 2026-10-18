@@ -90,6 +90,7 @@ impl LlamaServer {
         model_id: &str,
         threads: u32,
         use_gpu: bool,
+        mmproj: Option<&Path>,
     ) -> Result<(), String> {
         self.stop();
 
@@ -118,6 +119,7 @@ impl LlamaServer {
             // The Vulkan build offloads by default. Graphics built into the CPU
             // ran a 7 s clip in 15 s against 8 s on the CPU, so only a real card gets it.
             .args(if use_gpu { ["-ngl", "99"] } else { ["--device", "none"] })
+            .args(mmproj.map(|p| vec!["--mmproj".as_ref(), p.as_os_str()]).unwrap_or_default())
             .current_dir(engine_dir()) // resolve sibling DLLs
             .stderr(Stdio::piped());
 
@@ -256,5 +258,59 @@ pub async fn wait_ready(timeout: Duration) -> Result<(), String> {
             return Err("Local LLM server did not become ready in time".into());
         }
         tokio::time::sleep(Duration::from_millis(400)).await;
+    }
+}
+
+/// Transcribe a 16 kHz WAV with a speech LLM (Qwen3-ASR) on llama-server,
+/// starting the server with the model and its audio `mmproj` if needed.
+/// Shares the one server with local AI writing, so switching between the two costs a reload.
+pub async fn transcribe_asr(app: &tauri::AppHandle, wav: &Path, model_id: &str, threads: u32, use_gpu: bool) -> Result<String, String> {
+    use base64::Engine;
+    use tauri::Manager;
+    let (model, mmproj) = crate::models::registry::llama_asr_paths(model_id).ok_or(format!("model '{model_id}' is not downloaded"))?;
+    let started = {
+        let state = app.state::<crate::AppState>();
+        let mut server = state.llama.lock().map_err(|e| e.to_string())?;
+        if server.is_running_model(model_id) {
+            false
+        } else {
+            server.start(&model, model_id, threads, use_gpu, Some(&mmproj))?;
+            true
+        }
+    };
+    if started {
+        wait_ready(Duration::from_secs(180)).await?;
+    }
+    let audio = base64::engine::general_purpose::STANDARD.encode(std::fs::read(wav).map_err(|e| e.to_string())?);
+    let body = serde_json::json!({
+        "messages": [{"role": "user", "content": [{"type": "input_audio", "input_audio": {"data": audio, "format": "wav"}}]}],
+        "temperature": 0,
+    });
+    let res: serde_json::Value = reqwest::Client::new()
+        .post(format!("{}/chat/completions", base_url()))
+        .timeout(Duration::from_secs(600))
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+        .error_for_status()
+        .map_err(|e| e.to_string())?
+        .json()
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(asr_text(res["choices"][0]["message"]["content"].as_str().unwrap_or_default()))
+}
+
+/// Qwen3-ASR answers "language English<asr_text>the words"; keep the words.
+fn asr_text(out: &str) -> String {
+    out.split_once("<asr_text>").map_or(out, |(_, t)| t).replace("</asr_text>", "").trim().to_string()
+}
+
+#[cfg(test)]
+mod asr_tests {
+    #[test]
+    fn keeps_only_the_words() {
+        assert_eq!(super::asr_text("language English<asr_text>Very old device."), "Very old device.");
+        assert_eq!(super::asr_text("plain text "), "plain text");
     }
 }

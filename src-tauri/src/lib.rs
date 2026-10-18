@@ -295,7 +295,7 @@ pub async fn ensure_local_llm(app: &AppHandle, model_id: &str) -> Result<(), Str
         if server.is_running_model(model_id) {
             false
         } else {
-            server.start(&model_path, model_id, threads, use_gpu)?;
+            server.start(&model_path, model_id, threads, use_gpu, None)?;
             true
         }
     };
@@ -915,6 +915,20 @@ async fn download_model(
 
 /// Download a sherpa STT model archive (Moonshine) and extract it. Separate
 /// from download_model because it's a multi-file .tar.bz2, not a single .bin.
+/// Download a llama-server speech model (Qwen3-ASR): model + audio mmproj GGUF.
+#[tauri::command]
+async fn download_llama_asr(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    model_id: String,
+    model_url: String,
+    mmproj_url: String,
+) -> Result<bool, String> {
+    let (flag, lock_guard) = state.register_download(&model_id).await?;
+    let _guard = DownloadGuard(&state, model_id.clone(), lock_guard);
+    downloader::download_llama_asr(app, model_id, model_url, mmproj_url, Some(&flag)).await
+}
+
 #[tauri::command]
 async fn download_stt_archive(
     app: AppHandle,
@@ -1708,6 +1722,7 @@ pub fn run() {
             local_llm_generate,
             list_downloaded_models,
             download_model,
+            download_llama_asr,
             download_stt_archive,
             delete_model,
             retranscribe_clip,
