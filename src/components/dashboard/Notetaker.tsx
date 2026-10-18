@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Page from "../shared/Page";
+import Select from "../shared/Select";
+import { useSettingsStore } from "../../stores/settingsStore";
 import TranscriptHeader, { clock } from "../shared/TranscriptHeader";
 import MeetingOverview from "./MeetingOverview";
 import {
@@ -19,6 +21,8 @@ import {
 // the transcript as it grows, like the Transcribe page.
 
 const CONSENT_KEY = "sv-notetaker-consent-seen";
+/** "local", or the id of the cloud provider that transcribes meetings. */
+const STT_KEY = "sv-notetaker-stt";
 
 /** True while a meeting records (for the sidebar dot). */
 export function useMeetingRecording(): boolean {
@@ -121,11 +125,29 @@ export default function Notetaker() {
 
   const recording = list.find((t) => t.status === "running") ?? null;
 
+  const sttProviders = useSettingsStore((s) => s.providers).filter((p) => p.uses.includes("stt") && p.base_url && p.stt_model);
+  const [sttKey, setSttKey] = useState(() => {
+    try {
+      return localStorage.getItem(STT_KEY) ?? "local";
+    } catch {
+      return "local";
+    }
+  });
+  const cloud = sttProviders.find((p) => p.id === sttKey);
+  const pickStt = (v: string) => {
+    setSttKey(v);
+    try {
+      localStorage.setItem(STT_KEY, v);
+    } catch {
+      /* remembered for this visit only */
+    }
+  };
+
   const start = async () => {
     setError(null);
     setStarting(true);
     try {
-      const t = await meetingStart();
+      const t = await meetingStart(cloud && { base_url: cloud.base_url, api_key: cloud.api_key, model: cloud.stt_model });
       upsert(t);
       setSelected(t.id);
       setFull(t);
@@ -171,7 +193,7 @@ export default function Notetaker() {
     <Page
       fill
       title="Notetaker"
-      subtitle="Record a call and get a live transcript of who said what. Audio and text stay on this PC."
+      subtitle={`Record a call and get a live transcript of who said what. ${cloud ? `Audio is sent to ${cloud.name} to transcribe; recordings and text stay on this PC.` : "Audio and text stay on this PC."}`}
       actions={
         recording ? (
           <RecordingPill startedAt={recording.created} stopping={stopping} onStop={stop} />
@@ -198,6 +220,16 @@ export default function Notetaker() {
               btMic={btMic}
               showConsent={!consentSeen}
               onConsentSeen={dismissConsent}
+              stt={
+                <Select value={cloud ? cloud.id : "local"} onChange={pickStt} className="w-full">
+                  <option value="local">On this PC</option>
+                  {sttProviders.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} · {p.stt_model}
+                    </option>
+                  ))}
+                </Select>
+              }
             />
           )}
           {error && (
@@ -289,7 +321,9 @@ function Setup({
   btMic,
   showConsent,
   onConsentSeen,
+  stt,
 }: {
+  stt: React.ReactNode;
   mic: string | null;
   speakers: string | null;
   btMic: boolean;
@@ -307,6 +341,8 @@ function Setup({
         <dd className="truncate" title={speakers ?? undefined}>
           {speakers ? `What plays on ${speakers}` : "What plays on your speakers"}
         </dd>
+        <dt className="self-center text-sv-muted">Text</dt>
+        <dd className="min-w-0">{stt}</dd>
       </dl>
       {btMic ? (
         <p className="rounded-lg bg-sv-warn/10 px-3 py-2 text-xs leading-relaxed text-sv-warn">

@@ -90,6 +90,16 @@ pub(crate) struct Cfg {
     pub(crate) english: bool,
     /// The dictation mic from settings (None = system default).
     pub(crate) mic: Option<String>,
+    /// A cloud provider to transcribe with instead of the local model.
+    pub(crate) cloud: Option<Cloud>,
+}
+
+/// An OpenAI-compatible speech-to-text endpoint (`/audio/transcriptions`).
+#[derive(serde::Deserialize, Clone, Debug)]
+pub struct Cloud {
+    pub base_url: String,
+    pub api_key: String,
+    pub model: String,
 }
 
 impl Cfg {
@@ -111,6 +121,7 @@ impl Cfg {
             threads: crate::system::hotkey::resolve_thread_count(c.high_performance, c.performance_threads),
             sensitivity: c.input_sensitivity,
             mic: c.audio_device.clone(),
+            cloud: None,
         })
     }
 }
@@ -263,7 +274,8 @@ fn run<V: FnMut(&[f32]) -> Option<Vec<bool>>>(
     Ok(())
 }
 
-/// Transcribe one piece locally and clean it (fillers, repeated words).
+/// Transcribe one piece (locally, or with `cfg.cloud`, which falls back to the
+/// local model when a call fails) and clean it (fillers, repeated words).
 pub(crate) fn transcribe_piece(app: &AppHandle, samples: &[f32], cfg: &Cfg) -> Result<String, String> {
     // Its own temp file: the meeting recorder transcribes two tracks.
     static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -278,10 +290,10 @@ pub(crate) fn transcribe_piece(app: &AppHandle, samples: &[f32], cfg: &Cfg) -> R
         &cfg.vocabulary,
         cfg.use_vocabulary,
         cfg.use_gpu,
-        "local",
-        "",
-        "",
-        "",
+        if cfg.cloud.is_some() { "cloud" } else { "local" },
+        cfg.cloud.as_ref().map_or("", |c| c.base_url.as_str()),
+        cfg.cloud.as_ref().map_or("", |c| c.api_key.as_str()),
+        cfg.cloud.as_ref().map_or("", |c| c.model.as_str()),
     ));
     let _ = std::fs::remove_file(&path);
     let text = text?;

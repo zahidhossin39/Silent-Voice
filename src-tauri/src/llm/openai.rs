@@ -368,6 +368,17 @@ async fn transcribe_audio_openrouter(
 
 #[cfg(test)]
 mod tests {
+    /// Real speech-to-text call: SV_TEST_BASE / SV_TEST_KEY / SV_TEST_MODEL / SV_TEST_WAV.
+    #[test]
+    #[ignore]
+    fn real_provider_transcribes() {
+        let v = |k: &str| std::env::var(k).unwrap();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let out = rt.block_on(super::transcribe_audio(&v("SV_TEST_BASE"), &v("SV_TEST_KEY"), &v("SV_TEST_MODEL"), std::path::Path::new(&v("SV_TEST_WAV")), ""));
+        println!("stt: {out:?}");
+        assert!(out.is_ok_and(|t| !t.trim().is_empty()));
+    }
+
     /// Real call to a provider: SV_TEST_BASE / SV_TEST_KEY / SV_TEST_MODEL.
     #[test]
     #[ignore]

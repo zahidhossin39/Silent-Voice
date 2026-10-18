@@ -946,8 +946,8 @@ fn file_transcribe_cancel() {
 
 /// Record the mic (You) and the computer's sound (Others) into a live transcript.
 #[tauri::command]
-async fn meeting_start(app: AppHandle) -> Result<transcripts::Transcript, String> {
-    meeting_job::start(&app)
+async fn meeting_start(app: AppHandle, cloud: Option<transcribe_job::Cloud>) -> Result<transcripts::Transcript, String> {
+    meeting_job::start(&app, cloud)
 }
 
 /// The mic and speakers a meeting would record: `[mic, speakers]`.
@@ -1492,7 +1492,7 @@ pub fn run() {
                         std::thread::sleep(std::time::Duration::from_millis(500));
                     }
                     std::thread::sleep(std::time::Duration::from_secs(5));
-                    let r = meeting_job::start(&app);
+                    let r = meeting_job::start(&app, None);
                     logging::log_info("selftest", &format!("meeting started: {:?}", r.map(|t| t.id)));
                     if let Some(w) = app.get_webview_window("main") {
                         let _ = w.show();

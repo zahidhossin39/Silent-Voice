@@ -916,10 +916,11 @@ export async function transcriptSaveAs(id: number): Promise<boolean> {
   return (await invoke<string | null>("transcript_export", { id })) !== null;
 }
 
-/** Record the mic and the computer's sound into a live transcript. */
-export async function meetingStart(): Promise<Transcript> {
+/** Record the mic and the computer's sound into a live transcript, transcribed
+ * locally or, with `cloud`, by a provider's speech-to-text. */
+export async function meetingStart(cloud?: { base_url: string; api_key: string; model: string }): Promise<Transcript> {
   if (!isTauri()) throw new Error("Needs the desktop app");
-  return invoke<Transcript>("meeting_start");
+  return invoke<Transcript>("meeting_start", { cloud: cloud ?? null });
 }
 
 /** Stop recording; the transcript then finishes the queued pieces. */

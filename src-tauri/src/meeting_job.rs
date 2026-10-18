@@ -36,8 +36,17 @@ enum Msg {
 /// The two running captures; Stop takes them.
 static CAPTURE: Mutex<Option<(Live, Live)>> = Mutex::new(None);
 
-pub fn start(app: &AppHandle) -> Result<Transcript, String> {
-    let cfg = Cfg::load(app)?;
+pub fn start(app: &AppHandle, cloud: Option<transcribe_job::Cloud>) -> Result<Transcript, String> {
+    let mut cfg = Cfg::load(app)?;
+    if let Some(c) = cloud {
+        if c.base_url.trim().is_empty() || c.model.trim().is_empty() {
+            return Err("Pick a speech-to-text model for this provider in Cloud providers.".into());
+        }
+        // Cloud Whisper punctuates whole sentences itself; the repair model is for Parakeet.
+        cfg.english = false;
+        cfg.model_id = c.model.clone();
+        cfg.cloud = Some(c);
+    }
     let id = transcripts::new_id()?;
     transcribe_job::claim(id)?;
     // Unnamed until the user names it: the page shows the start time instead.
