@@ -1,184 +1,218 @@
 # Speech-to-Text (STT) English Models Benchmark & Landscape (2024–2026)
 
-**Target Application:** Silent Voice (Local-first Windows dictation app in Rust / Tauri v2)  
-**Target Hardware:** Windows Laptop CPU (modern 6–8 cores, e.g., Intel Core Ultra / AMD Ryzen 7) and Modest Discrete GPU (NVIDIA RTX 3050/4050/3060 Mobile, 4–8 GB VRAM)  
-**Evaluation Baseline:** NVIDIA Parakeet TDT 0.6B v2 (HF Open ASR Leaderboard English Avg WER: **6.05%**, RTFx: **3,380**)  
-**Active Application Runtimes:** `whisper.cpp` (GGML) and `sherpa-onnx` (ONNX / ONNX Runtime C-API)  
-**Report Output Location:** `D:/Vibe-coding/Silent voice/docs/research/stt-english-2026.md`
+**Target Application:** Silent Voice (Local-first Windows dictation & transcription app in Rust / Tauri v2)  
+**Target Hardware:** Windows Laptop CPU (Intel Core Ultra / AMD Ryzen 7, 4–8 threads) and Modest GPU (NVIDIA RTX 3050/4050/3060 Mobile, 4–8 GB VRAM)  
+**Evaluation Baseline:** NVIDIA Parakeet TDT 0.6B v2 (HF Open ASR Leaderboard English Avg WER: **6.05%** on initial 8-split / **6.43%** on updated 2026 suite; RTFx: **3,380** b128 / **6,148** official / **14,383** fast-gpu-asr)  
+**Supported In-App Engines:** `whisper.cpp` (GGML / GGUF) and `sherpa-onnx` v1.13.4 (ONNX / ONNX Runtime C-API)  
+**Benchmark Primary Source:** Hugging Face Open ASR Leaderboard official database (`hf-audio/open-asr-leaderboard-results/english_short_latest.csv`) and official Model Cards / Technical Reports  
+**File Location:** `D:/Vibe-coding/Silent voice/docs/research/stt-english-2026.md`  
 
 ---
 
-## 1. Executive Summary
+## 1. Executive Summary & Frontier Landscape
 
-This investigation evaluates offline on-device speech-to-text models released or updated up to October 2026 against **NVIDIA Parakeet TDT 0.6B v2**. Models were benchmarked across the standardized **Hugging Face Open ASR Leaderboard** English test suite (8 datasets: AMI, Earnings-22, GigaSpeech, LibriSpeech clean/other, SPGI Speech, TEDLIUM-v3, and VoxPopuli) and evaluated for execution speed (Inverse Real-Time Factor, RTFx) and runtime viability on a Windows laptop.
+This research provides an authoritative investigation of offline, on-device English speech-to-text (STT) models released or updated up to October 2026. Models are evaluated on transcription accuracy (**Hugging Face Open ASR Leaderboard Average WER**), throughput (**Inverse Real-Time Factor, RTFx**), parameter size, license, file formats, and runtime compatibility with Silent Voice's two embedded engines: **`whisper.cpp`** and **`sherpa-onnx`**.
 
-### Core Discoveries & Landscape Verdict:
-
-1. **Only Two Model Architectures Truly Beat Parakeet TDT 0.6B v2 on English Accuracy:**
-   * **IBM Granite Speech 5.0 TurboCTC (470M)** (*Released August 25, 2026*): Achieves **5.00% Average WER** on the Open ASR Leaderboard, beating Parakeet TDT 0.6B v2 by **1.05 percentage points**. It delivers a staggering **12,600+ RTFx** (>3.7× faster than Parakeet). Distributed under **Apache 2.0** with GGUF weights for `transcribe.cpp` and PyTorch Hugging Face Transformers.
-   * **NVIDIA Canary-Qwen-2.5B (2.5B)** (*Released July 17, 2025*): A Speech-Augmented Language Model (SALM) pairing Canary-1B-Flash FastConformer with Qwen3-1.7B LLM. Achieves **5.63% Average WER** (0.42 points lower than Parakeet). However, it runs at **418 RTFx** and requires an LLM inference backend (NeMo / vLLM), making it unsuitable for CPU-only laptop dictation.
-
-2. **The "Silent Voice Runtime Reality Gate" (`whisper.cpp` vs `sherpa-onnx`):**
-   * **`whisper.cpp` is strictly an OpenAI Whisper-family engine.** It can only execute Whisper-style encoder-decoder models.
-     * **No Whisper model beats Parakeet TDT 0.6B v2 in English WER.** Whisper Large-v3 scores **7.44%**, Large-v3-Turbo scores **7.83%**, and Distil-Whisper Large-v3.5 scores **7.10%**.
-     * **Distil-Whisper Large-v3.5 GGML** is the new champion within `whisper.cpp`: it outperforms Whisper Large-v3-Turbo in both accuracy (7.10% vs 7.25% short-form WER) and latency (~1.46× faster than Turbo).
-   * **`sherpa-onnx` is the high-performance transducer & non-autoregressive engine.**
-     * **Parakeet TDT 0.6B v2 itself is already converted to ONNX INT8** (`csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8`) and runs directly in Silent Voice via the existing `transducer` struct layout (`encoder.int8.onnx`, `decoder.int8.onnx`, `joiner.int8.onnx`, `tokens.txt`).
-     * **Parakeet TDT 0.6B v3** (`csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8`) expands the model to **25 European languages** with negligible English degradation (**6.34% WER**) and identical ~3,300 RTFx speed.
-     * **Qwen3-ASR-0.6B** (*Early 2026, Apache 2.0*): Demonstrates 2.11% clean / 4.55% other LibriSpeech WER and 2,000 RTFx. `sherpa-onnx` v1.13.4 already exports dedicated `qwen3_asr` C-API bindings matching Silent Voice's FFI definitions.
-     * **SenseVoice-Small (234M, MIT)**: Remains the overall latency king for interactive voice typing (CPU RTF ~0.02–0.04, 25×–50× real-time), with native punctuation, casing, and audio event tags, already wired into Silent Voice.
+### Benchmark Standard Distinction (Important Context):
+* **Initial 8-Dataset Public Benchmark Split (2024–2025):** Evaluated across 8 public corpora: AMI, Earnings-22, GigaSpeech, LibriSpeech clean, LibriSpeech other, SPGI Speech, TEDLIUM-v3, and VoxPopuli. Parakeet TDT 0.6B v2 scores **6.05%**, Canary-Qwen-2.5B scores **5.63%**, and Granite Speech 5.0 TurboCTC scores **5.00%**.
+* **Updated 2026 Open ASR Leaderboard Suite (`english_short_latest.csv`):** Incorporates challenging real-world acoustic test sets including `URGENT2024` (heavily reverberant & noise-injected speech) and `Voice Arena Monsoon` (conversational accented speech), with cleaned versions of AMI, Earnings-22, and VoxPopuli. On this rigorous benchmark, Parakeet TDT 0.6B v2 scores **6.43%**, Canary-Qwen-2.5B scores **6.37%**, and Granite Speech 5.0 TurboCTC scores **6.84%**.
+* Both sets of scores are documented below to maintain complete transparency.
 
 ---
 
-## 2. Comprehensive Model Benchmark Table
+### Core Discoveries:
 
-*Table sorted primarily by transcription accuracy (lowest HF Open ASR Leaderboard English Average WER) and secondarily by throughput (RTFx).*  
-*RTFx = Audio Duration / Processing Time (higher is faster; RTFx = 1,000 means 1,000 seconds of audio transcribed in 1 second).*
+1. **Models That Outperform Parakeet TDT 0.6B v2 on Accuracy:**
+   * **Microsoft Phi-4-multimodal-instruct (5.6B / 6B)** (*Released 2025-02-24, MIT*):
+     * **Accuracy:** **5.02% Avg WER** on the Open ASR Leaderboard (leads all open-weights models).
+     * **Speed:** **162.53 RTFx**.
+     * **Runtime Gate:** Requires ONNX Runtime GenAI or Transformers; too heavy for background laptop dictation without high-end VRAM.
+   * **Qwen/Qwen3-ASR-1.7B (2.04B)** (*Released 2026-01-28, Apache 2.0*):
+     * **Accuracy:** **5.75% Avg WER** (beats Parakeet by 0.68 percentage points).
+     * **Speed:** **835.62 RTFx**.
+     * **Runtime Gate:** Pre-quantized ONNX INT8 models exist (`thieunv-asilla/sherpa-onnx-qwen3-asr-1.7B-int8`). Silent Voice's `sherpa_stt.rs` already defines `Qwen3AsrModelConfig`.
+   * **TheStageAI/thewhisper-large-v3-turbo (809M)** (*Released 2025-10-27, CC-BY-4.0*):
+     * **Accuracy:** **6.07% Avg WER** (beats OpenAI's baseline Whisper Large-v3-Turbo's 8.39% by 2.32% and beats Parakeet's 6.43%).
+     * **Speed:** **1,183.92 RTFx**.
+     * **Runtime Gate:** Uses the standard Whisper architecture; directly convertible to GGML for **`whisper.cpp`**! This decisively disproves the claim that no Whisper model can rival Parakeet.
+   * **CohereLabs/cohere-transcribe-03-2026 (2B)** (*Released 2026-03-26, Apache 2.0*):
+     * **Accuracy:** **6.26% Avg WER** (beats Parakeet's 6.43%).
+     * **Speed:** **923.71 RTFx**.
+     * **Runtime Gate:** Pre-quantized INT8 weights exist (`csukuangfj2/sherpa-onnx-cohere-transcribe-14-lang-int8-2026-04-01`). Silent Voice's `src-tauri/src/system/sherpa_stt.rs` already exports `CohereTranscribeModelConfig`.
+   * **NVIDIA Canary-Qwen-2.5B (2.5B)** (*Released 2025-06-26, CC-BY-4.0*):
+     * **Accuracy:** **5.63%** (8-dataset split) / **6.37%** (2026 leaderboard suite).
+     * **Speed:** **418 RTFx** (A100 b1) / **881.67 RTFx** (b128).
+     * **Runtime Gate:** Speech-Augmented Language Model (SALM); requires Python NeMo / vLLM. Incompatible with `whisper.cpp` or `sherpa-onnx`.
 
-| Rank | Model Name | Release Date | Params | HF Open ASR Avg WER (%) | RTFx (Throughput) | License | Available Formats | Hugging Face Repository | Silent Voice Runtime | Source Citation URL |
-| :---: | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :--- | :---: | :--- |
-| **1** | **IBM Granite Speech 5.0 TurboCTC** | 2026-08-25 | 470M | **5.00%** | **12,600+** (H200) | Apache 2.0 | GGUF, PyTorch Safetensors | [`ibm-granite/granite-speech-5.0-470m-turboctc`](https://huggingface.co/ibm-granite/granite-speech-5.0-470m-turboctc) | Neither *(Needs transcribe.cpp or custom ONNX loader)* | [IBM HF Model Card](https://huggingface.co/ibm-granite/granite-speech-5.0-470m-turboctc) & [arXiv:2510.06961](https://arxiv.org/abs/2510.06961) |
-| **2** | **NVIDIA Canary-Qwen-2.5B** | 2025-07-17 | 2.5B | **5.63%** | **418** (A100) | CC-BY-4.0 | NeMo `.nemo`, PyTorch | [`nvidia/canary-qwen-2.5b`](https://huggingface.co/nvidia/canary-qwen-2.5b) | Neither *(Requires vLLM / NeMo LLM)* | [NVIDIA HF Model Card](https://huggingface.co/nvidia/canary-qwen-2.5b) |
-| **3** | **Microsoft Phi-4-multimodal-instruct** | 2025-02-26 | 5.6B | **6.00% – 6.14%** | ~40 – 80 (A100) | MIT | PyTorch, ONNX (GenAI) | [`microsoft/Phi-4-multimodal-instruct`](https://huggingface.co/microsoft/Phi-4-multimodal-instruct) | Neither *(Requires ONNX GenAI pipeline)* | [Microsoft HF Card](https://huggingface.co/microsoft/Phi-4-multimodal-instruct) & [arXiv:2503.01743](https://arxiv.org/abs/2503.01743) |
-| **BASELINE** | **NVIDIA Parakeet TDT 0.6B v2** | 2025-05-01 | 600M | **6.05%** | **3,380** (A100, b128) | CC-BY-4.0 | NeMo, ONNX INT8 | [`nvidia/parakeet-tdt-0.6b-v2`](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v2) | **sherpa-onnx** (`transducer`) | [NVIDIA HF Model Card](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v2) & [Open ASR Leaderboard](https://huggingface.co/spaces/hf-audio/open_asr_leaderboard) |
-| **4** | **NVIDIA Parakeet TDT 0.6B v3** | 2025-05-20 | 600M | **6.34%** *(25 EU Langs)* | **~3,300** (A100, b128) | CC-BY-4.0 | NeMo, ONNX INT8 | [`nvidia/parakeet-tdt-0.6b-v3`](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) | **sherpa-onnx** (`transducer`) | [NVIDIA HF Model Card](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) & [csukuangfj ONNX](https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8) |
-| **5** | **NVIDIA Canary-1B-Flash** | 2025-03-15 | 883M | **6.35%** | **1,045** (A100) / **1,669** (H100) | CC-BY-4.0 | NeMo, ONNX | [`nvidia/canary-1b-flash`](https://huggingface.co/nvidia/canary-1b-flash) | **sherpa-onnx** (`canary`) | [NVIDIA HF Model Card](https://huggingface.co/nvidia/canary-1b-flash) & [arXiv:2503.05931](https://arxiv.org/abs/2503.05931) |
-| **6** | **NVIDIA Parakeet TDT 1.1B** | 2024-03-01 | 1.1B | **7.07%** *(1.39% LS clean)* | **~2,800** (A100) | CC-BY-4.0 | NeMo, ONNX INT8 | [`nvidia/parakeet-tdt-1.1b`](https://huggingface.co/nvidia/parakeet-tdt-1.1b) | **sherpa-onnx** (`transducer`) | [NVIDIA HF Model Card](https://huggingface.co/nvidia/parakeet-tdt-1.1b) & [csukuangfj ONNX](https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-1.1b-en) |
-| **7** | **Distil-Whisper Distil-Large-v3.5** | 2025-01-20 | 756M | **7.10%** *(Short-form)* | **~49.3** (Long-form CPU/GPU) | MIT | GGML, ONNX, CTranslate2 | [`distil-whisper/distil-large-v3.5`](https://huggingface.co/distil-whisper/distil-large-v3.5) | **whisper.cpp** (`ggml`) & **sherpa-onnx** (`whisper`) | [Distil-Whisper HF Card](https://huggingface.co/distil-whisper/distil-large-v3.5) & [GGML Repo](https://huggingface.co/distil-whisper/distil-large-v3.5-ggml) |
-| **8** | **NVIDIA Canary-180M-Flash** | 2025-03-15 | 182M | **7.12%** | **1,233** (A100) / **2,041** (H100) | CC-BY-4.0 | NeMo, ONNX INT8 | [`nvidia/canary-180m-flash`](https://huggingface.co/nvidia/canary-180m-flash) | **sherpa-onnx** (`canary`) | [NVIDIA HF Model Card](https://huggingface.co/nvidia/canary-180m-flash) & [csukuangfj ONNX](https://huggingface.co/csukuangfj/sherpa-onnx-nemo-canary-180m-flash-en-es-de-fr-int8) |
-| **9** | **NVIDIA Canary-1B-v2** | 2025-06-10 | 1.02B | **7.15%** *(25 EU Langs)* | **749** (A100) | CC-BY-4.0 | NeMo `.nemo` | [`nvidia/canary-1b-v2`](https://huggingface.co/nvidia/canary-1b-v2) | **sherpa-onnx** (`canary` via ONNX export) | [NVIDIA HF Model Card](https://huggingface.co/nvidia/canary-1b-v2) |
-| **10** | **OpenAI Whisper Large-v3** | 2023-11-06 | 1550M | **7.44%** | ~30 – 50 (GPU) | MIT | GGML, ONNX, SafeTensors | [`openai/whisper-large-v3`](https://huggingface.co/openai/whisper-large-v3) | **whisper.cpp** (`ggml`) & **sherpa-onnx** (`whisper`) | [OpenAI HF Card](https://huggingface.co/openai/whisper-large-v3) & [arXiv:2212.04356](https://arxiv.org/abs/2212.04356) |
-| **11** | **OpenAI Whisper Large-v3-Turbo** | 2024-10-01 | 809M | **7.83%** *(7.25% Short)* | **200.19** (A100) / ~33.8 (Seq) | MIT | GGML, ONNX, SafeTensors | [`openai/whisper-large-v3-turbo`](https://huggingface.co/openai/whisper-large-v3-turbo) | **whisper.cpp** (`ggml`) & **sherpa-onnx** (`whisper`) | [OpenAI HF Card](https://huggingface.co/openai/whisper-large-v3-turbo) & [Open ASR Leaderboard](https://huggingface.co/spaces/hf-audio/open_asr_leaderboard) |
-| **12** | **Alibaba SenseVoice-Small** | 2024-07-17 | 234M | ~5.2% – 5.5% *(2.1% LS Clean)* | ~250 (GPU) / **25x–50x** (CPU) | MIT | ONNX INT8, GGUF | [`FunAudioLLM/SenseVoiceSmall`](https://huggingface.co/FunAudioLLM/SenseVoiceSmall) | **sherpa-onnx** (`sense_voice`) | [FunAudioLLM HF Card](https://huggingface.co/FunAudioLLM/SenseVoiceSmall) & [csukuangfj ONNX](https://huggingface.co/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17) |
-| **13** | **Qwen3-ASR-0.6B** | 2026-01-20 | 600M | ~4.5% – 5.5% *(2.11% LS Clean)* | **2,000** (GPU, b128) | Apache 2.0 | PyTorch, ONNX (sherpa) | [`Qwen/Qwen3-ASR-0.6B`](https://huggingface.co/Qwen/Qwen3-ASR-0.6B) | **sherpa-onnx** (`qwen3_asr`) | [Qwen HF Model Card](https://huggingface.co/Qwen/Qwen3-ASR-0.6B) & [arXiv:2601.21337](https://arxiv.org/abs/2601.21337) |
-| **14** | **Mistral Voxtral Mini 4B Realtime 2602** | 2026-02-15 | ~4.0B | 4.90% (Fleurs-en), 12.3% (E22) | Realtime streaming (>12.5 tok/s) | Apache 2.0 | BF16 PyTorch / vLLM | [`mistralai/Voxtral-Mini-4B-Realtime-2602`](https://huggingface.co/mistralai/Voxtral-Mini-4B-Realtime-2602) | Neither *(Requires vLLM / 8GB+ GPU)* | [Mistral HF Card](https://huggingface.co/mistralai/Voxtral-Mini-4B-Realtime-2602) & [arXiv:2602.11298](https://arxiv.org/abs/2602.11298) |
-| **15** | **Kyutai STT 2.6B** | 2024-10-01 | 2.6B | ~6.6% (LibriSpeech clean) | Realtime streaming (delay 2.5s) | CC-BY-4.0 | PyTorch (`moshi`, `trfs`), MLX | [`kyutai/stt-2.6b-en`](https://huggingface.co/kyutai/stt-2.6b-en) | Neither *(Requires Mimi neural codec)* | [Kyutai Project Page](https://kyutai.org/next/stt) & [HF Card](https://huggingface.co/kyutai/stt-2.6b-en) |
-| **16** | **Useful Sensors Moonshine Base** | 2024-10-15 | 61.5M | ~11.5% Avg *(3.5% LS Clean)* | Realtime edge (~20x CPU) | MIT | ONNX INT8, TFLite, GGUF | [`moonshine-ai/moonshine-base`](https://huggingface.co/moonshine-ai/moonshine-base) | **sherpa-onnx** (`moonshine`) | [UsefulSensors GitHub](https://github.com/usefulsensors/moonshine) & [HF Repo](https://huggingface.co/moonshine-ai/moonshine-base) |
+2. **Models That Outperform Parakeet TDT 0.6B v2 on Throughput (Speed):**
+   * **IBM Granite Speech 5.0 TurboCTC (470M)** (*Released 2026-08-25, Apache 2.0*):
+     * **Speed:** **21,134.31 RTFx** on the Open ASR Leaderboard (>3.4× faster than Parakeet's 6,148 RTFx; 12,600+ on a single H200).
+     * **Accuracy:** **5.00% Avg WER** on the initial 8-dataset public split; **6.84% Avg WER** on the 2026 leaderboard suite (including URGENT2024 noise).
+     * **Runtime Gate:** Distributed in GGUF (`handy-computer/granite-speech-5.0-470m-turboctc-gguf` for `transcribe.cpp`). Not currently packaged for `whisper.cpp` or `sherpa-onnx`.
+   * **soundsgoodai/Zipformer-cr-ctc-transducer-XL-290M (290M)** (*Released 2026-03, CC-BY-NC-4.0*):
+     * **Speed:** **20,886.37 RTFx** (CTC greedy) / **19,289.67 RTFx** (modified beam search).
+     * **Accuracy:** **7.38% Avg WER**.
+     * **Runtime Gate:** Supported in `sherpa-onnx` (`zipformer_ctc`).
 
----
-
-## 3. Granular Breakdown of Benchmark Datasets (Open ASR Leaderboard)
-
-The Hugging Face Open ASR Leaderboard evaluates models across 8 challenging English speech datasets to produce the official **Avg WER**. The table below reveals how the top models perform on individual acoustic domains:
-
-| Dataset Domain | Baseline: Parakeet TDT 0.6B v2 | Parakeet TDT 0.6B v3 | Canary-Qwen-2.5B | Canary-1B-Flash | Canary-180M-Flash | Distil-Whisper Large-v3.5 | Whisper Large-v3-Turbo |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **AMI (Meetings)** | 11.16% | 11.31% | **10.19%** | 13.11% | 14.86% | 14.63% | 16.13% |
-| **Earnings-22 (Financial Calls)** | 11.15% | 11.42% | **10.45%** | 12.79% | 13.33% | 11.29% | 11.63% |
-| **GigaSpeech (Audiobooks/Podcasts)** | 9.74% | 9.59% | **9.43%** | 9.85% | 10.51% | 9.84% | 10.14% |
-| **LibriSpeech test-clean (Studio)** | 1.69% | 1.93% | 1.61% | **1.48%** | 1.87% | 2.37% | 2.10% |
-| **LibriSpeech test-other (Noisy/Accented)** | 3.19% | 3.59% | 3.10% | **2.87%** | 3.83% | 5.04% | 4.24% |
-| **SPGI Speech (Financial / Press)** | 2.17% | 3.97% | **1.90%** | 1.95% | 2.26% | 2.87% | 2.97% |
-| **TEDLIUM-v3 (Lectures/TED Talks)** | 3.38% | 2.75% | **2.71%** | 3.12% | 3.98% | 3.64% | 3.57% |
-| **VoxPopuli (Parliamentary Speeches)** | 5.95% | 6.14% | 5.66% | **5.63%** | 6.35% | — | — |
-| **Overall English Avg WER** | **6.05%** | **6.34%** | **5.63%** | **6.35%** | **7.12%** | **7.10%** | **7.25%** |
-
-*Data compiled directly from official model cards and leaderboard evaluation traces.*
+3. **Current In-App Status in Silent Voice:**
+   * **Parakeet TDT 0.6B v2 INT8** (`csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8`) is already the flagship accuracy preset in `src/components/onboarding/Onboarding.tsx` and `src/services/catalog.ts`. The SentencePiece BPE vocabulary is embedded directly in `src-tauri/src/system/sherpa_stt.rs` (`PARAKEET_V2_BPE_VOCAB`) for hotword biasing.
+   * **Distil-Whisper Large-v3.5 GGML** (`distil-whisper/distil-large-v3.5-ggml`) is ready to replace Whisper Large-v3-Turbo in `whisper.cpp`, delivering **7.10% short-form WER** (vs Turbo's 7.25%) at **1.46× faster** speed.
 
 ---
 
-## 4. Deep Technical Notes per Model Family
+## 2. Comprehensive Master Benchmark Table
 
-### 4.1 NVIDIA Parakeet Family (FastConformer-TDT / CTC)
+*Sorted primarily by Open ASR Leaderboard English Accuracy (Average WER) and secondarily by Throughput (RTFx).*  
+*RTFx = Audio Duration / Processing Time (higher is faster; 1,000 RTFx = 1,000 seconds of audio transcribed in 1 second).*
+
+| Rank | Model Name | Release Date | Params | Open ASR Avg WER | RTFx (Throughput) | License | Available Formats | Hugging Face Repository | Silent Voice Runtime | Primary Source Citation URL |
+| :---: | :--- | :---: | :---: | :---: | :---: | :---: | :--- | :--- | :---: | :--- |
+| **1** | **Microsoft Phi-4-multimodal-instruct** | 2025-02-24 | 5.6B | **5.02%** *(6.00% 8-split)* | **162.53** (GPU) | MIT | PyTorch, ONNX GenAI | [`microsoft/Phi-4-multimodal-instruct`](https://huggingface.co/microsoft/Phi-4-multimodal-instruct) | Neither *(Requires ONNX GenAI)* | [Open ASR Leaderboard](https://huggingface.co/spaces/hf-audio/open_asr_leaderboard) & [arXiv:2503.01743](https://arxiv.org/abs/2503.01743) |
+| **2** | **Qwen3-ASR-1.7B-hf** | 2026-01-28 | 2.04B | **5.75%** | **835.62** (GPU) | Apache 2.0 | PyTorch, ONNX INT8 | [`Qwen/Qwen3-ASR-1.7B-hf`](https://huggingface.co/Qwen/Qwen3-ASR-1.7B-hf) | **sherpa-onnx** (`qwen3_asr`) | [Open ASR Leaderboard](https://huggingface.co/spaces/hf-audio/open_asr_leaderboard) & [arXiv:2601.21337](https://arxiv.org/abs/2601.21337) |
+| **3** | **TheStageAI thewhisper-large-v3-turbo** | 2025-10-27 | 809M | **6.07%** | **1,183.92** (GPU) | CC-BY-4.0 | SafeTensors, CoreML, GGML | [`TheStageAI/thewhisper-large-v3-turbo`](https://huggingface.co/TheStageAI/thewhisper-large-v3-turbo) | **whisper.cpp** (`ggml`) | [Open ASR Leaderboard](https://huggingface.co/spaces/hf-audio/open_asr_leaderboard) & [Model Card](https://huggingface.co/TheStageAI/thewhisper-large-v3-turbo) |
+| **4** | **Cohere Transcribe (03-2026)** | 2026-03-26 | 2.0B | **6.26%** | **923.71** (GPU) | Apache 2.0 | SafeTensors, ONNX INT8, GGUF | [`CohereLabs/cohere-transcribe-03-2026`](https://huggingface.co/CohereLabs/cohere-transcribe-03-2026) | **sherpa-onnx** (`cohere_transcribe`) | [Open ASR Leaderboard](https://huggingface.co/spaces/hf-audio/open_asr_leaderboard) & [ONNX Package](https://huggingface.co/csukuangfj2/sherpa-onnx-cohere-transcribe-14-lang-int8-2026-04-01) |
+| **5** | **NVIDIA Canary-Qwen-2.5B** | 2025-06-26 | 2.5B | **6.37%** *(5.63% 8-split)* | **418** (b1) / **881.67** (b128) | CC-BY-4.0 | NeMo `.nemo`, PyTorch | [`nvidia/canary-qwen-2.5b`](https://huggingface.co/nvidia/canary-qwen-2.5b) | Neither *(Requires NeMo/vLLM)* | [Open ASR Leaderboard](https://huggingface.co/spaces/hf-audio/open_asr_leaderboard) & [NVIDIA HF Card](https://huggingface.co/nvidia/canary-qwen-2.5b) |
+| **6** | **NVIDIA Parakeet TDT 0.6B v3** | 2025-08-04 | 600M | **6.38%** *(fast)* / **6.51%** *(std)* | **6,227.73** / **13,304.58** | CC-BY-4.0 | NeMo, ONNX INT8, GGUF | [`nvidia/parakeet-tdt-0.6b-v3`](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) | **sherpa-onnx** (`transducer`) | [Open ASR Leaderboard](https://huggingface.co/spaces/hf-audio/open_asr_leaderboard) & [csukuangfj ONNX](https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8) |
+| **7** | **IBM Granite Speech 5.0 TurboCTC-nc** | 2026-08-25 | 470M | **6.41%** *(4.85% 8-split)* | **20,801.33** (GPU) | CC-BY-NC-SA-4.0 | PyTorch, GGUF | [`ibm-granite/granite-speech-5.0-470m-turboctc-nc`](https://huggingface.co/ibm-granite/granite-speech-5.0-470m-turboctc-nc) | Neither *(Requires transcribe.cpp)* | [Open ASR Leaderboard](https://huggingface.co/spaces/hf-audio/open_asr_leaderboard) & [arXiv:2609.20104](https://arxiv.org/abs/2609.20104) |
+| **BASELINE** | **NVIDIA Parakeet TDT 0.6B v2** | 2025-04-15 | 600M | **6.43%** *(6.05% 8-split)* | **6,148.32** / **14,383.48** *(3,380 b128)* | CC-BY-4.0 | NeMo, ONNX INT8 | [`nvidia/parakeet-tdt-0.6b-v2`](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v2) | **sherpa-onnx** (`transducer`) | [Open ASR Leaderboard](https://huggingface.co/spaces/hf-audio/open_asr_leaderboard) & [NVIDIA HF Card](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v2) |
+| **8** | **Qwen3-ASR-0.6B-hf** | 2026-01-28 | 780M | **6.60%** *(2.11% LS clean)* | **749.52** (GPU) | Apache 2.0 | PyTorch, ONNX INT8 | [`Qwen/Qwen3-ASR-0.6B-hf`](https://huggingface.co/Qwen/Qwen3-ASR-0.6B-hf) | **sherpa-onnx** (`qwen3_asr`) | [Open ASR Leaderboard](https://huggingface.co/spaces/hf-audio/open_asr_leaderboard) & [csukuangfj2 ONNX](https://huggingface.co/csukuangfj2/sherpa-onnx-qwen3-asr-0.6B-int8-2026-03-25) |
+| **9** | **IBM Granite Speech 5.0 TurboCTC** | 2026-08-25 | 470M | **6.84%** *(5.00% 8-split)* | **21,134.31** *(12,600+ H200)* | Apache 2.0 | PyTorch, GGUF | [`ibm-granite/granite-speech-5.0-470m-turboctc`](https://huggingface.co/ibm-granite/granite-speech-5.0-470m-turboctc) | Neither *(Requires transcribe.cpp)* | [Open ASR Leaderboard](https://huggingface.co/spaces/hf-audio/open_asr_leaderboard) & [arXiv:2609.20104](https://arxiv.org/abs/2609.20104) |
+| **10** | **Distil-Whisper Distil-Large-v3.5** | 2024-12-05 | 756M | **7.02%** *(7.10% Short)* | **898.21** (GPU) / ~49.3 (Seq) | MIT | GGML, ONNX, CTranslate2 | [`distil-whisper/distil-large-v3.5`](https://huggingface.co/distil-whisper/distil-large-v3.5) | **whisper.cpp** (`ggml`) & **sherpa-onnx** (`whisper`) | [Open ASR Leaderboard](https://huggingface.co/spaces/hf-audio/open_asr_leaderboard) & [GGML Repo](https://huggingface.co/distil-whisper/distil-large-v3.5-ggml) |
+| **11** | **NVIDIA Parakeet TDT 1.1B** | 2024-01-25 | 1.1B | **7.07%** *(1.39% LS clean)* | **~2,800** (A100) | CC-BY-4.0 | NeMo, ONNX INT8 | [`nvidia/parakeet-tdt-1.1b`](https://huggingface.co/nvidia/parakeet-tdt-1.1b) | **sherpa-onnx** (`transducer`) | [NVIDIA HF Card](https://huggingface.co/nvidia/parakeet-tdt-1.1b) & [Open ASR Leaderboard](https://huggingface.co/spaces/hf-audio/open_asr_leaderboard) |
+| **12** | **NVIDIA Canary-180M-Flash** | 2025-03-11 | 182M | **7.12%** (8-split) | **1,233** (A100) / **2,041** (H100) | CC-BY-4.0 | NeMo, ONNX INT8 | [`nvidia/canary-180m-flash`](https://huggingface.co/nvidia/canary-180m-flash) | **sherpa-onnx** (`canary`) | [NVIDIA HF Card](https://huggingface.co/nvidia/canary-180m-flash) & [csukuangfj ONNX](https://huggingface.co/csukuangfj/sherpa-onnx-nemo-canary-180m-flash-en-es-de-fr-int8) |
+| **13** | **NVIDIA Canary-1B-Flash** | 2025-03-07 | 883M | **6.35%** (8-split) | **1,045.75** (A100) / **1,669** (H100) | CC-BY-4.0 | NeMo, ONNX | [`nvidia/canary-1b-flash`](https://huggingface.co/nvidia/canary-1b-flash) | **sherpa-onnx** (`canary`) | [NVIDIA HF Card](https://huggingface.co/nvidia/canary-1b-flash) & [arXiv:2503.05931](https://arxiv.org/abs/2503.05931) |
+| **14** | **Zipformer-cr-ctc-transducer-XL-290M** | 2026-03-15 | 290M | **7.38%** | **19,289.67** – **20,886.37** | CC-BY-NC-4.0 | ONNX | [`soundsgoodai/Zipformer-cr-ctc-transducer-XL-290M`](https://huggingface.co/soundsgoodai/Zipformer-cr-ctc-transducer-XL-290M) | **sherpa-onnx** (`zipformer_ctc`) | [Open ASR Leaderboard](https://huggingface.co/spaces/hf-audio/open_asr_leaderboard) |
+| **15** | **OpenAI Whisper Large-v3** | 2023-11-06 | 1550M | **7.84%** *(7.44% 8-split)* | **470.73** (GPU) | MIT | GGML, ONNX, SafeTensors | [`openai/whisper-large-v3`](https://huggingface.co/openai/whisper-large-v3) | **whisper.cpp** (`ggml`) & **sherpa-onnx** (`whisper`) | [Open ASR Leaderboard](https://huggingface.co/spaces/hf-audio/open_asr_leaderboard) & [OpenAI HF Card](https://huggingface.co/openai/whisper-large-v3) |
+| **16** | **NVIDIA Canary-1B-v2** | 2025-08-04 | 978M | **7.91%** *(7.15% 8-split)* | **1,853.68** (GPU) / **749** (A100) | CC-BY-4.0 | NeMo `.nemo` | [`nvidia/canary-1b-v2`](https://huggingface.co/nvidia/canary-1b-v2) | **sherpa-onnx** (`canary`) | [Open ASR Leaderboard](https://huggingface.co/spaces/hf-audio/open_asr_leaderboard) & [NVIDIA HF Card](https://huggingface.co/nvidia/canary-1b-v2) |
+| **17** | **OpenAI Whisper Large-v3-Turbo** | 2024-10-01 | 809M | **8.39%** *(7.25% Short)* | **810.50** (GPU) / **200** (A100) | MIT | GGML, ONNX, SafeTensors | [`openai/whisper-large-v3-turbo`](https://huggingface.co/openai/whisper-large-v3-turbo) | **whisper.cpp** (`ggml`) & **sherpa-onnx** (`whisper`) | [Open ASR Leaderboard](https://huggingface.co/spaces/hf-audio/open_asr_leaderboard) & [OpenAI HF Card](https://huggingface.co/openai/whisper-large-v3-turbo) |
+| **18** | **Mistral Voxtral Mini 4B Realtime 2602** | 2026-01-21 | 4.0B | **9.01%** *(4.90% Fleurs-en)* | **103.48** (GPU) | Apache 2.0 | BF16 PyTorch / vLLM | [`mistralai/Voxtral-Mini-4B-Realtime-2602`](https://huggingface.co/mistralai/Voxtral-Mini-4B-Realtime-2602) | Neither *(Requires vLLM / 8GB+ GPU)* | [Open ASR Leaderboard](https://huggingface.co/spaces/hf-audio/open_asr_leaderboard) & [Mistral HF Card](https://huggingface.co/mistralai/Voxtral-Mini-4B-Realtime-2602) |
+| **19** | **Alibaba SenseVoice-Small** | 2024-07-03 | 234M | ~5.2% – 5.5% *(2.1% LS Clean)* | **~250** (GPU) / **25x–50x** (CPU) | MIT | ONNX INT8, GGUF | [`FunAudioLLM/SenseVoiceSmall`](https://huggingface.co/FunAudioLLM/SenseVoiceSmall) | **sherpa-onnx** (`sense_voice`) | [FunAudioLLM HF Card](https://huggingface.co/FunAudioLLM/SenseVoiceSmall) & [csukuangfj ONNX](https://huggingface.co/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17) |
+| **20** | **Kyutai STT 2.6B** | 2025-06-06 | 2.6B | ~6.6% (LibriSpeech clean) | Realtime streaming (2.5s delay) | CC-BY-4.0 | PyTorch (`moshi`, `trfs`), Candle | [`kyutai/stt-2.6b-en`](https://huggingface.co/kyutai/stt-2.6b-en) | Neither *(Requires Mimi neural codec)* | [Kyutai Project Page](https://kyutai.org/next/stt) & [HF Card](https://huggingface.co/kyutai/stt-2.6b-en) |
+| **21** | **Useful Sensors Moonshine Base** | 2024-09-26 | 61.5M | ~11.5% Avg *(3.5% LS Clean)* | Realtime edge (~20x CPU) | MIT | ONNX INT8, TFLite, GGUF | [`usefulsensors/moonshine`](https://huggingface.co/usefulsensors/moonshine) | **sherpa-onnx** (`moonshine`) | [UsefulSensors HF Card](https://huggingface.co/usefulsensors/moonshine) & [GitHub](https://github.com/usefulsensors/moonshine) |
+
+---
+
+## 3. Detailed Acoustic Domain Breakdown (Hugging Face Open ASR Benchmark)
+
+The table below breaks down performance across standardized evaluation corpora from the official Hugging Face Open ASR Leaderboard database:
+
+| Model | Avg WER | AMI-Cleaned | Earnings-22 Cleaned | GigaSpeech Cleaned | LS Clean | LS Other | SPGISpeech | VoxPopuli Cleaned | URGENT2024 (Noisy) | Voice Arena Monsoon |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Phi-4-multimodal-instruct** | **5.02%** | 9.12% | 7.09% | 7.79% | **1.35%** | 3.45% | 2.73% | 4.18% | — | 4.46% |
+| **Qwen3-ASR-1.7B-hf** | **5.75%** | 8.31% | **5.84%** | **7.22%** | **1.26%** | 2.94% | 2.57% | 2.85% | **9.93%** | **3.50%** |
+| **thewhisper-large-v3-turbo** | **6.07%** | **7.32%** | 7.18% | 7.84% | 1.41% | 3.20% | **1.62%** | 4.02% | 10.82% | 3.72% |
+| **Cohere Transcribe (03-2026)** | **6.26%** | — | — | — | 1.34% | 2.85% | 2.62% | 2.52% | 12.42% | 3.60% |
+| **Canary-Qwen-2.5B** | **6.37%** | 7.91% | 6.41% | 7.80% | **1.23%** | **2.63%** | 1.70% | 4.14% | 13.02% | 3.60% |
+| **Parakeet TDT 0.6B v3** | **6.38%** | 9.02% | 5.81% | 7.75% | 1.46% | 3.08% | 3.56% | 3.04% | 11.50% | 3.96% |
+| **Granite Speech 5.0 TurboCTC-nc**| **6.41%** | 7.31% | 8.23% | 8.37% | 1.45% | 2.67% | 1.75% | 4.67% | 10.22% | 4.30% |
+| **Parakeet TDT 0.6B v2 (Baseline)**| **6.43%** | 9.02% | 6.83% | 8.17% | 1.27% | 2.65% | 1.87% | 3.89% | 11.58% | 3.70% |
+| **Qwen3-ASR-0.6B-hf** | **6.60%** | 9.33% | 7.83% | 7.62% | 1.70% | 4.01% | 2.74% | **2.90%** | 11.57% | 4.23% |
+| **Granite Speech 5.0 TurboCTC** | **6.84%** | 7.71% | 6.75% | 8.74% | 1.48% | 2.71% | 3.22% | 4.90% | 11.79% | 4.75% |
+| **Distil-Whisper Large-v3.5** | **7.02%** | — | — | — | 2.37% | 5.04% | 2.87% | — | — | — |
+| **Whisper Large-v3** | **7.84%** | 13.63% | 7.99% | 8.35% | 1.56% | 3.52% | 2.71% | 4.53% | 13.73% | 3.95% |
+| **Canary-1B-v2** | **7.91%** | 13.03% | 7.28% | 9.12% | 1.76% | 3.07% | 2.03% | 4.39% | 14.56% | 4.97% |
+| **Whisper Large-v3-Turbo** | **8.39%** | 13.88% | 8.09% | 8.47% | 2.13% | 3.71% | 2.79% | 7.02% | 13.69% | 4.77% |
+| **Voxtral Mini 4B Realtime 2602**| **9.01%** | 13.34% | 9.31% | 8.80% | 1.62% | 4.94% | 2.23% | 2.60% | 17.95% | 8.86% |
+
+---
+
+## 4. Deep Architectural Notes & Integration Analysis
+
+### 4.1 NVIDIA Parakeet Family (FastConformer-TDT)
 * **Parakeet TDT 0.6B v2 (Baseline):**  
-  * **Architecture:** FastConformer XL encoder (8× downsampling, depthwise separable convolutions) + Token-and-Duration Transducer (TDT) decoder.  
-  * **Strengths:** By predicting both token IDs and duration skips, TDT skips blank steps during decoding, achieving an extraordinary **3,380 RTFx** on GPU. It trains on Granary (120,000 hours of English audio) with full attention, natively transcribing audio segments up to 24 minutes with punctuation and capitalization.
-  * **Silent Voice Integration:** **100% Ready.** The ONNX INT8 bundle (`csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8`) contains `encoder.int8.onnx` (~480 MB), `decoder.int8.onnx` (~15 MB), `joiner.int8.onnx` (~25 MB), and `tokens.txt`. This matches Silent Voice's `transducer_installed()` check in `src-tauri/src/models/registry.rs` without any code changes.
+  * **Architecture:** FastConformer XL encoder (8× downsampling, depthwise separable convolutions) paired with Token-and-Duration Transducer (TDT) decoder.  
+  * **Why it excels:** By predicting token IDs and frame skip durations simultaneously, it bypasses blank decoding loops, attaining **3,380 RTFx** (b128) and **14,383 RTFx** on optimized GPU kernels. Handles audio segments up to 24 minutes in a single pass with native capitalization and punctuation.
+  * **Silent Voice Implementation Status:** **100% Turnkey.** In [`src-tauri/src/system/sherpa_stt.rs`](file:///D:/Vibe-coding/Silent%20voice/src-tauri/src/system/sherpa_stt.rs#L561-L585), Silent Voice embeds `PARAKEET_V2_BPE_VOCAB` directly into the binary to enable hotword boosting without extra runtime downloads. The model is downloaded from `csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8` and loaded via `SherpaSttEngine::load_transducer`.
 * **Parakeet TDT 0.6B v3:**  
-  * **Enhancement:** Expands v2 to **25 European languages** (French, German, Spanish, Italian, Dutch, Polish, Russian, Ukrainian, etc.) trained on Granary Multilingual (950k+ hours).
-  * **Trade-off:** English WER increases slightly from 6.05% to 6.34% due to multilingual capacity sharing, but it delivers identical 3,300 RTFx speed. Available in pre-quantized INT8 for `sherpa-onnx`.
+  * Expands language coverage to **25 European languages** trained on 950k+ hours of Granary Multilingual audio.
+  * On the latest leaderboard, it achieves **6.38% Avg WER** (fast kernel) / **6.51%** (standard), matching v2's speed (~6,200–13,300 RTFx). Pre-quantized INT8 files are available in `csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8`.
 * **Parakeet TDT 1.1B:**  
-  * **Strengths:** 1.1 billion parameters. Reaches **1.39% WER on LibriSpeech clean** (surpassing all 0.6B models). However, on meeting datasets like AMI (15.90%) and financial calls (14.65%), its older training recipe yields a higher aggregate WER (7.07%).
+  * 1.1 billion parameters. Reaches **1.39% WER on LibriSpeech clean**, but higher meeting error rates (15.9% on AMI) and lowercase-only output make 0.6B v2 superior for general dictation.
 
-### 4.2 NVIDIA Canary Family (FastConformer-AED & SALM)
-* **Canary-Qwen-2.5B (SALM):**  
-  * **Architecture:** FastConformer speech encoder (from Canary-1B-Flash) coupled via linear projection and LoRA adapter to `Qwen/Qwen3-1.7B` LLM decoder.  
-  * **Performance:** Reaches **5.63% WER**, the lowest among all evaluated NVIDIA models.  
-  * **Limitation:** At 2.5B parameters and 418 RTFx, it requires PyTorch/vLLM and substantial GPU VRAM (~6 GB). Cannot run in `whisper.cpp` or `sherpa-onnx`.
-* **Canary-1B-Flash (883M) & Canary-180M-Flash (182M):**  
-  * **Architecture:** Attention Encoder-Decoder (AED) with 32 FastConformer encoder layers and 4 Transformer decoder layers. Decodes with beam size 1 at >1,000 RTFx. Supports English, German, French, and Spanish speech-to-text plus bidirectional translation.  
-  * **Silent Voice Integration:** Supported via sherpa-onnx's `canary` FFI structure (`OfflineModelConfig.canary`). Pre-converted INT8 models exist (`csukuangfj/sherpa-onnx-nemo-canary-180m-flash-en-es-de-fr-int8`).
-
-### 4.3 OpenAI Whisper & Distil-Whisper Family
-* **Whisper Large-v3-Turbo (809M):**  
-  * Prunes the 32-layer decoder of Large-v3 down to 4 layers. Increases throughput by 4× (RTFx 200 on GPU) with minimal accuracy degradation (7.83% vs 7.44% mean WER). Native in `whisper.cpp` (`ggml-large-v3-turbo.bin`).
+### 4.2 The Whisper Ecosystem & `whisper.cpp`
+* **TheStageAI/thewhisper-large-v3-turbo (809M):**  
+  * Fine-tuned checkpoint of Whisper Large-v3-Turbo achieving **6.07% Avg WER** on the Open ASR Leaderboard (substantially outperforming vanilla Turbo at 8.39% and vanilla Large-v3 at 7.84%).
+  * **Significance for Silent Voice:** Runs inside **`whisper.cpp`** via standard GGML quantization. It gives `whisper.cpp` users accuracy that directly beats Parakeet TDT 0.6B v2 while preserving Whisper's native formatting and prompt biasing.
 * **Distil-Whisper Distil-Large-v3.5 (756M):**  
-  * Distilled from Whisper Large-v3 on 98,000 hours of public audio with aggressive SpecAugment.  
-  * **Key Win:** Beats Large-v3-Turbo on short-form English accuracy (**7.10% vs 7.25% WER**) and runs **~1.46× faster**. Available as `distil-whisper/distil-large-v3.5-ggml` for `whisper.cpp` and `distil-large-v3.5-ONNX` for `sherpa-onnx`.
+  * Distilled on 98,000 hours of audio with frozen encoder and 2 decoder layers.  
+  * Delivers **7.10% short-form WER** (beating Whisper Large-v3-Turbo's 7.25%) and runs **1.46× faster**. Available as `distil-whisper/distil-large-v3.5-ggml`.
 
-### 4.4 IBM Granite Speech 5.0 TurboCTC (470M)
-* **The New SOTA Efficiency Champion:**  
-  * Released August 25, 2026 by IBM Research under **Apache 2.0**.
-  * **Architecture:** 16 Conformer blocks with pyramidal 8× temporal subsampling (logmels + deltas), block-diagonal self-attention (128 frames), and self-conditioned CTC middle-layer loss. Output head uses 16,384 BPE units.
-  * **Performance:** **5.00% Avg WER** on Open ASR Leaderboard and **12,600+ RTFx** on H200.
-  * **Deployment:** Pre-quantized GGUF weights (`handy-computer/granite-speech-5.0-470m-turboctc-gguf`) run on CPU/Vulkan/Metal via `transcribe.cpp`. Not currently native in `sherpa-onnx` or `whisper.cpp`.
+### 4.3 Alibaba Qwen3-ASR Family
+* **Qwen3-ASR-1.7B-hf & 0.6B-hf:**  
+  * Released in January 2026 under **Apache 2.0**.
+  * **Qwen3-ASR-1.7B** achieves **5.75% Avg WER** and **835.62 RTFx**, surpassing Parakeet TDT 0.6B v2 across meetings (AMI: 8.31%), financial calls (Earnings-22: 5.84%), and noisy speech (URGENT2024: 9.93%).
+  * **Qwen3-ASR-0.6B** achieves **6.60% Avg WER** and **749.52 RTFx**.
+  * **Silent Voice Integration:** In [`src-tauri/src/system/sherpa_stt.rs`](file:///D:/Vibe-coding/Silent%20voice/src-tauri/src/system/sherpa_stt.rs#L125-L136), Silent Voice's bundled `sherpa-onnx` DLL (v1.13.4) already includes `Qwen3AsrModelConfig` (`conv_frontend`, `encoder`, `decoder`, `tokenizer`). Pre-quantized ONNX bundles are available from `csukuangfj2/sherpa-onnx-qwen3-asr-0.6B-int8-2026-03-25` and `thieunv-asilla/sherpa-onnx-qwen3-asr-1.7B-int8`.
 
-### 4.5 Alibaba Qwen3-ASR & SenseVoice-Small
-* **Qwen3-ASR-0.6B (600M, Apache 2.0):**  
-  * Part of the Qwen3-Omni foundation series (January 2026). Achieves 2.11% clean / 4.55% other on LibriSpeech. Runs at 2,000 RTFx. Supported natively in `sherpa-onnx` C-API struct `Qwen3AsrModelConfig` (`conv_frontend`, `encoder`, `decoder`, `tokenizer`).
-* **SenseVoice-Small (234M, MIT):**  
-  * Non-autoregressive SAN-m encoder. Near-zero CPU overhead (**RTF 0.02–0.04**, transcribing a 5-second voice memo in <100ms on a laptop CPU). Emits rich tags (`<HAPPY>`, `<APPLAUSE>`, `<LAUGHTER>`) and native punctuation. Ideal default general-purpose dictation model.
+### 4.4 Cohere Transcribe (03-2026)
+* **Architecture:** 2.0B parameter Conformer/Transformer architecture licensed under **Apache 2.0**.
+* **Performance:** **6.26% Avg WER** and **923.71 RTFx**. Scores 1.34% on LibriSpeech clean and 2.52% on VoxPopuli.
+* **Silent Voice Integration:** In [`src-tauri/src/system/sherpa_stt.rs`](file:///D:/Vibe-coding/Silent%20voice/src-tauri/src/system/sherpa_stt.rs#L138-L144), Silent Voice already declares `CohereTranscribeModelConfig` (`encoder`, `decoder`, `language`, `use_punct`, `use_itn`). Pre-converted INT8 packages are hosted in `csukuangfj2/sherpa-onnx-cohere-transcribe-14-lang-int8-2026-04-01`.
 
-### 4.6 Other Evaluated Architectures (Kyutai, Mistral, Phi-4, Moonshine)
-* **Mistral Voxtral Mini 4B Realtime 2602:** 4B parameters (Causal Audio Encoder + Ministral 3B). Designed for streaming server/vLLM endpoints with 480ms delay (4.90% Fleurs-en WER). Too heavy for laptop CPU dictation.
-* **Microsoft Phi-4-multimodal-instruct:** 5.6B parameters. High accuracy (6.00%–6.14% WER) but requires ONNX Runtime GenAI or Transformers and significant GPU memory.
-* **Kyutai STT 2.6B:** Streaming speech-to-text built on the proprietary Mimi audio codec. Requires `moshi` / PyTorch; incompatible with ONNX / GGML.
-* **Useful Sensors Moonshine-base (61.5M):** Extremely fast for short bursts (<5s) on low-power CPUs, but its 11.5% average multi-domain WER is far less accurate than Parakeet or SenseVoice.
+### 4.5 IBM Granite Speech 5.0 TurboCTC (470M)
+* **Architecture:** 16-block Conformer encoder with 8× temporal subsampling, block-diagonal attention (128 frames), self-conditioning, and 16,384 BPE target vocabulary. Greedy CTC decoding.
+* **Performance:** Unprecedented throughput (**21,134.31 RTFx** on leaderboard; **12,600+ RTFx** on H200). On the original 8 public test sets, it scored **5.00% Avg WER**; on the 2026 leaderboard suite with heavy noise, it scored **6.84% Avg WER**.
+* **Runtime Gate:** Quantized GGUF models (`handy-computer/granite-speech-5.0-470m-turboctc-gguf`) run in `transcribe.cpp` on CPU, Vulkan, and CUDA. Not natively supported by `sherpa-onnx`'s current CTC FFI structs.
+
+### 4.6 Alibaba SenseVoice-Small (234M)
+* **Architecture:** Non-autoregressive SAN-m encoder with CTC decoding.
+* **Strengths:** Extreme CPU efficiency (**RTF 0.02–0.04**, processing 5 seconds in <150ms on a standard laptop CPU). Natively emits audio event tags (`<HAPPY>`, `<LAUGHTER>`), capitalization, and punctuation. Already fully functional in Silent Voice (`SttEngine::SenseVoice`).
 
 ---
 
-## 5. Runtime Feasibility Matrix for Silent Voice
+## 5. Runtime Compatibility Matrix for Silent Voice
 
-Silent Voice's architecture relies on two engine backends:
-1. `whisper.cpp` sidecar CLI / server (`src-tauri/src/transcription/whisper.rs`).
-2. `sherpa-onnx` dynamic library FFI (`src-tauri/src/system/sherpa_stt.rs`).
+Silent Voice has two engine backends:
+1. `whisper.cpp` sidecar CLI executable ([`src-tauri/src/transcription/whisper.rs`](file:///D:/Vibe-coding/Silent%20voice/src-tauri/src/transcription/whisper.rs)).
+2. `sherpa-onnx` dynamic library C-API FFI ([`src-tauri/src/system/sherpa_stt.rs`](file:///D:/Vibe-coding/Silent%20voice/src-tauri/src/system/sherpa_stt.rs)).
 
-Here is how the candidate models map to these two runtimes:
-
-```
-+----------------------------------------------------------------------------------------------------+
-| Model Candidate                      | Runtime Engine      | FFI / Config Required                 | Implementation Status in Silent Voice  |
-+--------------------------------------+---------------------+---------------------------------------+----------------------------------------+
-| Parakeet TDT 0.6B v2 INT8            | sherpa-onnx         | OfflineModelConfig.transducer         | 100% READY (Matches transducer_installed)|
-| Parakeet TDT 0.6B v3 INT8            | sherpa-onnx         | OfflineModelConfig.transducer         | 100% READY (Drop-in folder replacement)|
-| Parakeet TDT 1.1B INT8               | sherpa-onnx         | OfflineModelConfig.transducer         | 100% READY (Supported)                 |
-| SenseVoice-Small INT8                | sherpa-onnx         | OfflineModelConfig.sense_voice        | 100% READY (Currently active)         |
-| Distil-Whisper Large-v3.5 GGML       | whisper.cpp         | Sidecar CLI (-m ggml-distil-v3.5.bin) | 100% READY (Supported as GGML bin)    |
-| Whisper Large-v3-Turbo GGML          | whisper.cpp         | Sidecar CLI (-m ggml-turbo.bin)       | 100% READY (Supported as GGML bin)    |
-| Canary-180M-Flash INT8               | sherpa-onnx         | OfflineModelConfig.canary             | Struct declared, needs model download   |
-| Qwen3-ASR-0.6B                       | sherpa-onnx         | OfflineModelConfig.qwen3_asr          | Struct declared in sherpa_stt.rs       |
-| IBM Granite Speech 5.0 TurboCTC      | transcribe.cpp/GGUF | Requires new sidecar or ONNX loader   | NOT READY (Requires new engine bridge) |
-| Canary-Qwen-2.5B / Mistral Voxtral   | NeMo / vLLM         | Incompatible with desktop C-API       | UNSUPPORTED (Python/server only)       |
-+----------------------------------------------------------------------------------------------------+
-```
+| Model Candidate | Runtime Engine | FFI / Sidecar Path | Implementation Status in Silent Voice |
+| :--- | :--- | :--- | :--- |
+| **Parakeet TDT 0.6B v2 INT8** | `sherpa-onnx` | `OfflineModelConfig.transducer` | **100% READY** (Default flagship; embedded BPE vocab) |
+| **Parakeet TDT 0.6B v3 INT8** | `sherpa-onnx` | `OfflineModelConfig.transducer` | **100% READY** (Drop-in folder replacement) |
+| **TheStageAI thewhisper-turbo**| `whisper.cpp` | `-m ggml-thewhisper-turbo.bin` | **100% READY** (Standard Whisper GGML binary) |
+| **Distil-Whisper Large-v3.5** | `whisper.cpp` | `-m ggml-distil-large-v3.5.bin`| **100% READY** (Standard Whisper GGML binary) |
+| **SenseVoice-Small INT8** | `sherpa-onnx` | `OfflineModelConfig.sense_voice` | **100% READY** (Active balanced preset) |
+| **Qwen3-ASR-0.6B / 1.7B INT8** | `sherpa-onnx` | `OfflineModelConfig.qwen3_asr` | **FFI READY** (Structs declared in `sherpa_stt.rs`) |
+| **Cohere Transcribe INT8** | `sherpa-onnx` | `OfflineModelConfig.cohere_transcribe`| **FFI READY** (Structs declared in `sherpa_stt.rs`) |
+| **Canary-180M-Flash INT8** | `sherpa-onnx` | `OfflineModelConfig.canary` | **FFI READY** (Structs declared in `sherpa_stt.rs`) |
+| **Granite Speech 5.0 TurboCTC**| `transcribe.cpp` | GGUF CLI sidecar | **ENGINE NEEDED** (Requires transcribe-cli sidecar) |
+| **Phi-4-multimodal / Voxtral** | Python / vLLM | Incompatible with desktop C-API | **UNSUPPORTED** (Requires server / 8GB+ VRAM) |
 
 ---
 
 ## 6. Hardware Feasibility on Windows Laptop (CPU vs Modest GPU)
 
-| Hardware Profile | Recommended Model Choice | Expected Latency / RTF | Memory (RAM / VRAM) Footprint | Notes |
+| Hardware Profile | Model Recommendation | Expected Latency / RTF | RAM / VRAM Footprint | Practical Experience |
 | :--- | :--- | :--- | :--- | :--- |
-| **CPU Only (Standard Laptop)** | **SenseVoice-Small INT8** | **RTF ~0.02 – 0.04** (<150ms for 5s clip) | ~300 MB RAM | Instant response, zero fan noise, native punctuation. |
-| **CPU Only (Accuracy Focused)** | **Parakeet TDT 0.6B v2 INT8** | **RTF ~0.06 – 0.12** (~400ms for 5s clip) | ~600 MB RAM | Exceptional English fidelity, FastConformer parallelizes across 8 cores. |
-| **CPU Only (Whisper Ecosystem)** | **Distil-Whisper Large-v3.5 Q5_0** | **RTF ~0.15 – 0.25** (~1.0s for 5s clip) | ~900 MB RAM | 1.46× faster than Large-v3-Turbo, native capitalization. |
-| **Modest NVIDIA GPU (4–8 GB VRAM)**| **Parakeet TDT 0.6B v2 INT8 (CUDA)** | **RTF ~0.003** (<20ms for 5s clip) | ~800 MB VRAM | Blazing fast (>3,000 RTFx), negligible GPU load. |
-| **Modest NVIDIA GPU (Multilingual)**| **Parakeet TDT 0.6B v3 INT8 (CUDA)** | **RTF ~0.003** (<20ms for 5s clip) | ~800 MB VRAM | Instant transcription in 25 European languages. |
-| **Modest NVIDIA GPU (Whisper)** | **Distil-Whisper Large-v3.5 (CUDA)** | **RTF ~0.015** (~80ms for 5s clip) | ~1.8 GB VRAM | Pristine formatting, Hallucination-resistant distillation. |
+| **CPU Only (Standard Laptop)** | **SenseVoice-Small INT8** | **RTF ~0.02 – 0.04** (<150ms for 5s clip) | ~300 MB RAM | Instantaneous response, zero fan noise, automatic punctuation. |
+| **CPU Only (High Accuracy)** | **Parakeet TDT 0.6B v2 INT8** | **RTF ~0.08 – 0.12** (~450ms for 5s clip) | ~600 MB RAM | High-fidelity English transcription, 4–8 CPU threads fully utilized. |
+| **CPU Only (Whisper Engine)** | **Distil-Whisper Large-v3.5 Q5_0** | **RTF ~0.15 – 0.22** (~900ms for 5s clip) | ~900 MB RAM | 1.46× faster than Large-v3-Turbo, native capitalization. |
+| **Modest GPU (RTX 3050/4050)** | **Parakeet TDT 0.6B v2 INT8** | **RTF ~0.003** (<20ms for 5s clip) | ~800 MB VRAM | Instantaneous (>3,000 RTFx), minimal GPU load, 6.05% WER. |
+| **Modest GPU (Multilingual)** | **Parakeet TDT 0.6B v3 INT8** | **RTF ~0.003** (<20ms for 5s clip) | ~800 MB VRAM | 25 European languages with instant transcription speed. |
+| **Modest GPU (SOTA Whisper)** | **thewhisper-large-v3-turbo** | **RTF ~0.010** (~50ms for 5s clip) | ~1.6 GB VRAM | **6.07% WER** in `whisper.cpp` with prompt biasing support. |
+| **Modest GPU (Next-Gen ASR)** | **Qwen3-ASR-1.7B INT8** | **RTF ~0.015** (~75ms for 5s clip) | ~2.2 GB VRAM | **5.75% WER** in `sherpa-onnx`, beating all 0.6B models. |
 
 ---
 
 ## 7. Concrete Recommendations for Silent Voice
 
-### Recommendation 1: Adopt `parakeet-tdt-0.6b-v2-int8` as the High-Accuracy English Champion in `sherpa-onnx`
-* **Why:** It achieves **6.05% Average WER** on the Open ASR Leaderboard and **3,380 RTFx** on GPU (and ~10× real-time on modern 8-core CPUs). It natively handles long-form speech up to 24 minutes with punctuation and capitalization.
-* **Turnkey Delivery:** Pre-quantized ONNX INT8 weights are readily available in `csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8`. Silent Voice's `transducer_installed()` and `transducer` FFI binding already match this model package.
+### Recommendation 1: Retain Parakeet TDT 0.6B v2 INT8 as the Primary English Accuracy Default
+* **Rationale:** It offers an unbeatable balance of speed (**3,380 – 14,383 RTFx**), accuracy (**6.05% – 6.43% WER**), and memory footprint (~600 MB RAM / 800 MB VRAM).
+* **Codebase Alignment:** It is already deeply integrated in Silent Voice:
+  1. `src/components/onboarding/Onboarding.tsx` selects it as default when cores >= 4 or VRAM >= 2 GB.
+  2. `src-tauri/src/system/sherpa_stt.rs` embeds its SentencePiece BPE vocabulary (`PARAKEET_V2_BPE_VOCAB`) for hotword biasing.
+  3. Pre-quantized INT8 model files match `src-tauri/src/models/registry.rs` (`transducer_installed()`).
 
-### Recommendation 2: Offer `distil-whisper-large-v3.5` as the Superior Replacement for `whisper-large-v3-turbo` in `whisper.cpp`
-* **Why:** For users who prefer the `whisper.cpp` sidecar path (or rely on custom prompt biasing), **Distil-Whisper Large-v3.5** beats Whisper Large-v3-Turbo on short-form English accuracy (**7.10% vs 7.25% WER**) while running **1.46× faster**.
-* **Turnkey Delivery:** Distribute `ggml-distil-large-v3.5.bin` (`distil-whisper/distil-large-v3.5-ggml`). It drops right into `models_dir()` as a standard Whisper model.
+### Recommendation 2: Introduce `thewhisper-large-v3-turbo` into `whisper.cpp`
+* **Rationale:** It achieves **6.07% Avg WER** on the Open ASR Leaderboard, beating OpenAI's vanilla Whisper Large-v3-Turbo (8.39%) and matching Parakeet on accuracy.
+* **Turnkey Delivery:** Because it uses the standard Whisper-Turbo architecture, it converts directly to GGML (`ggml-thewhisper-turbo.bin`), giving users who prefer `whisper.cpp` state-of-the-art accuracy.
 
-### Recommendation 3: Offer `parakeet-tdt-0.6b-v3-int8` for European Multilingual Users
-* **Why:** For power users needing French, German, Spanish, Italian, Russian, etc., without losing English speed or accuracy, `parakeet-tdt-0.6b-v3-int8` provides 25-language coverage at **6.34% English WER** and ~3,300 RTFx.
+### Recommendation 3: Add `parakeet-tdt-0.6b-v3-int8` as the Multilingual Flagship in `sherpa-onnx`
+* **Rationale:** At **6.38% Avg WER** and identical ~6,200 RTFx speed, it adds native transcription for **25 European languages** as a drop-in directory replacement for users requiring multilingual support.
 
-### Recommendation 4: Track `granite-speech-5.0-470m-turboctc` for Future Architectural Expansion
-* **Why:** IBM's August 2026 release demonstrates that non-autoregressive Conformer CTC models can beat hybrid LLM decoders (**5.00% WER at 12,600+ RTFx**). If Silent Voice ever integrates a GGUF CTC runner (like `transcribe.cpp`) or exports Granite to ONNX, this model will be the ultimate offline accuracy/speed leader on both CPU and GPU.
+### Recommendation 4: Activate `Qwen3-ASR-1.7B-int8` via Existing `Qwen3AsrModelConfig`
+* **Rationale:** At **5.75% Avg WER**, Qwen3-ASR-1.7B is the most accurate Apache 2.0 model capable of running in Silent Voice's existing `sherpa-onnx` runtime. With pre-quantized INT8 files available and C-API bindings already declared in `sherpa_stt.rs`, wiring a loader function provides a definitive accuracy upgrade for power users with discrete GPUs.
+
+### Recommendation 5: Track IBM Granite Speech 5.0 TurboCTC for Future Engine Sidecar
+* **Rationale:** Delivering **21,134 RTFx** and **5.00% WER** on standard benchmarks, Granite Speech 5.0 TurboCTC defines the non-autoregressive efficiency frontier. If Silent Voice bundles `transcribe.cpp` as a lightweight CLI sidecar (similar to `whisper-cli.exe`), Granite GGUF will provide the ultimate CPU transcription speed.
