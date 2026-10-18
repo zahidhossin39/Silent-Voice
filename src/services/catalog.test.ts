@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { STT_MODELS, LLM_MODELS, isSherpaEngine } from "./catalog";
+import { STT_MODELS, LLM_MODELS, isSherpaEngine, localLanguages, sttLanguage } from "./catalog";
 
 describe("STT_MODELS", () => {
   // Every other test here loops over the catalogue, so they would all pass
@@ -63,6 +63,19 @@ describe("LLM_MODELS", () => {
   it("only uses https download urls", () => {
     for (const model of LLM_MODELS) {
       expect(model.url.startsWith("https://"), `Model ${model.id} URL`).toBe(true);
+    }
+  });
+});
+
+describe("localLanguages", () => {
+  it("finds the language from the locale or, on an English Windows, the time zone", () => {
+    expect([...localLanguages(["bn-BD"], "UTC")]).toEqual(["Bengali"]);
+    expect([...localLanguages(["en-US"], "Asia/Dhaka")]).toEqual(["Bengali"]);
+    expect([...localLanguages(["en-US"], "America/New_York")]).toEqual([]);
+  });
+  it("names only languages that have their own models", () => {
+    for (const l of new Set([...localLanguages(["bn", "ar", "zh", "ja", "ko", "vi", "he", "nb"])])) {
+      expect(STT_MODELS.some((m) => sttLanguage(m) === l), l).toBe(true);
     }
   });
 });

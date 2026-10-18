@@ -22,7 +22,7 @@ const CHOICES: { id: string; tagline: string; preset: SttPreset }[] = [
   { id: "tiny.en", tagline: "Fastest — best for older PCs and laptops", preset: "speed" },
   { id: "base.en", tagline: "Good balance of speed and accuracy", preset: "balanced" },
   { id: "parakeet-tdt-0.6b-v2", tagline: "Fast and highly accurate English", preset: "accuracy" },
-  { id: "distil-small.en", tagline: "Fast + accurate English — runs fast even on CPU", preset: "accuracy" },
+  { id: "moonshine-base-en", tagline: "Fast + accurate English — runs fast even on CPU", preset: "accuracy" },
   { id: "distil-large-v3.5", tagline: "Most accurate English — wants a GPU", preset: "accuracy" },
   { id: "small", tagline: "For dictating in other languages", preset: "multilingual" },
 ];

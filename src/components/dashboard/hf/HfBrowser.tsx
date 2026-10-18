@@ -13,7 +13,7 @@ import { useSettingsStore } from "../../../stores/settingsStore";
 import type { HfSearchItem, HfModelDetails, LlmModel, HardwareInfo, HfFile, SttModel, SttPreset } from "../../../types";
 import { formatMB, formatGB } from "../../../services/format";
 import SimpleMarkdown from "./SimpleMarkdown";
-import { STT_MODELS, sttLanguage } from "../../../services/catalog";
+import { STT_MODELS, localLanguages, sttLanguage } from "../../../services/catalog";
 import { accuracyScore, speedScore, llmQualityScore, llmSpeedScore, llmSpeedLabel, accuracyCaption, speedCaption } from "../../../services/modelMetrics";
 
 const CATEGORIES: { id: SttPreset | "all"; label: string }[] = [
@@ -133,6 +133,9 @@ export function MetricBar({
     </div>
   );
 }
+
+/** How many catalog voice models always lead the list (Parakeet v2, v3, …). */
+const TOP_PICKS = 3;
 
 export default function HfBrowser({ track }: { track: "llm" | "stt" }) {
   const { hardware } = useHardwareInfo();
@@ -264,9 +267,16 @@ export default function HfBrowser({ track }: { track: "llm" | "stt" }) {
     }
   }, [selectedHfId]);
 
+  // Voice models: the catalog's top picks first, then the user's own
+  // language, then the rest in catalog (best-first) order.
+  const mine = useMemo(() => localLanguages(), []);
   const sortStaffPicks = (a: any, b: any) => {
     const getScore = (m: any) => {
       let score = 0;
+      if (track === "stt") {
+        if (STT_MODELS.indexOf(m) < TOP_PICKS) score += 60;
+        else if (mine.has(sttLanguage(m))) score += 50;
+      }
       if (isModelInUse(m.id, false)) score += 10000;
       if (pinnedSet.has(m.id)) score += 1000;
       if (isModelDownloaded(m.id, false)) score += 100;
@@ -299,7 +309,11 @@ export default function HfBrowser({ track }: { track: "llm" | "stt" }) {
     ...customLlm.filter((c) => !LLM_MODELS.some((m) => m.id === c.id)),
   ];
   
-  const staffPicksSorted = [...staffPicksRaw].sort(sortStaffPicks);
+  // Other languages' own models wait in "More languages" unless a language is picked in the filter.
+  const isMoreLanguage = (m: any) =>
+    track === "stt" && language === "all" && !["English", "Multilingual"].includes(sttLanguage(m)) && !mine.has(sttLanguage(m));
+  const staffPicksSorted = [...staffPicksRaw].filter((m) => !isMoreLanguage(m)).sort(sortStaffPicks);
+  const moreLanguages = staffPicksRaw.filter(isMoreLanguage) as SttModel[];
   
   let recommendedSttId: string | null = null;
   if (track === "stt" && hardware) {
@@ -421,6 +435,33 @@ export default function HfBrowser({ track }: { track: "llm" | "stt" }) {
               );
             })}
           </div>
+        )}
+
+        {!debouncedQuery && moreLanguages.length > 0 && (
+          <details className="group mt-3 rounded-xl border border-sv-border bg-sv-surface">
+            <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-sm">
+              <span>
+                <span className="font-medium">More languages</span>
+                <span className="ml-2 text-xs text-sv-muted">
+                  {[...new Set(moreLanguages.map(sttLanguage))].join(", ")}
+                </span>
+              </span>
+              <span className="text-xs text-sv-muted transition group-open:rotate-180">▾</span>
+            </summary>
+            <div className="flex flex-col gap-2 border-t border-sv-border p-3">
+              {moreLanguages.map((m: any) => (
+                <SttRow
+                  key={m.id}
+                  model={m}
+                  hardware={hardware}
+                  pinned={pinnedSet.has(m.id)}
+                  onTogglePin={() => togglePinned(m.id)}
+                  recommended={false}
+                  alternative={sttAlternative}
+                />
+              ))}
+            </div>
+          </details>
         )}
 
         <div className="flex flex-col gap-2">
