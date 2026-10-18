@@ -282,10 +282,10 @@ pub async fn ensure_local_llm(app: &AppHandle, model_id: &str) -> Result<(), Str
     if !model_path.exists() {
         return Err(format!("Local model '{model_id}' is not downloaded"));
     }
-    let (high_performance, performance_threads) = {
+    let (high_performance, performance_threads, use_gpu) = {
         let state = app.state::<AppState>();
         let cfg = state.config.lock().map_err(|e| e.to_string())?;
-        (cfg.high_performance, cfg.performance_threads)
+        (cfg.high_performance, cfg.performance_threads, cfg.use_gpu)
     };
     let threads = hotkey::resolve_thread_count(high_performance, performance_threads);
 
@@ -295,7 +295,7 @@ pub async fn ensure_local_llm(app: &AppHandle, model_id: &str) -> Result<(), Str
         if server.is_running_model(model_id) {
             false
         } else {
-            server.start(&model_path, model_id, threads)?;
+            server.start(&model_path, model_id, threads, use_gpu)?;
             true
         }
     };

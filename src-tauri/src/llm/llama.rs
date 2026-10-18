@@ -89,6 +89,7 @@ impl LlamaServer {
         model_path: &Path,
         model_id: &str,
         threads: u32,
+        use_gpu: bool,
     ) -> Result<(), String> {
         self.stop();
 
@@ -114,6 +115,9 @@ impl LlamaServer {
             .arg("4096")
             .arg("-t")
             .arg(threads.to_string())
+            // The Vulkan build offloads by default. Graphics built into the CPU
+            // ran a 7 s clip in 15 s against 8 s on the CPU, so only a real card gets it.
+            .args(if use_gpu { ["-ngl", "99"] } else { ["--device", "none"] })
             .current_dir(engine_dir()) // resolve sibling DLLs
             .stderr(Stdio::piped());
 
