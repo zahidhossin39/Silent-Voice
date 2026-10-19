@@ -129,6 +129,20 @@ fn save_in(dir: &Path, t: &Transcript) -> Result<(), String> {
     std::fs::rename(&tmp, path_in(dir, t.id)).map_err(|e| e.to_string())
 }
 
+/// The text from before a Transcribe again, so closing the app mid-way can put it back.
+/// Not ".json": the list must not pick it up as a meeting.
+fn backup_in(dir: &Path, id: i64) -> PathBuf {
+    dir.join(format!("{id}.json.before"))
+}
+
+pub fn save_backup(t: &Transcript) -> Result<(), String> {
+    std::fs::write(backup_in(&dir(), t.id), serde_json::to_vec(t).map_err(|e| e.to_string())?).map_err(|e| e.to_string())
+}
+
+pub fn drop_backup(id: i64) {
+    let _ = std::fs::remove_file(backup_in(&dir(), id));
+}
+
 pub fn load(id: i64) -> Result<Transcript, String> {
     let bytes = std::fs::read(path_in(&dir(), id)).map_err(|_| "That transcript no longer exists.".to_string())?;
     serde_json::from_slice(&bytes).map_err(|e| e.to_string())
@@ -159,6 +173,7 @@ pub fn delete(id: i64) -> Result<(), String> {
     for s in [Speaker::You, Speaker::Others] {
         let _ = std::fs::remove_file(audio_path(id, s));
     }
+    drop_backup(id);
     std::fs::remove_file(path_in(&dir(), id)).map_err(|e| e.to_string())
 }
 
@@ -205,7 +220,8 @@ pub fn audio_clip(id: i64, speaker: Speaker, start_ms: u64, end_ms: u64) -> Resu
 }
 
 /// At startup nothing is running, so a "running" transcript means the app was
-/// closed mid-way: mark it stopped so it offers Resume.
+/// closed mid-way: mark it stopped so it offers Resume. A Transcribe again cut
+/// short gets its old text back instead of keeping half of the new.
 pub fn mark_interrupted() {
     mark_interrupted_in(&dir());
 }
@@ -213,6 +229,13 @@ pub fn mark_interrupted() {
 fn mark_interrupted_in(dir: &Path) {
     for mut t in all_in(dir) {
         if t.status == Status::Running {
+            let old = backup_in(dir, t.id);
+            if let Some(before) = t.redo.then(|| std::fs::read(&old).ok()).flatten().and_then(|b| serde_json::from_slice::<Transcript>(&b).ok()) {
+                if save_in(dir, &before).is_ok() {
+                    let _ = std::fs::remove_file(old);
+                }
+                continue;
+            }
             t.status = Status::Stopped;
             t.redo = false;
             let _ = save_in(dir, &t);
@@ -411,6 +434,23 @@ Hiring plan"), "hello")).unwrap();
         let after: Vec<(i64, Status, usize)> = all_in(&dir).iter().map(|t| (t.id, t.status, t.lines.len())).collect();
         let _ = std::fs::remove_dir_all(&dir);
         assert_eq!(after, vec![(3, Status::Failed, 2), (2, Status::Done, 2), (1, Status::Stopped, 2)]);
+    }
+
+    #[test]
+    fn startup_puts_back_the_text_from_before_an_unfinished_transcribe_again() {
+        let dir = std::env::temp_dir().join(format!("sv-transcripts-redo-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let before = Transcript { id: 7, status: Status::Done, ..sample() };
+        save_in(&dir, &before).unwrap();
+        std::fs::write(backup_in(&dir, 7), serde_json::to_vec(&before).unwrap()).unwrap();
+        save_in(&dir, &Transcript { id: 7, status: Status::Running, redo: true, lines: before.lines[..1].to_vec(), ..sample() }).unwrap();
+        mark_interrupted_in(&dir);
+        let after = all_in(&dir);
+        let backup_left = backup_in(&dir, 7).exists();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(after.len(), 1);
+        assert_eq!((after[0].status, after[0].lines.len(), after[0].redo), (Status::Done, 2, false));
+        assert!(!backup_left);
     }
 
     fn said(speaker: Speaker, start_ms: u64, text: &str) -> Line {

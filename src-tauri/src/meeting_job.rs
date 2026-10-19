@@ -158,6 +158,10 @@ pub fn retranscribe(app: &AppHandle, id: i64, cloud: Option<transcribe_job::Clou
     };
     // Cancel puts this back.
     let before = t.clone();
+    if let Err(e) = transcripts::save_backup(&before) {
+        transcribe_job::release(id);
+        return Err(e);
+    }
     t.lines.clear();
     t.error = None;
     t.done_ms = 0;
@@ -239,7 +243,8 @@ fn work(app: AppHandle, mut t: Transcript, rx: impl IntoIterator<Item = Msg>, cf
     if let Some((c, before)) = &undo {
         if c.load(std::sync::atomic::Ordering::Relaxed) {
             crate::logging::log_info("meeting", "transcribe again cancelled; old text kept");
-            return transcribe_job::finish(&app, before);
+            transcribe_job::finish(&app, before);
+            return transcripts::drop_backup(before.id);
         }
     }
     // ponytail: repaired once at Stop, so the live view (and a meeting cut short
@@ -254,6 +259,9 @@ fn work(app: AppHandle, mut t: Transcript, rx: impl IntoIterator<Item = Msg>, cf
     t.redo = false;
     crate::logging::log_info("meeting", &format!("done: {:.1} min, {} lines", t.done_ms as f64 / 60_000.0, t.lines.len()));
     transcribe_job::finish(&app, &t);
+    if undo.is_some() {
+        transcripts::drop_backup(t.id);
+    }
 }
 
 /// The worker: until both tracks end, cut each into pieces, transcribe them,
