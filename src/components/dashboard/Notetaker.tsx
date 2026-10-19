@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Page from "../shared/Page";
 import Select from "../shared/Select";
 import { useSettingsStore } from "../../stores/settingsStore";
@@ -32,6 +32,8 @@ import {
 const CONSENT_KEY = "sv-notetaker-consent-seen";
 /** "local", or the id of the cloud provider that transcribes meetings. */
 const STT_KEY = "sv-notetaker-stt";
+/** A gap this long between words gets an "N min of silence" line. */
+const SILENCE_MARK_MS = 60_000;
 /** Per provider: the speech-to-text model meetings use, when not the provider's default. */
 const STT_MODELS_KEY = "sv-notetaker-stt-models";
 /** The meetings' language code, or "" for the dictation language. */
@@ -729,6 +731,15 @@ function MeetingPanel({
   }, [confirmRedo]);
   const player = usePlayer(t.id);
   const paras = useMemo(() => transcriptParagraphs(t.lines), [t]);
+  // The quiet before each paragraph. The two tracks overlap, so it starts at the latest end so far.
+  const quietBefore = useMemo(() => {
+    let heard = Infinity;
+    return paras.map((p) => {
+      const quiet = p.start - heard;
+      heard = Math.max(heard === Infinity ? 0 : heard, p.end);
+      return quiet;
+    });
+  }, [paras]);
   const scroller = useRef<HTMLDivElement>(null);
   const bottom = useRef<HTMLDivElement>(null);
   const live = t.status === "running";
@@ -802,7 +813,15 @@ function MeetingPanel({
         ) : (
           <ol className="space-y-5">
             {paras.map((p, i) => (
-              <li key={i} className="grid grid-cols-[3.5rem_minmax(0,1fr)] gap-3">
+              <Fragment key={i}>
+                {quietBefore[i] >= SILENCE_MARK_MS && (
+                  <li className="flex items-center gap-3 text-[11px] text-sv-muted">
+                    <span className="h-px flex-1 bg-sv-border" aria-hidden />
+                    {Math.round(quietBefore[i] / 60_000)} min of silence
+                    <span className="h-px flex-1 bg-sv-border" aria-hidden />
+                  </li>
+                )}
+              <li className="grid grid-cols-[3.5rem_minmax(0,1fr)] gap-3">
                 {live || !p.speaker ? (
                   <span className="pt-0.5 text-right text-[11px] tabular-nums text-sv-muted">{clock(p.start)}</span>
                 ) : (
@@ -827,6 +846,7 @@ function MeetingPanel({
                   <p className="mt-0.5 text-[15px] leading-relaxed text-sv-text">{p.text}</p>
                 </div>
               </li>
+              </Fragment>
             ))}
             {live && (
               <li className="grid grid-cols-[3.5rem_minmax(0,1fr)] gap-3" aria-label={stopping ? "Finishing the last words" : "Listening"}>
