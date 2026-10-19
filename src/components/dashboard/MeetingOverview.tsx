@@ -111,7 +111,7 @@ export function SummarySettings({ s }: { s: SummaryChoice }) {
   if (!s.chosen) return <p className="text-xs text-sv-muted">Add a cloud provider in Cloud providers, or download a model in the Model Store.</p>;
   return (
     <div className="flex flex-col gap-2">
-      <Picker choices={s.choices} chosen={s.chosen} disabled={false} onPick={s.pick} />
+      <Picker choices={s.choices} chosen={s.chosen} disabled={false} onPick={s.pick} action="Summarize with" />
       {s.provider && (
         <ModelPicker p={s.provider} api={s.providerApi} value={s.chosen.model} onPick={(m) => s.pickModel(s.provider!.id, m)} />
       )}
@@ -229,16 +229,22 @@ function Spinner() {
 }
 
 /** Model picker: cloud providers, then models on this PC, with logos. */
-function Picker({
+/** A provider/local-model dropdown with logos, grouped Cloud / On this PC. */
+export function Picker({
   choices,
   chosen,
   disabled,
   onPick,
+  action,
+  localTitle = "On this PC · offline, slower",
 }: {
   choices: Choice[];
   chosen: Choice;
   disabled: boolean;
   onPick: (key: string) => void;
+  /** "Summarize with", for the button's accessible name. */
+  action: string;
+  localTitle?: string;
 }) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
@@ -263,7 +269,7 @@ function Picker({
 
   const groups = [
     { title: "Cloud", items: choices.filter((c) => c.source === "api") },
-    { title: "On this PC · offline, slower", items: choices.filter((c) => c.source === "local") },
+    { title: localTitle, items: choices.filter((c) => c.source === "local") },
   ].filter((g) => g.items.length);
 
   return (
@@ -273,7 +279,7 @@ function Picker({
         disabled={disabled}
         aria-haspopup="listbox"
         aria-expanded={open}
-        aria-label={`Summarize with ${chosen.label}`}
+        aria-label={`${action} ${chosen.label}`}
         onClick={() => setOpen((o) => !o)}
         className="flex h-10 w-full min-w-0 items-center gap-2 rounded-lg border border-sv-border bg-sv-bg px-2 text-left transition hover:border-sv-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sv-accent disabled:opacity-60"
       >

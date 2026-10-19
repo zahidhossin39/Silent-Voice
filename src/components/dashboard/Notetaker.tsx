@@ -5,7 +5,8 @@ import { useSettingsStore } from "../../stores/settingsStore";
 import { LANGUAGES, STT_MODELS, honorsLanguage } from "../../services/catalog";
 import TranscriptHeader, { clock } from "../shared/TranscriptHeader";
 import { TrashIcon } from "../shared/TranscriptCard";
-import MeetingOverview, { GearIcon, SummarySettings, useSummaryChoice, type Choice, type SummaryChoice } from "./MeetingOverview";
+import MeetingOverview, { GearIcon, Picker, SummarySettings, useSummaryChoice, type Choice, type SummaryChoice } from "./MeetingOverview";
+import { ModelPicker } from "./providers/shared";
 import {
   listenEvent,
   meetingAudioClip,
@@ -31,6 +32,8 @@ import {
 const CONSENT_KEY = "sv-notetaker-consent-seen";
 /** "local", or the id of the cloud provider that transcribes meetings. */
 const STT_KEY = "sv-notetaker-stt";
+/** Per provider: the speech-to-text model meetings use, when not the provider's default. */
+const STT_MODELS_KEY = "sv-notetaker-stt-models";
 /** The meetings' language code, or "" for the dictation language. */
 const LANG_KEY = "sv-notetaker-language";
 
@@ -156,7 +159,24 @@ export default function Notetaker() {
     if (selected === id) setSelected(rest[0]?.id ?? null);
   };
 
-  const sttProviders = useSettingsStore((s) => s.providers).filter((p) => p.uses.includes("stt") && p.base_url && p.stt_model);
+  const sttProviders = useSettingsStore((s) => s.providers).filter((p) => p.uses.includes("stt") && p.base_url);
+  const [sttModels, setSttModels] = useState<Record<string, string>>(() => {
+    try {
+      return JSON.parse(localStorage.getItem(STT_MODELS_KEY) || "{}");
+    } catch {
+      return {};
+    }
+  });
+  const pickSttModel = (providerId: string, model: string) => {
+    const next = { ...sttModels, [providerId]: model };
+    setSttModels(next);
+    try {
+      localStorage.setItem(STT_MODELS_KEY, JSON.stringify(next));
+    } catch {
+      /* remembered for this visit only */
+    }
+  };
+  const sttModelOf = (p: { id: string; stt_model: string }) => sttModels[p.id] || p.stt_model;
   const [sttKey, setSttKey] = useState(() => {
     try {
       return localStorage.getItem(STT_KEY) ?? "local";
@@ -164,7 +184,9 @@ export default function Notetaker() {
       return "local";
     }
   });
-  const cloud = sttProviders.find((p) => p.id === sttKey);
+  const cloudProvider = sttProviders.find((p) => p.id === sttKey);
+  // A provider with no speech-to-text model picked can't transcribe yet.
+  const cloud = cloudProvider && sttModelOf(cloudProvider) ? cloudProvider : undefined;
   const [lang, setLang] = useState(() => {
     try {
       return localStorage.getItem(LANG_KEY) ?? "";
@@ -181,14 +203,39 @@ export default function Notetaker() {
     }
   };
   const dictationLang = useSettingsStore((s) => s.settings.language);
+  const sttChoices: Choice[] = [
+    ...sttProviders.map((p) => ({
+      key: `api:${p.id}`,
+      id: p.id,
+      label: p.name,
+      detail: sttModelOf(p) || "Choose a model",
+      source: "api" as const,
+      model: sttModelOf(p),
+      base_url: p.base_url,
+      api_key: p.api_key,
+    })),
+    {
+      key: "local:local",
+      id: "local",
+      label: "Your voice model",
+      detail: STT_MODELS.find((m) => m.id === useSettingsStore.getState().settings.active_stt_model)?.label ?? "",
+      source: "local" as const,
+      model: "",
+      base_url: "",
+      api_key: "",
+    },
+  ];
   const localModel = STT_MODELS.find((m) => m.id === useSettingsStore.getState().settings.active_stt_model);
   const meetingLang = lang || dictationLang;
   const langName = (c: string) => LANGUAGES.find((l) => l.code === c)?.name ?? c;
   // Parakeet, Moonshine and .en models ignore the language: say so instead of failing quietly.
+  // Measured on a Bangla meeting: Whisper turbo wrote English, v3 garbled it; these got it right.
   const langNote = cloud
-    ? meetingLang === "auto"
-      ? `${cloud.name} detects the language of each part.`
-      : `${cloud.name} is told the meeting is in ${langName(meetingLang)}.`
+    ? meetingLang !== "en" && /whisper/i.test(sttModelOf(cloud))
+      ? `Whisper models handle ${meetingLang === "auto" ? "languages other than English" : langName(meetingLang)} poorly (turbo turns them into English). For better results pick microsoft/mai-transcribe-2 or elevenlabs/scribe-v2 from OpenRouter.`
+      : meetingLang === "auto"
+        ? `${cloud.name} detects the language as people talk, mixed languages included.`
+        : `${cloud.name} is told the meeting is in ${langName(meetingLang)}.`
     : !honorsLanguage(localModel) && meetingLang !== "en"
       ? `Your voice model (${localModel?.label ?? "this PC's"}) only understands ${localModel?.id.startsWith("sense-voice") ? "a few languages" : "English"}. For ${meetingLang === "auto" ? "other languages" : langName(meetingLang)}, transcribe with a cloud provider or download a Whisper model.`
       : `Transcribed in ${meetingLang === "auto" ? "whatever language is spoken" : langName(meetingLang)}.`;
@@ -203,7 +250,7 @@ export default function Notetaker() {
     }
   };
 
-  const cloudArg = cloud && { base_url: cloud.base_url, api_key: cloud.api_key, model: cloud.stt_model };
+  const cloudArg = cloud && { base_url: cloud.base_url, api_key: cloud.api_key, model: sttModelOf(cloud) };
 
   const redo = async (id: number) => {
     setError(null);
@@ -310,14 +357,25 @@ export default function Notetaker() {
               }
               languageNote={langNote}
               stt={
-                <Select value={cloud ? cloud.id : "local"} onChange={pickStt} className="w-full" disabled={!!recording}>
-                  <option value="local">On this PC (your voice model)</option>
-                  {sttProviders.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name} · {p.stt_model}
-                    </option>
-                  ))}
-                </Select>
+                <div className="flex flex-col gap-2">
+                  <Picker
+                    choices={sttChoices}
+                    chosen={sttChoices.find((c) => c.id === (cloudProvider?.id ?? "local")) ?? sttChoices[0]}
+                    disabled={!!recording}
+                    onPick={(k) => pickStt(k.replace(/^(api|local):/, ""))}
+                    action="Transcribe with"
+                    localTitle="On this PC · offline"
+                  />
+                  {cloudProvider && (
+                    <ModelPicker
+                      p={cloudProvider}
+                      api={summary.providerApi}
+                      stt
+                      value={sttModelOf(cloudProvider)}
+                      onPick={(m) => pickSttModel(cloudProvider.id, m)}
+                    />
+                  )}
+                </div>
               }
               sttNote={
                 recording
@@ -446,13 +504,16 @@ function NotetakerSettings({
       className="absolute right-0 top-[calc(100%+8px)] z-40 w-[min(26rem,calc(100vw-2rem))] space-y-5 rounded-2xl border border-sv-border bg-sv-surface p-5 text-left shadow-[0_16px_40px_-12px_rgb(0_0_0/0.5)]"
     >
       <section>
+        <h3 className="text-sm font-semibold">Language spoken</h3>
+        <p className="mb-2 mt-0.5 text-xs text-sv-muted">What people speak in your meetings.</p>
+        {language}
+        <p className="mt-1.5 text-xs text-sv-muted">{languageNote}</p>
+      </section>
+      <section className="border-t border-sv-border pt-4">
         <h3 className="text-sm font-semibold">Transcription</h3>
         <p className="mb-2 mt-0.5 text-xs text-sv-muted">Turns the meeting's audio into text as people talk.</p>
         {stt}
         <p className="mt-1.5 text-xs text-sv-muted">{sttNote}</p>
-        <h4 className="mb-1.5 mt-4 text-xs font-semibold text-sv-muted">Language spoken</h4>
-        {language}
-        <p className="mt-1.5 text-xs text-sv-muted">{languageNote}</p>
       </section>
       <section className="border-t border-sv-border pt-4">
         <h3 className="text-sm font-semibold">Summary</h3>
