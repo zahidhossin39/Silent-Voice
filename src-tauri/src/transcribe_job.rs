@@ -280,7 +280,10 @@ pub(crate) fn transcribe_piece(app: &AppHandle, samples: &[f32], cfg: &Cfg) -> R
     // Its own temp file: the meeting recorder transcribes two tracks.
     static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let path = crate::models::registry::audio_dir().join(format!("piece-{}.wav", NEXT.fetch_add(1, Ordering::Relaxed)));
-    capture::write_wav(&path, samples)?;
+    // Seconds of silence before the first words (a meeting starts quiet) made
+    // Whisper invent a sentence or answer just "Thank you." for the whole piece.
+    let trimmed = crate::audio::gate::trim_silence(samples, cfg.sensitivity);
+    capture::write_wav(&path, trimmed.as_deref().unwrap_or(samples))?;
     let text = tauri::async_runtime::block_on(crate::transcription::whisper::transcribe_dispatch(
         app,
         &path,
