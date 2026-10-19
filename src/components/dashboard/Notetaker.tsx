@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Page from "../shared/Page";
 import Select from "../shared/Select";
-import { useSettingsStore } from "../../stores/settingsStore";
+import { useNotetakerSettings, useSettingsStore } from "../../stores/settingsStore";
 import { LANGUAGES, STT_MODELS, honorsLanguage } from "../../services/catalog";
 import TranscriptHeader, { clock } from "../shared/TranscriptHeader";
 import { TrashIcon } from "../shared/TranscriptCard";
@@ -29,15 +29,8 @@ import {
 // You/Others transcript. The Rust job (meeting_job.rs) does the work and sends
 // the transcript as it grows, like the Transcribe page.
 
-const CONSENT_KEY = "sv-notetaker-consent-seen";
-/** "local", or the id of the cloud provider that transcribes meetings. */
-const STT_KEY = "sv-notetaker-stt";
 /** A gap this long between words gets an "N min of silence" line. */
 const SILENCE_MARK_MS = 60_000;
-/** Per provider: the speech-to-text model meetings use, when not the provider's default. */
-const STT_MODELS_KEY = "sv-notetaker-stt-models";
-/** The meetings' language code, or "" for the dictation language. */
-const LANG_KEY = "sv-notetaker-language";
 
 /** True while a meeting records (for the sidebar dot). */
 export function useMeetingRecording(): boolean {
@@ -86,13 +79,8 @@ export default function Notetaker() {
   const [devices, setDevices] = useState<{ mic: string | null; speakers: string | null }>({ mic: null, speakers: null });
   const [starting, setStarting] = useState(false);
   const [stopping, setStopping] = useState(false);
-  const [consentSeen, setConsentSeen] = useState(() => {
-    try {
-      return localStorage.getItem(CONSENT_KEY) === "1";
-    } catch {
-      return true;
-    }
-  });
+  const [nt, setNt] = useNotetakerSettings();
+  const consentSeen = nt.consent_seen;
 
   const upsert = useCallback((t: Transcript) => {
     const head = { ...t, lines: [] };
@@ -162,48 +150,14 @@ export default function Notetaker() {
   };
 
   const sttProviders = useSettingsStore((s) => s.providers).filter((p) => p.uses.includes("stt") && p.base_url);
-  const [sttModels, setSttModels] = useState<Record<string, string>>(() => {
-    try {
-      return JSON.parse(localStorage.getItem(STT_MODELS_KEY) || "{}");
-    } catch {
-      return {};
-    }
-  });
-  const pickSttModel = (providerId: string, model: string) => {
-    const next = { ...sttModels, [providerId]: model };
-    setSttModels(next);
-    try {
-      localStorage.setItem(STT_MODELS_KEY, JSON.stringify(next));
-    } catch {
-      /* remembered for this visit only */
-    }
-  };
-  const sttModelOf = (p: { id: string; stt_model: string }) => sttModels[p.id] || p.stt_model;
-  const [sttKey, setSttKey] = useState(() => {
-    try {
-      return localStorage.getItem(STT_KEY) ?? "local";
-    } catch {
-      return "local";
-    }
-  });
+  const pickSttModel = (providerId: string, model: string) => setNt({ stt_models: { ...nt.stt_models, [providerId]: model } });
+  const sttModelOf = (p: { id: string; stt_model: string }) => nt.stt_models[p.id] || p.stt_model;
+  const sttKey = nt.stt;
   const cloudProvider = sttProviders.find((p) => p.id === sttKey);
   // A provider with no speech-to-text model picked can't transcribe yet.
   const cloud = cloudProvider && sttModelOf(cloudProvider) ? cloudProvider : undefined;
-  const [lang, setLang] = useState(() => {
-    try {
-      return localStorage.getItem(LANG_KEY) ?? "";
-    } catch {
-      return "";
-    }
-  });
-  const pickLang = (v: string) => {
-    setLang(v);
-    try {
-      localStorage.setItem(LANG_KEY, v);
-    } catch {
-      /* remembered for this visit only */
-    }
-  };
+  const lang = nt.language;
+  const pickLang = (v: string) => setNt({ language: v });
   const dictationLang = useSettingsStore((s) => s.settings.language);
   const sttChoices: Choice[] = [
     ...sttProviders.map((p) => ({
@@ -243,14 +197,7 @@ export default function Notetaker() {
       : `Transcribed in ${meetingLang === "auto" ? "whatever language is spoken" : langName(meetingLang)}.`;
   const summary = useSummaryChoice();
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const pickStt = (v: string) => {
-    setSttKey(v);
-    try {
-      localStorage.setItem(STT_KEY, v);
-    } catch {
-      /* remembered for this visit only */
-    }
-  };
+  const pickStt = (v: string) => setNt({ stt: v });
 
   const cloudArg = cloud && { base_url: cloud.base_url, api_key: cloud.api_key, model: sttModelOf(cloud) };
 
@@ -290,14 +237,7 @@ export default function Notetaker() {
     }
   };
 
-  const dismissConsent = () => {
-    setConsentSeen(true);
-    try {
-      localStorage.setItem(CONSENT_KEY, "1");
-    } catch {
-      /* private window: the note just shows again next time */
-    }
-  };
+  const dismissConsent = () => setNt({ consent_seen: true });
 
   const groups = useMemo(() => {
     const out: { day: string; items: Transcript[] }[] = [];

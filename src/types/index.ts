@@ -202,12 +202,29 @@ export type RecordingState =
   | "processing"
   | "done"; // brief success beat after text lands at the cursor, then back to idle
 
+/** The Notetaker page's choices. */
+export interface NotetakerSettings {
+  /** Provider id meetings are transcribed with, or "local". */
+  stt: string;
+  /** Per provider: its speech-to-text model for meetings, when not the provider's default. */
+  stt_models: Record<string, string>;
+  /** The meetings' language code, or "" for the dictation language. */
+  language: string;
+  /** The summary picker's choice key. */
+  summary_with: string;
+  /** Per provider: its summary model. */
+  summary_models: Record<string, string>;
+  /** The "Let people know you're recording" note was dismissed. */
+  consent_seen: boolean;
+}
+
 export interface Settings {
   hotkey: string;
   active_stt_model: string;
   active_mode_id: string;
   stt_preset: SttPreset;
   language: string; // "auto" or ISO code
+  notetaker: NotetakerSettings;
   use_gpu: boolean;
   /** Set once the app has turned Use GPU on for a strong card (or found none), so a later "off" stays off. */
   gpu_auto_checked?: boolean;

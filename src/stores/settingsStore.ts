@@ -6,6 +6,7 @@ import type {
   Mode,
   TextReplacement,
   AppProfileRule,
+  NotetakerSettings,
 } from "../types";
 import { BUILTIN_MODES } from "../services/modes";
 import { createTauriStorage } from "./tauriStorage";
@@ -41,7 +42,44 @@ function isValidAccelerator(accel: string | undefined | null): boolean {
   );
 }
 
+/** The Notetaker kept its choices in localStorage before: the first load brings them over. */
+function legacyNotetaker(): NotetakerSettings {
+  const get = (k: string) => {
+    try {
+      return localStorage.getItem(k);
+    } catch {
+      return null;
+    }
+  };
+  const obj = (k: string) => {
+    try {
+      return JSON.parse(get(k) || "{}");
+    } catch {
+      return {};
+    }
+  };
+  return {
+    stt: get("sv-notetaker-stt") ?? "local",
+    stt_models: obj("sv-notetaker-stt-models"),
+    language: get("sv-notetaker-language") ?? "",
+    summary_with: get("sv-notetaker-summary-with") ?? "",
+    summary_models: obj("sv-notetaker-summary-models"),
+    consent_seen: get("sv-notetaker-consent-seen") === "1",
+  };
+}
+
+/** The Notetaker's saved choices and a setter that merges a change into them. */
+export function useNotetakerSettings() {
+  const n = useSettingsStore((s) => s.settings.notetaker);
+  const set = (patch: Partial<NotetakerSettings>) => {
+    const { settings, setSettings } = useSettingsStore.getState();
+    setSettings({ notetaker: { ...settings.notetaker, ...patch } });
+  };
+  return [n, set] as const;
+}
+
 export const DEFAULT_SETTINGS: Settings = {
+  notetaker: legacyNotetaker(),
   hotkey: "Ctrl+Shift+Space",
   active_stt_model: "",
   active_mode_id: "raw",

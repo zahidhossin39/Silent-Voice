@@ -1,16 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import ProviderLogo from "../shared/ProviderLogo";
 import { Icon, ModelPicker, isChatModel, showModel, useProviders } from "./providers/shared";
-import { useSettingsStore } from "../../stores/settingsStore";
+import { useNotetakerSettings, useSettingsStore } from "../../stores/settingsStore";
 import { LLM_MODELS } from "../../services/catalog";
 import { listDownloadedLlm, meetingSummarize, type SummaryWith, type Transcript } from "../../services/tauriBridge";
 
 // The Overview of a meeting: an AI-written summary, key points, decisions and
 // action items (meeting_summary.rs), with the model the user picks here.
-
-const WITH_KEY = "sv-notetaker-summary-with";
-/** Per provider, the model picked for summaries: the provider's default may be a transcription model. */
-const MODELS_KEY = "sv-notetaker-summary-models";
 
 export interface Choice extends SummaryWith {
   key: string;
@@ -61,45 +57,17 @@ function useChoices(models: Record<string, string>): Choice[] {
   );
 }
 
-function read(key: string): string {
-  try {
-    return localStorage.getItem(key) ?? "";
-  } catch {
-    return "";
-  }
-}
-
-function write(key: string, value: string) {
-  try {
-    localStorage.setItem(key, value);
-  } catch {
-    /* remembered for this visit only */
-  }
-}
-
 /** The summary model the user picked in Notetaker settings, shared by the settings panel and the Overview. */
 export function useSummaryChoice() {
-  const [models, setModels] = useState<Record<string, string>>(() => {
-    try {
-      return JSON.parse(read(MODELS_KEY) || "{}");
-    } catch {
-      return {};
-    }
-  });
+  const [nt, setNt] = useNotetakerSettings();
+  const models = nt.summary_models;
   const choices = useChoices(models);
   const providerApi = useProviders();
-  const [key, setKey] = useState(() => read(WITH_KEY));
+  const key = nt.summary_with;
   const chosen: Choice | undefined = choices.find((c) => c.key === key) ?? choices[0];
 
-  const pick = (k: string) => {
-    setKey(k);
-    write(WITH_KEY, k);
-  };
-  const pickModel = (providerId: string, model: string) => {
-    const next = { ...models, [providerId]: model };
-    setModels(next);
-    write(MODELS_KEY, JSON.stringify(next));
-  };
+  const pick = (k: string) => setNt({ summary_with: k });
+  const pickModel = (providerId: string, model: string) => setNt({ summary_models: { ...models, [providerId]: model } });
   const provider = chosen?.source === "api" ? providerApi.providers.find((p) => p.id === chosen.id) : undefined;
   return { choices, chosen, pick, pickModel, provider, providerApi };
 }
