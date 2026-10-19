@@ -948,8 +948,8 @@ export async function meetingsSearch(query: string): Promise<number[]> {
   return invoke<number[]>("meetings_search", { query });
 }
 
-/** A stretch of one meeting track, as WAV bytes. */
-export async function meetingAudioClip(id: number, speaker: "you" | "others", startMs: number, endMs: number): Promise<ArrayBuffer> {
+/** A stretch of one meeting track (or both mixed, with no speaker), as WAV bytes. */
+export async function meetingAudioClip(id: number, speaker: "you" | "others" | null, startMs: number, endMs: number): Promise<ArrayBuffer> {
   if (!isTauri()) throw new Error("Needs the desktop app");
   return invoke<ArrayBuffer>("meeting_audio_clip", { id, speaker, startMs, endMs });
 }

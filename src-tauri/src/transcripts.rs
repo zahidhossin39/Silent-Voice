@@ -202,18 +202,31 @@ fn search_in(dir: &Path, query: &str) -> Vec<i64> {
         .collect()
 }
 
-/// `start_ms..end_ms` of one track as a small WAV, for the page to play.
-pub fn audio_clip(id: i64, speaker: Speaker, start_ms: u64, end_ms: u64) -> Result<Vec<u8>, String> {
-    let mut r = hound::WavReader::open(audio_path(id, speaker)).map_err(|_| "This meeting's audio wasn't saved.".to_string())?;
-    let spec = r.spec();
-    let rate = spec.sample_rate as u64;
-    let from = (start_ms * rate / 1000).min(r.duration() as u64);
-    let n = (end_ms.saturating_sub(start_ms).min(10 * 60_000) * rate / 1000) as usize;
-    r.seek(from as u32).map_err(|e| e.to_string())?;
+/// `start_ms..end_ms` of one track, or both mixed (`None`), as a small WAV for the page to play.
+pub fn audio_clip(id: i64, speaker: Option<Speaker>, start_ms: u64, end_ms: u64) -> Result<Vec<u8>, String> {
+    let speakers = speaker.map_or(vec![Speaker::You, Speaker::Others], |s| vec![s]);
+    let mut spec = None;
+    let mut mix: Vec<i32> = Vec::new();
+    for s in speakers {
+        let Ok(mut r) = hound::WavReader::open(audio_path(id, s)) else { continue };
+        let rate = r.spec().sample_rate as u64;
+        spec = Some(r.spec());
+        let from = (start_ms * rate / 1000).min(r.duration() as u64);
+        let n = (end_ms.saturating_sub(start_ms).min(10 * 60_000) * rate / 1000) as usize;
+        r.seek(from as u32).map_err(|e| e.to_string())?;
+        for (i, x) in r.samples::<i16>().take(n).enumerate() {
+            let x = x.map_err(|e| e.to_string())? as i32;
+            match mix.get_mut(i) {
+                Some(m) => *m += x,
+                None => mix.push(x),
+            }
+        }
+    }
+    let spec = spec.ok_or("This meeting's audio wasn't saved.")?;
     let mut out = std::io::Cursor::new(Vec::new());
     let mut w = hound::WavWriter::new(&mut out, spec).map_err(|e| e.to_string())?;
-    for s in r.samples::<i16>().take(n) {
-        w.write_sample(s.map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+    for m in mix {
+        w.write_sample(m.clamp(i16::MIN as i32, i16::MAX as i32) as i16).map_err(|e| e.to_string())?;
     }
     w.finalize().map_err(|e| e.to_string())?;
     Ok(out.into_inner())
@@ -366,9 +379,14 @@ mod tests {
     #[ignore] // reads a real saved meeting: SV_TEST_MEETING = its id
     fn a_real_meeting_clip_is_a_playable_wav_of_the_asked_length() {
         let id: i64 = std::env::var("SV_TEST_MEETING").unwrap().parse().unwrap();
-        let bytes = audio_clip(id, Speaker::Others, 60_000, 63_500).unwrap();
-        let r = hound::WavReader::new(std::io::Cursor::new(bytes)).unwrap();
-        assert_eq!((r.spec().sample_rate, r.duration()), (16_000, 56_000));
+        for speaker in [Some(Speaker::Others), None] {
+            let bytes = audio_clip(id, speaker, 60_000, 63_500).unwrap();
+            let r = hound::WavReader::new(std::io::Cursor::new(bytes)).unwrap();
+            assert_eq!((r.spec().sample_rate, r.duration()), (16_000, 56_000));
+        }
+        // Both tracks mixed: louder than either alone where both have sound.
+        let loudness = |s| hound::WavReader::new(std::io::Cursor::new(audio_clip(id, s, 60_000, 63_500).unwrap())).unwrap().samples::<i16>().map(|x| x.unwrap().unsigned_abs() as u32).sum::<u32>();
+        assert!(loudness(None) >= loudness(Some(Speaker::Others)).max(loudness(Some(Speaker::You))));
         assert!(!search("").is_empty());
     }
 

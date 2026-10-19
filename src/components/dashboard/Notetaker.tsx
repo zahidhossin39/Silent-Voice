@@ -669,8 +669,11 @@ function MeetingPanel({
     const timer = setTimeout(() => setConfirmRedo(false), 5000);
     return () => clearTimeout(timer);
   }, [confirmRedo]);
-  const player = usePlayer(t.id);
+  const duration = t.duration_ms ?? t.done_ms;
+  const player = usePlayer(t.id, duration);
   const paras = useMemo(() => transcriptParagraphs(t.lines), [t]);
+  // The paragraph being heard: the last one started by now (the tracks overlap).
+  const current = player.playing || player.pos > 0 ? paras.reduce((c, p, i) => (p.start <= player.pos ? i : c), -1) : -1;
   // The quiet before each paragraph. The two tracks overlap, so it starts at the latest end so far.
   const quietBefore = useMemo(() => {
     let heard = Infinity;
@@ -766,20 +769,20 @@ function MeetingPanel({
                   <span className="pt-0.5 text-right text-[11px] tabular-nums text-sv-muted">{clock(p.start)}</span>
                 ) : (
                   <button
-                    onClick={() => player.toggle(i, p.speaker!, p.start, p.end)}
-                    aria-label={player.playing === i ? "Stop playing" : `Play from ${clock(p.start)}`}
-                    title={player.playing === i ? "Stop" : "Play this part"}
+                    onClick={() => player.playFrom(p.start)}
+                    aria-label={`Play from ${clock(p.start)}`}
+                    title="Play from here"
                     className={`flex h-fit items-center justify-end gap-1 rounded pt-0.5 text-[11px] tabular-nums transition hover:text-sv-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sv-accent ${
-                      player.playing === i ? "text-sv-accent" : "text-sv-muted"
+                      current === i ? "text-sv-accent" : "text-sv-muted"
                     }`}
                   >
                     <svg viewBox="0 0 12 12" className="h-2.5 w-2.5 shrink-0" fill="currentColor" aria-hidden>
-                      {player.playing === i ? <rect x="2" y="2" width="8" height="8" rx="1" /> : <path d="M3 1.5v9l7.5-4.5z" />}
+                      <path d="M3 1.5v9l7.5-4.5z" />
                     </svg>
                     {clock(p.start)}
                   </button>
                 )}
-                <div className="max-w-[72ch]">
+                <div className={`max-w-[72ch] rounded-md transition-colors ${current === i ? "-mx-2 bg-sv-accent/10 px-2" : ""}`} aria-current={current === i || undefined}>
                   <div className={`text-xs font-semibold ${p.speaker === "you" ? "text-sv-accent" : "text-sv-text"}`}>
                     {p.speaker === "you" ? "You" : "Others"}
                   </div>
@@ -805,38 +808,115 @@ function MeetingPanel({
         )}
         <div ref={bottom} />
       </div>
+      {!live && paras.some((p) => p.speaker) && duration > 0 && <PlayerBar player={player} duration={duration} />}
     </section>
   );
 }
 
-/** Plays one paragraph of a meeting's audio at a time; a second click stops it. */
-function usePlayer(id: number) {
-  const [playing, setPlaying] = useState<number | null>(null);
+/** Plays the whole meeting, both tracks mixed, fetched a window at a time
+ * (an hour of audio is ~115 MB). `pos` is the playing time in the meeting. */
+// shortcut: a tiny gap where one window hands over to the next; stream one file if it's heard.
+const WINDOW_MS = 120_000;
+function usePlayer(id: number, duration: number) {
+  const [playing, setPlaying] = useState(false);
+  const [pos, setPos] = useState(0);
+  const [rate, setRateState] = useState(1);
   const audio = useRef<{ el: HTMLAudioElement; url: string } | null>(null);
-  const stop = useCallback(() => {
+  const run = useRef(0);
+  const rateRef = useRef(1);
+  const release = () => {
     if (audio.current) {
       audio.current.el.pause();
       URL.revokeObjectURL(audio.current.url);
       audio.current = null;
     }
-    setPlaying(null);
-  }, []);
-  useEffect(() => stop, [id, stop]);
-  const toggle = async (i: number, speaker: "you" | "others", start: number, end: number) => {
-    const again = playing === i;
-    stop();
-    if (again) return;
-    setPlaying(i);
-    try {
-      const bytes = await meetingAudioClip(id, speaker, start, end);
-      const url = URL.createObjectURL(new Blob([bytes], { type: "audio/wav" }));
-      const el = new Audio(url);
-      audio.current = { el, url };
-      el.onended = stop;
-      await el.play();
-    } catch {
-      stop();
-    }
   };
-  return { playing, toggle };
+  const pause = useCallback(() => {
+    run.current++;
+    release();
+    setPlaying(false);
+  }, []);
+  useEffect(() => {
+    setPos(0);
+    return pause;
+  }, [id, pause]);
+  const playFrom = async (ms: number) => {
+    const mine = ++run.current;
+    release();
+    setPlaying(true);
+    setPos(ms);
+    try {
+      let next = meetingAudioClip(id, null, ms, ms + WINDOW_MS);
+      for (let from = ms; from < duration; from += WINDOW_MS) {
+        const bytes = await next;
+        if (run.current !== mine) return;
+        // Fetch the next window while this one plays.
+        if (from + WINDOW_MS < duration) next = meetingAudioClip(id, null, from + WINDOW_MS, from + 2 * WINDOW_MS);
+        const url = URL.createObjectURL(new Blob([bytes], { type: "audio/wav" }));
+        const el = new Audio(url);
+        el.playbackRate = rateRef.current;
+        audio.current = { el, url };
+        el.ontimeupdate = () => run.current === mine && setPos(from + el.currentTime * 1000);
+        const ended = new Promise((done) => (el.onended = done));
+        await el.play();
+        await ended;
+        if (run.current !== mine) return;
+        release();
+      }
+      setPos(duration);
+    } catch {
+      /* audio not saved, or the meeting was deleted */
+    }
+    if (run.current === mine) setPlaying(false);
+  };
+  const setRate = (r: number) => {
+    rateRef.current = r;
+    setRateState(r);
+    if (audio.current) audio.current.el.playbackRate = r;
+  };
+  return { playing, pos, rate, playFrom, pause, setRate };
+}
+
+const SPEEDS = [1, 1.25, 1.5, 2];
+
+/** Play/pause, a seek bar and the speed, under the transcript. */
+function PlayerBar({ player, duration }: { player: ReturnType<typeof usePlayer>; duration: number }) {
+  return (
+    <div className="flex items-center gap-3 border-t border-sv-border px-6 py-2.5">
+      <button
+        onClick={() => (player.playing ? player.pause() : player.playFrom(player.pos >= duration ? 0 : player.pos))}
+        aria-label={player.playing ? "Pause" : "Play the meeting"}
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-sv-accent text-white transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sv-accent focus-visible:ring-offset-2 focus-visible:ring-offset-sv-surface"
+      >
+        <svg viewBox="0 0 12 12" className="h-3 w-3" fill="currentColor" aria-hidden>
+          {player.playing ? <path d="M2.5 1.5h2.5v9H2.5zM7 1.5h2.5v9H7z" /> : <path d="M3 1.5v9l7.5-4.5z" />}
+        </svg>
+      </button>
+      <span className="w-12 shrink-0 text-right text-[11px] tabular-nums text-sv-muted">{clock(player.pos)}</span>
+      <input
+        type="range"
+        min={0}
+        max={duration}
+        step={1000}
+        value={Math.min(player.pos, duration)}
+        onChange={(e) => player.playFrom(Number(e.target.value))}
+        aria-label="Position in the meeting"
+        aria-valuetext={clock(player.pos)}
+        className="min-w-0 flex-1 accent-sv-accent"
+      />
+      <span className="w-12 shrink-0 text-[11px] tabular-nums text-sv-muted">{clock(duration)}</span>
+      <select
+        value={player.rate}
+        onChange={(e) => player.setRate(Number(e.target.value))}
+        aria-label="Playback speed"
+        className="h-7 shrink-0 rounded-md border border-sv-border bg-sv-bg px-1.5 text-xs text-sv-muted outline-none focus:border-sv-accent"
+      >
+        {SPEEDS.map((r) => (
+          <option key={r} value={r}>
+            {r}×
+          </option>
+        ))}
+      </select>
+    </div>
+  );
 }

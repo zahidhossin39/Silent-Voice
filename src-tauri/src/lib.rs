@@ -1012,9 +1012,9 @@ fn meetings_search(query: String) -> Vec<i64> {
     transcripts::search(&query)
 }
 
-/// A stretch of one meeting track as WAV bytes (an ArrayBuffer in the page).
+/// A stretch of one meeting track, or both mixed (no speaker), as WAV bytes (an ArrayBuffer in the page).
 #[tauri::command]
-fn meeting_audio_clip(id: i64, speaker: transcripts::Speaker, start_ms: u64, end_ms: u64) -> Result<tauri::ipc::Response, String> {
+fn meeting_audio_clip(id: i64, speaker: Option<transcripts::Speaker>, start_ms: u64, end_ms: u64) -> Result<tauri::ipc::Response, String> {
     transcripts::audio_clip(id, speaker, start_ms, end_ms).map(tauri::ipc::Response::new)
 }
 
