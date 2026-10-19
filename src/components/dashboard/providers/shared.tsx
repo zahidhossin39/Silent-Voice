@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useSettingsStore } from "../../../stores/settingsStore";
-import { apiGenerate, apiListModels, apiTestStt } from "../../../services/tauriBridge";
+import Select from "../../shared/Select";
+import { apiGenerate, apiListModels, apiTestStt, type ModelInfo } from "../../../services/tauriBridge";
 import type { ApiProvider, ApiUse } from "../../../types";
 
 // The Cloud providers page: the presets, the actions
@@ -92,6 +93,7 @@ export function useProviders() {
   const update = useSettingsStore((s) => s.updateProvider);
   const remove = useSettingsStore((s) => s.deleteProvider);
   const [models, setModels] = useState<Record<string, string[]>>({});
+  const [info, setInfo] = useState<Record<string, Record<string, ModelInfo>>>({});
   const [loading, setLoading] = useState<Record<string, boolean>>({});
   const [modelError, setModelError] = useState<Record<string, string>>({});
   const [tests, setTests] = useState<Record<string, TestState>>({});
@@ -100,8 +102,10 @@ export function useProviders() {
     setLoading((s) => ({ ...s, [p.id]: true }));
     setModelError((s) => ({ ...s, [p.id]: "" }));
     try {
-      const list = await apiListModels(p.base_url, p.api_key);
+      const all = await apiListModels(p.base_url, p.api_key);
+      const list = all.map((m) => m.id);
       setModels((s) => ({ ...s, [p.id]: list }));
+      setInfo((s) => ({ ...s, [p.id]: Object.fromEntries(all.map((m) => [m.id, m])) }));
       if (list.length === 0) setModelError((s) => ({ ...s, [p.id]: "The provider returned no models." }));
     } catch (e) {
       setModelError((s) => ({ ...s, [p.id]: String(e) }));
@@ -145,7 +149,7 @@ export function useProviders() {
     set(parts.length ? { kind: "ok", msg: parts.join(" · ") } : { kind: "fail", msg: "Turn on AI writing or Speech-to-text first." });
   }
 
-  return { providers, add, update, remove, toggleUse, test, tests, models, loading, modelError, loadModels };
+  return { providers, add, update, remove, toggleUse, test, tests, models, info, loading, modelError, loadModels };
 }
 
 export type ProvidersApi = ReturnType<typeof useProviders>;
@@ -164,6 +168,29 @@ export const isChatModel = (m: string) => !!m && !NOT_CHAT.test(m);
 export const showModel = (m: string) => m.replace(/^models\//, "");
 
 /** Splits "openai/gpt-4o" into a family to group by; ids without a slash share one group. */
+/** A model's cost to sort by (prompt + completion, USD per token); null when the provider gives none. */
+export function modelCost(m?: ModelInfo): number | null {
+  const p = Number(m?.pricing?.prompt);
+  const c = Number(m?.pricing?.completion);
+  // OpenRouter marks a price set per request (its auto router) with -1.
+  if (!m?.pricing || !Number.isFinite(p) || !Number.isFinite(c) || p < 0 || c < 0) return null;
+  return p + c;
+}
+
+const usd = (n: number) => `$${n >= 10 ? n.toFixed(0) : n >= 0.1 ? n.toFixed(2) : n.toPrecision(2)}`;
+
+/** "$0.30 in · $1.20 out per 1M tokens", "$0.012 per hour" (speech-to-text billed by audio), "Free". */
+export function priceLabel(m: ModelInfo | undefined, stt: boolean): string | null {
+  const cost = modelCost(m);
+  if (cost === null) return null;
+  if (cost === 0) return "Free";
+  const p = Number(m!.pricing!.prompt);
+  const c = Number(m!.pricing!.completion);
+  // shortcut: OpenRouter prices audio-only STT per second of audio (no output price); a few use other units, upgrade if it adds a unit field.
+  if (stt && c === 0 && p < 0.01) return `${usd(p * 3600)} per hour of audio`;
+  return `${usd(p * 1e6)} in · ${usd(c * 1e6)} out per 1M tokens`;
+}
+
 function family(m: string): string {
   const id = showModel(m);
   return id.includes("/") ? id.split("/")[0] : "";
@@ -197,6 +224,9 @@ export function ModelPicker({
   const [q, setQ] = useState("");
   const [active, setActive] = useState(0);
   const [showOther, setShowOther] = useState(false);
+  const [sort, setSort] = useState<"name" | "cheap" | "dear">("name");
+  const info = api.info[p.id];
+  const priced = !!info && Object.values(info).some((m) => modelCost(m) !== null);
   const box = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const list = api.models[p.id];
@@ -225,11 +255,14 @@ export function ModelPicker({
     if (stt) return { chat: hits.filter((m) => STT.test(m) && !/tts/i.test(m)), other: [] };
     return { chat: hits.filter((m) => !NOT_CHAT.test(m)), other: hits.filter((m) => NOT_CHAT.test(m)) };
   }, [list, q, stt]);
-  const visible = showOther || q ? [...chat, ...other] : chat;
+  const unsorted = showOther || q ? [...chat, ...other] : chat;
+  // Models without a price go last either way.
+  const costOf = (m: string) => modelCost(info?.[m]) ?? (sort === "cheap" ? Infinity : -Infinity);
+  const visible = sort === "name" || !priced ? unsorted : [...unsorted].sort((a, b) => (sort === "cheap" ? costOf(a) - costOf(b) : costOf(b) - costOf(a)));
   const custom = q.trim() && !(list ?? []).some((m) => showModel(m) === q.trim() || m === q.trim()) ? q.trim() : null;
   const rows = custom ? [custom, ...visible] : visible;
 
-  useEffect(() => setActive(0), [q, showOther]);
+  useEffect(() => setActive(0), [q, showOther, sort]);
   useEffect(() => {
     listRef.current?.querySelector<HTMLElement>(`[data-i="${active}"]`)?.scrollIntoView({ block: "nearest" });
   }, [active]);
@@ -278,6 +311,13 @@ export function ModelPicker({
           className="h-10 w-full bg-transparent text-sm outline-none placeholder:text-sv-muted"
           style={{ outline: "none" }}
         />
+        {priced && (
+          <Select value={sort} onChange={(v) => setSort(v as typeof sort)} className="w-36 shrink-0" aria-label="Sort models">
+            <option value="name">By name</option>
+            <option value="cheap">Cheapest first</option>
+            <option value="dear">Priciest first</option>
+          </Select>
+        )}
         <button
           onClick={() => api.loadModels(p)}
           disabled={!canLoad || loading}
@@ -296,7 +336,9 @@ export function ModelPicker({
           </li>
         )}
         {rows.map((m, i) => {
-          const fam = m === custom ? null : family(m);
+          // Sorted by price, families are mixed: show the full id, no headings.
+          const fam = m === custom || sort !== "name" ? null : family(m);
+          const price = m === custom ? null : priceLabel(info?.[m], stt);
           const header = fam !== null && fam !== lastFamily && fam !== "" ? fam : null;
           if (fam !== null) lastFamily = fam;
           const selected = current === m;
@@ -320,6 +362,7 @@ export function ModelPicker({
                     <Highlight text={fam ? showModel(m).slice(fam.length + 1) : showModel(m)} q={q} />
                   )}
                 </span>
+                {price && <span className="shrink-0 text-[11px] tabular-nums text-sv-muted">{price}</span>}
                 {selected && <Icon.check className="h-4 w-4 shrink-0 text-sv-accent" />}
               </button>
             </li>

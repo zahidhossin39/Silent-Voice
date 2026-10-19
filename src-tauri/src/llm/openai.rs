@@ -45,12 +45,26 @@ struct ResponseMessage {
 
 #[derive(Deserialize)]
 struct ModelsResponse {
-    data: Vec<ModelEntry>,
+    data: Vec<ModelInfo>,
 }
 
-#[derive(Deserialize)]
-struct ModelEntry {
-    id: String,
+/// One model a provider offers. Price and context only come from providers
+/// that publish them (OpenRouter): USD per token, as decimal strings.
+#[derive(Deserialize, serde::Serialize, Clone, Debug, PartialEq)]
+pub struct ModelInfo {
+    pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pricing: Option<Pricing>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_length: Option<u64>,
+}
+
+#[derive(Deserialize, serde::Serialize, Clone, Debug, PartialEq)]
+pub struct Pricing {
+    #[serde(default)]
+    pub prompt: String,
+    #[serde(default)]
+    pub completion: String,
 }
 
 fn client() -> reqwest::Client {
@@ -68,7 +82,7 @@ fn endpoint(base_url: &str) -> String {
 
 /// Fetch the full list of model ids a provider offers (GET {base_url}/models).
 /// Works for OpenRouter, OpenAI, Groq, Together, LM Studio, etc.
-pub async fn list_models(base_url: &str, api_key: &str) -> Result<Vec<String>, String> {
+pub async fn list_models(base_url: &str, api_key: &str) -> Result<Vec<ModelInfo>, String> {
     let mut ids = list_models_at(base_url, api_key, "/models").await?;
     // OpenRouter leaves its speech-to-text models off the main list.
     if base_url.contains("openrouter.ai") {
@@ -76,12 +90,12 @@ pub async fn list_models(base_url: &str, api_key: &str) -> Result<Vec<String>, S
             ids.extend(stt);
         }
     }
-    ids.sort();
-    ids.dedup();
+    ids.sort_by(|a, b| a.id.cmp(&b.id));
+    ids.dedup_by(|a, b| a.id == b.id);
     Ok(ids)
 }
 
-async fn list_models_at(base_url: &str, api_key: &str, path: &str) -> Result<Vec<String>, String> {
+async fn list_models_at(base_url: &str, api_key: &str, path: &str) -> Result<Vec<ModelInfo>, String> {
     let url = format!("{}{path}", base_url.trim_end_matches('/'));
     let mut req = client().get(&url);
     if !api_key.is_empty() {
@@ -95,7 +109,7 @@ async fn list_models_at(base_url: &str, api_key: &str, path: &str) -> Result<Vec
         return Err(format!("Provider returned {}", resp.status()));
     }
     let parsed: ModelsResponse = resp.json().await.map_err(|e| e.to_string())?;
-    Ok(parsed.data.into_iter().map(|m| m.id).collect())
+    Ok(parsed.data)
 }
 
 /// Run a system+user chat completion and return the assistant text.

@@ -825,7 +825,7 @@ async fn api_generate(
 }
 
 #[tauri::command]
-async fn api_list_models(base_url: String, api_key: String) -> Result<Vec<String>, String> {
+async fn api_list_models(base_url: String, api_key: String) -> Result<Vec<llm::openai::ModelInfo>, String> {
     llm::openai::list_models(&base_url, &api_key).await
 }
 

@@ -16,6 +16,7 @@ import {
   transcriptDelete,
   transcriptGet,
   transcriptSaveAs,
+  transcribeCancel,
   speakerLabel,
   transcriptParagraphs,
   transcriptsList,
@@ -640,7 +641,18 @@ function MeetingPanel({
           <>
             {dayLabel(t.created)} · {timeOf(t.created)}
             {!live && ` · ${clock(t.duration_ms ?? t.done_ms)}`}
-            {t.redo && " · transcribing again…"}
+            {t.redo && (
+              <>
+                {" · transcribing again… "}
+                <button
+                  onClick={() => transcribeCancel()}
+                  title="Stop and keep the old text"
+                  className="rounded font-medium text-sv-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sv-accent"
+                >
+                  Cancel
+                </button>
+              </>
+            )}
             {!live && redoWith && (
               <>
                 {" · "}

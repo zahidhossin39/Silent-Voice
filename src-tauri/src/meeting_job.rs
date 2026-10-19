@@ -85,7 +85,7 @@ pub fn start(app: &AppHandle, cloud: Option<transcribe_job::Cloud>) -> Result<Tr
     crate::system::tray::set_meeting_recording(app, true);
     let first = t.clone();
     let app = app.clone();
-    std::thread::spawn(move || work(app, t, rx, cfg));
+    std::thread::spawn(move || work(app, t, rx, cfg, None));
     Ok(first)
 }
 
@@ -133,7 +133,7 @@ pub fn retranscribe(app: &AppHandle, id: i64, cloud: Option<transcribe_job::Clou
         .map(|s| hound::WavReader::open(transcripts::audio_path(id, s)).map_err(|_| "This meeting's audio wasn't saved, so it can't be transcribed again.".to_string()));
     let [you, others] = readers;
     let (you, others) = (you?, others?);
-    transcribe_job::claim(id)?;
+    let cancel = transcribe_job::claim(id)?;
     let mut t = match transcripts::load(id) {
         Ok(t) if t.kind == Kind::Meeting => t,
         Ok(_) => {
@@ -145,6 +145,8 @@ pub fn retranscribe(app: &AppHandle, id: i64, cloud: Option<transcribe_job::Clou
             return Err(e);
         }
     };
+    // Cancel puts this back.
+    let before = t.clone();
     t.lines.clear();
     t.error = None;
     t.done_ms = 0;
@@ -158,19 +160,20 @@ pub fn retranscribe(app: &AppHandle, id: i64, cloud: Option<transcribe_job::Clou
     }
     // Bounded: the reader waits for the worker instead of loading hours of audio.
     let (tx, rx) = std::sync::mpsc::sync_channel(64);
-    std::thread::spawn(move || feed([you, others], tx));
+    let stop = cancel.clone();
+    std::thread::spawn(move || feed([you, others], tx, &stop));
     let first = t.clone();
     let app = app.clone();
-    std::thread::spawn(move || work(app, t, rx, cfg));
+    std::thread::spawn(move || work(app, t, rx, cfg, Some((cancel, before))));
     Ok(first)
 }
 
 /// Both tracks to the worker in 0.1 s turns, as if they were being recorded.
-fn feed<R: std::io::Read>(readers: [hound::WavReader<R>; 2], tx: std::sync::mpsc::SyncSender<Msg>) {
+fn feed<R: std::io::Read>(readers: [hound::WavReader<R>; 2], tx: std::sync::mpsc::SyncSender<Msg>, cancel: &std::sync::atomic::AtomicBool) {
     const CHUNK: usize = SR as usize / 10;
     let mut samples = readers.map(|r| r.into_samples::<i16>());
     let mut open = [true, true];
-    while open.iter().any(|o| *o) {
+    while open.iter().any(|o| *o) && !cancel.load(std::sync::atomic::Ordering::Relaxed) {
         for (i, speaker) in [Speaker::You, Speaker::Others].into_iter().enumerate() {
             if !open[i] {
                 continue;
@@ -195,7 +198,8 @@ pub fn stop(app: &AppHandle) -> Result<(), String> {
     a.and(b)
 }
 
-fn work(app: AppHandle, mut t: Transcript, rx: impl IntoIterator<Item = Msg>, cfg: Cfg) {
+/// `undo`: a Transcribe again, with its Cancel flag and the text to put back.
+fn work(app: AppHandle, mut t: Transcript, rx: impl IntoIterator<Item = Msg>, cfg: Cfg, undo: Option<(std::sync::Arc<std::sync::atomic::AtomicBool>, Transcript)>) {
     let started = Instant::now();
     let mut last_saved = Instant::now();
     run(
@@ -203,6 +207,10 @@ fn work(app: AppHandle, mut t: Transcript, rx: impl IntoIterator<Item = Msg>, cf
         rx,
         [longform::chunker(cfg.sensitivity), longform::chunker(cfg.sensitivity)],
         |samples| {
+            // Cancelled: skip the pieces still queued; the old text comes back below.
+            if undo.as_ref().is_some_and(|(c, _)| c.load(std::sync::atomic::Ordering::Relaxed)) {
+                return Ok(String::new());
+            }
             transcribe_job::transcribe_piece(&app, samples, &cfg)
                 .inspect_err(|e| crate::logging::log_error("meeting", &format!("piece skipped: {e}")))
         },
@@ -217,6 +225,12 @@ fn work(app: AppHandle, mut t: Transcript, rx: impl IntoIterator<Item = Msg>, cf
             }
         },
     );
+    if let Some((c, before)) = &undo {
+        if c.load(std::sync::atomic::Ordering::Relaxed) {
+            crate::logging::log_info("meeting", "transcribe again cancelled; old text kept");
+            return transcribe_job::finish(&app, before);
+        }
+    }
     // ponytail: repaired once at Stop, so the live view (and a meeting cut short
     // by closing the app) keeps each piece's own punctuation; repair as each
     // paragraph closes if that reads badly.
@@ -519,7 +533,7 @@ mod tests {
             hound::WavReader::new(std::io::Cursor::new(out.into_inner())).unwrap()
         };
         let (tx, rx) = std::sync::mpsc::sync_channel(1_000);
-        feed([wav(4_000, 1_000), wav(1_700, -1_000)], tx);
+        feed([wav(4_000, 1_000), wav(1_700, -1_000)], tx, &std::sync::atomic::AtomicBool::new(false));
         let got: Vec<(Speaker, usize)> = rx.iter().map(|m| match m {
             Msg::Audio(s, c) => (s, c.len()),
             Msg::Failed(..) => panic!(),

@@ -564,12 +564,16 @@ export async function setActiveMode(
 }
 
 /** Fetch all model ids a provider offers (GET {base_url}/models). */
-export async function apiListModels(
-  baseUrl: string,
-  apiKey: string
-): Promise<string[]> {
+/** A provider's model; price (USD per token, as text) only where the provider publishes it. */
+export interface ModelInfo {
+  id: string;
+  pricing?: { prompt: string; completion: string };
+  context_length?: number;
+}
+
+export async function apiListModels(baseUrl: string, apiKey: string): Promise<ModelInfo[]> {
   if (!isTauri()) return [];
-  return invoke<string[]>("api_list_models", { baseUrl, apiKey });
+  return invoke<ModelInfo[]>("api_list_models", { baseUrl, apiKey });
 }
 
 /** Generic OpenAI-compatible call (OpenAI, OpenRouter, Groq, Together…). */
