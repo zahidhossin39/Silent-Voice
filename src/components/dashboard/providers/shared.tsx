@@ -31,7 +31,7 @@ export const PRESETS: Preset[] = [
     base_url: "https://generativelanguage.googleapis.com/v1beta/openai",
     model: "",
     blurb: "Gemini models",
-    note: "Uses Google's OpenAI-compatible layer for chat. It has no speech-to-text this app can use.",
+    note: "Uses Google's OpenAI-compatible layer for chat. Its transcribe model doesn't answer through it; for speech-to-text use Groq or OpenRouter.",
   },
   { name: "OpenAI", base_url: "https://api.openai.com/v1", model: "gpt-4o-mini", sttModel: "whisper-1", blurb: "GPT models and Whisper" },
   { name: "OpenRouter", base_url: "https://openrouter.ai/api/v1", model: "anthropic/claude-sonnet-4-6", sttModel: "openai/whisper-large-v3-turbo", blurb: "Hundreds of models with one key" },
@@ -153,7 +153,10 @@ export type ProvidersApi = ReturnType<typeof useProviders>;
 // ---------------- Model picker ----------------
 
 /** Model ids that are not chat models (images, video, audio, embeddings…). */
-const NOT_CHAT = /(embed|veo|imagen|lyria|tts|whisper|dall-e|moderation|banana|image|audio|realtime|transcribe|aqa|learnlm|orpheus|playai|guard)/i;
+const NOT_CHAT = /(embed|veo|imagen|lyria|tts|whisper|dall-e|moderation|banana|image|audio|realtime|transcribe|scribe|aqa|learnlm|orpheus|playai|guard)/i;
+
+/** Model ids that turn speech into text. */
+const STT = /(whisper|transcri|scribe|asr|stt|voxtral|parakeet|canary)/i;
 
 /** A model id that can write text (not image, audio, embeddings…). */
 export const isChatModel = (m: string) => !!m && !NOT_CHAT.test(m);
@@ -177,6 +180,7 @@ export function ModelPicker({
   onPicked,
   value,
   onPick,
+  stt = false,
 }: {
   p: ApiProvider;
   api: ProvidersApi;
@@ -185,6 +189,8 @@ export function ModelPicker({
   /** Pick a model for one place instead of changing the provider's default. */
   value?: string;
   onPick?: (model: string) => void;
+  /** List only speech-to-text models. */
+  stt?: boolean;
 }) {
   const current = value ?? p.model;
   const [open, setOpen] = useState(inline);
@@ -216,8 +222,9 @@ export function ModelPicker({
   const { chat, other } = useMemo(() => {
     const needle = q.trim().toLowerCase();
     const hits = (list ?? []).filter((m) => !needle || m.toLowerCase().includes(needle));
+    if (stt) return { chat: hits.filter((m) => STT.test(m) && !/tts/i.test(m)), other: [] };
     return { chat: hits.filter((m) => !NOT_CHAT.test(m)), other: hits.filter((m) => NOT_CHAT.test(m)) };
-  }, [list, q]);
+  }, [list, q, stt]);
   const visible = showOther || q ? [...chat, ...other] : chat;
   const custom = q.trim() && !(list ?? []).some((m) => showModel(m) === q.trim() || m === q.trim()) ? q.trim() : null;
   const rows = custom ? [custom, ...visible] : visible;
@@ -266,7 +273,7 @@ export function ModelPicker({
           value={q}
           onChange={(e) => setQ(e.target.value)}
           onKeyDown={onKey}
-          placeholder={list ? `Search ${list.length} models, or type a model id` : "Type a model id"}
+          placeholder={list ? `Search ${stt ? chat.length : list.length} models, or type a model id` : "Type a model id"}
           aria-label="Search models"
           className="h-10 w-full bg-transparent text-sm outline-none placeholder:text-sv-muted"
           style={{ outline: "none" }}

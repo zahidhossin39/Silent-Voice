@@ -7,7 +7,7 @@
 // STT lock serializes them anyway). Stop ends the capture; the worker then
 // finishes what's queued. Always local, like files.
 
-use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::mpsc::{channel, Sender};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -36,7 +36,8 @@ enum Msg {
 /// The two running captures; Stop takes them.
 static CAPTURE: Mutex<Option<(Live, Live)>> = Mutex::new(None);
 
-pub fn start(app: &AppHandle, cloud: Option<transcribe_job::Cloud>) -> Result<Transcript, String> {
+/// The user's settings, transcribing with `cloud` when given.
+fn cfg_for(app: &AppHandle, cloud: Option<transcribe_job::Cloud>) -> Result<Cfg, String> {
     let mut cfg = Cfg::load(app)?;
     if let Some(c) = cloud {
         if c.base_url.trim().is_empty() || c.model.trim().is_empty() {
@@ -47,6 +48,11 @@ pub fn start(app: &AppHandle, cloud: Option<transcribe_job::Cloud>) -> Result<Tr
         cfg.model_id = c.model.clone();
         cfg.cloud = Some(c);
     }
+    Ok(cfg)
+}
+
+pub fn start(app: &AppHandle, cloud: Option<transcribe_job::Cloud>) -> Result<Transcript, String> {
+    let cfg = cfg_for(app, cloud)?;
     let id = transcripts::new_id()?;
     transcribe_job::claim(id)?;
     // Unnamed until the user names it: the page shows the start time instead.
@@ -119,6 +125,65 @@ fn capture_track(speaker: Speaker, source: Source, id: i64, tx: &Sender<Msg>) ->
     Ok((live, wav_err))
 }
 
+/// Transcribe a saved meeting again from its two WAVs, with today's model
+/// (or `cloud`). The new text replaces the old as it comes; the Overview stays.
+pub fn retranscribe(app: &AppHandle, id: i64, cloud: Option<transcribe_job::Cloud>) -> Result<Transcript, String> {
+    let cfg = cfg_for(app, cloud)?;
+    let readers = [Speaker::You, Speaker::Others]
+        .map(|s| hound::WavReader::open(transcripts::audio_path(id, s)).map_err(|_| "This meeting's audio wasn't saved, so it can't be transcribed again.".to_string()));
+    let [you, others] = readers;
+    let (you, others) = (you?, others?);
+    transcribe_job::claim(id)?;
+    let mut t = match transcripts::load(id) {
+        Ok(t) if t.kind == Kind::Meeting => t,
+        Ok(_) => {
+            transcribe_job::release(id);
+            return Err("Only meetings can be transcribed again here.".into());
+        }
+        Err(e) => {
+            transcribe_job::release(id);
+            return Err(e);
+        }
+    };
+    t.lines.clear();
+    t.error = None;
+    t.done_ms = 0;
+    t.work_ms = 0;
+    t.status = Status::Running;
+    t.redo = true;
+    t.model_id = cfg.model_id.clone();
+    if let Err(e) = transcripts::save(&t) {
+        transcribe_job::release(id);
+        return Err(e);
+    }
+    // Bounded: the reader waits for the worker instead of loading hours of audio.
+    let (tx, rx) = std::sync::mpsc::sync_channel(64);
+    std::thread::spawn(move || feed([you, others], tx));
+    let first = t.clone();
+    let app = app.clone();
+    std::thread::spawn(move || work(app, t, rx, cfg));
+    Ok(first)
+}
+
+/// Both tracks to the worker in 0.1 s turns, as if they were being recorded.
+fn feed<R: std::io::Read>(readers: [hound::WavReader<R>; 2], tx: std::sync::mpsc::SyncSender<Msg>) {
+    const CHUNK: usize = SR as usize / 10;
+    let mut samples = readers.map(|r| r.into_samples::<i16>());
+    let mut open = [true, true];
+    while open.iter().any(|o| *o) {
+        for (i, speaker) in [Speaker::You, Speaker::Others].into_iter().enumerate() {
+            if !open[i] {
+                continue;
+            }
+            let chunk: Vec<f32> = samples[i].by_ref().take(CHUNK).map_while(Result::ok).map(|s| s as f32 / i16::MAX as f32).collect();
+            open[i] = chunk.len() == CHUNK;
+            if !chunk.is_empty() && tx.send(Msg::Audio(speaker, chunk)).is_err() {
+                return;
+            }
+        }
+    }
+}
+
 /// End the capture; the worker finishes the queued pieces and marks it done.
 pub fn stop(app: &AppHandle) -> Result<(), String> {
     let Some((mic, speakers)) = CAPTURE.lock().map_err(|e| e.to_string())?.take() else {
@@ -130,7 +195,7 @@ pub fn stop(app: &AppHandle) -> Result<(), String> {
     a.and(b)
 }
 
-fn work(app: AppHandle, mut t: Transcript, rx: Receiver<Msg>, cfg: Cfg) {
+fn work(app: AppHandle, mut t: Transcript, rx: impl IntoIterator<Item = Msg>, cfg: Cfg) {
     let started = Instant::now();
     let mut last_saved = Instant::now();
     run(
@@ -161,6 +226,7 @@ fn work(app: AppHandle, mut t: Transcript, rx: Receiver<Msg>, cfg: Cfg) {
     t.work_ms = started.elapsed().as_millis() as u64;
     t.duration_ms = Some(t.done_ms);
     t.status = Status::Done;
+    t.redo = false;
     crate::logging::log_info("meeting", &format!("done: {:.1} min, {} lines", t.done_ms as f64 / 60_000.0, t.lines.len()));
     transcribe_job::finish(&app, &t);
 }
@@ -170,7 +236,7 @@ fn work(app: AppHandle, mut t: Transcript, rx: Receiver<Msg>, cfg: Cfg) {
 /// after every chunk; `news` when there's new text or a new problem to show.
 fn run<V: FnMut(&[f32]) -> Option<Vec<bool>>>(
     t: &mut Transcript,
-    rx: Receiver<Msg>,
+    rx: impl IntoIterator<Item = Msg>,
     chunkers: [longform::Chunker<V>; 2],
     mut transcribe: impl FnMut(&[f32]) -> Result<String, String>,
     mut changed: impl FnMut(&mut Transcript, bool),
@@ -440,6 +506,26 @@ mod tests {
         run(&mut t, rx, chunkers(), |_| Ok(String::new()), |_, _| {});
         assert_eq!(t.done_ms, 2_000, "audio after the failure was lost");
         assert!(t.error.as_deref().is_some_and(|e| e.contains("computer's sound") && e.contains("0:01")), "{:?}", t.error);
+    }
+
+    #[test]
+    fn saved_tracks_are_fed_back_in_turns_until_both_end() {
+        let wav = |n: usize, v: i16| {
+            let mut out = std::io::Cursor::new(Vec::new());
+            let spec = hound::WavSpec { channels: 1, sample_rate: 16_000, bits_per_sample: 16, sample_format: hound::SampleFormat::Int };
+            let mut w = hound::WavWriter::new(&mut out, spec).unwrap();
+            (0..n).for_each(|_| w.write_sample(v).unwrap());
+            w.finalize().unwrap();
+            hound::WavReader::new(std::io::Cursor::new(out.into_inner())).unwrap()
+        };
+        let (tx, rx) = std::sync::mpsc::sync_channel(1_000);
+        feed([wav(4_000, 1_000), wav(1_700, -1_000)], tx);
+        let got: Vec<(Speaker, usize)> = rx.iter().map(|m| match m {
+            Msg::Audio(s, c) => (s, c.len()),
+            Msg::Failed(..) => panic!(),
+        }).collect();
+        use Speaker::*;
+        assert_eq!(got, vec![(You, 1_600), (Others, 1_600), (You, 1_600), (Others, 100), (You, 800)]);
     }
 
     #[test]

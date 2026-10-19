@@ -366,6 +366,7 @@ mod tests {
             work_ms: 0,
             lines: Vec::new(),
             summary: None,
+            redo: false,
         }
     }
 

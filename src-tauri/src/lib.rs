@@ -978,6 +978,24 @@ async fn meeting_stop(app: AppHandle) -> Result<(), String> {
     meeting_job::stop(&app)
 }
 
+/// Transcribe a saved meeting again from its audio.
+#[tauri::command]
+async fn meeting_retranscribe(app: AppHandle, id: i64, cloud: Option<transcribe_job::Cloud>) -> Result<transcripts::Transcript, String> {
+    meeting_job::retranscribe(&app, id, cloud)
+}
+
+/// Ids of the meetings that mention `query`, newest first.
+#[tauri::command]
+fn meetings_search(query: String) -> Vec<i64> {
+    transcripts::search(&query)
+}
+
+/// A stretch of one meeting track as WAV bytes (an ArrayBuffer in the page).
+#[tauri::command]
+fn meeting_audio_clip(id: i64, speaker: transcripts::Speaker, start_ms: u64, end_ms: u64) -> Result<tauri::ipc::Response, String> {
+    transcripts::audio_clip(id, speaker, start_ms, end_ms).map(tauri::ipc::Response::new)
+}
+
 #[tauri::command]
 fn transcripts_list() -> Vec<transcripts::Transcript> {
     transcripts::list()
@@ -1668,6 +1686,9 @@ pub fn run() {
             file_transcribe_cancel,
             meeting_start,
             meeting_stop,
+            meeting_retranscribe,
+            meetings_search,
+            meeting_audio_clip,
             meeting_devices,
             transcripts_list,
             transcript_get,

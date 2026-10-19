@@ -3,13 +3,19 @@ import Page from "../shared/Page";
 import Select from "../shared/Select";
 import { useSettingsStore } from "../../stores/settingsStore";
 import TranscriptHeader, { clock } from "../shared/TranscriptHeader";
+import { TrashIcon } from "../shared/TranscriptCard";
 import MeetingOverview, { GearIcon, SummarySettings, useSummaryChoice, type Choice, type SummaryChoice } from "./MeetingOverview";
 import {
   listenEvent,
+  meetingAudioClip,
   meetingDevices,
+  meetingRetranscribe,
+  meetingsSearch,
   meetingStart,
   meetingStop,
+  transcriptDelete,
   transcriptGet,
+  transcriptSaveAs,
   speakerLabel,
   transcriptParagraphs,
   transcriptsList,
@@ -28,9 +34,9 @@ const STT_KEY = "sv-notetaker-stt";
 export function useMeetingRecording(): boolean {
   const [on, setOn] = useState(false);
   useEffect(() => {
-    transcriptsList().then((l) => setOn(l.some((t) => t.kind === "meeting" && t.status === "running")));
+    transcriptsList().then((l) => setOn(l.some((t) => t.kind === "meeting" && t.status === "running" && !t.redo)));
     const un = listenEvent<Transcript>("transcript://update", (t) => {
-      if (t.kind === "meeting") setOn(t.status === "running");
+      if (t.kind === "meeting") setOn(t.status === "running" && !t.redo);
     });
     return () => {
       un.then((f) => f());
@@ -123,7 +129,28 @@ export default function Notetaker() {
     };
   }, [selected]);
 
-  const recording = list.find((t) => t.status === "running") ?? null;
+  const recording = list.find((t) => t.status === "running" && !t.redo) ?? null;
+  const busy = list.some((t) => t.status === "running");
+
+  const [query, setQuery] = useState("");
+  const [found, setFound] = useState<Set<number> | null>(null);
+  useEffect(() => {
+    if (!query.trim()) return setFound(null);
+    let cancelled = false;
+    // Searches every saved word; wait for a pause in typing.
+    const timer = setTimeout(() => meetingsSearch(query).then((ids) => !cancelled && setFound(new Set(ids))), 200);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [query, list.length]);
+  const shown = found ? list.filter((t) => found.has(t.id)) : list;
+
+  const removed = (id: number) => {
+    const rest = list.filter((x) => x.id !== id);
+    setList(rest);
+    if (selected === id) setSelected(rest[0]?.id ?? null);
+  };
 
   const sttProviders = useSettingsStore((s) => s.providers).filter((p) => p.uses.includes("stt") && p.base_url && p.stt_model);
   const [sttKey, setSttKey] = useState(() => {
@@ -145,11 +172,24 @@ export default function Notetaker() {
     }
   };
 
+  const cloudArg = cloud && { base_url: cloud.base_url, api_key: cloud.api_key, model: cloud.stt_model };
+
+  const redo = async (id: number) => {
+    setError(null);
+    try {
+      const t = await meetingRetranscribe(id, cloudArg);
+      upsert(t);
+      setFull(t);
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
   const start = async () => {
     setError(null);
     setStarting(true);
     try {
-      const t = await meetingStart(cloud && { base_url: cloud.base_url, api_key: cloud.api_key, model: cloud.stt_model });
+      const t = await meetingStart(cloudArg);
       upsert(t);
       setSelected(t.id);
       setFull(t);
@@ -181,13 +221,13 @@ export default function Notetaker() {
 
   const groups = useMemo(() => {
     const out: { day: string; items: Transcript[] }[] = [];
-    for (const t of list) {
+    for (const t of shown) {
       const day = dayLabel(t.created);
       if (out[out.length - 1]?.day === day) out[out.length - 1].items.push(t);
       else out.push({ day, items: [t] });
     }
     return out;
-  }, [list]);
+  }, [shown]);
 
   const btMic = bluetooth(devices.mic);
 
@@ -267,8 +307,20 @@ export default function Notetaker() {
               {error}
             </p>
           )}
+          {list.length > 0 && (
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search meetings"
+              aria-label="Search meetings"
+              className="w-full rounded-xl border border-sv-border bg-sv-surface px-3.5 py-2 text-sm outline-none placeholder:text-sv-muted focus:border-sv-accent"
+            />
+          )}
           <section aria-label="Past meetings" className="min-h-0 flex-1 overflow-y-auto pr-1">
-            {list.length === 0 ? (
+            {found && shown.length === 0 ? (
+              <p className="px-1 pt-2 text-sm text-sv-muted">No meeting mentions "{query.trim()}".</p>
+            ) : list.length === 0 ? (
               <p className="px-1 pt-2 text-sm text-sv-muted">
                 Your meetings will be listed here. Start recording when a call begins, and stop when it ends.
               </p>
@@ -279,7 +331,7 @@ export default function Notetaker() {
                   <ul className="space-y-1">
                     {g.items.map((t) => (
                       <li key={t.id}>
-                        <MeetingRow t={t} active={t.id === selected} onClick={() => setSelected(t.id)} />
+                        <MeetingRow t={t} active={t.id === selected} onClick={() => setSelected(t.id)} onDeleted={() => removed(t.id)} onError={setError} />
                       </li>
                     ))}
                   </ul>
@@ -294,12 +346,7 @@ export default function Notetaker() {
             key={full.id}
             t={full}
             stopping={stopping && full.status === "running"}
-            onDeleted={() => {
-              const id = full.id;
-              const rest = list.filter((x) => x.id !== id);
-              setList(rest);
-              setSelected(rest[0]?.id ?? null);
-            }}
+            onDeleted={() => removed(full.id)}
             onRenamed={(name) => {
               setList((l) => l.map((x) => (x.id === full.id ? { ...x, name } : x)));
               setFull({ ...full, name });
@@ -307,6 +354,8 @@ export default function Notetaker() {
             onSummarized={(next) => setFull((cur) => (cur?.id === next.id ? next : cur))}
             summaryWith={summary.chosen}
             onSettings={() => setSettingsOpen(true)}
+            redoWith={busy ? null : cloud ? cloud.name : "this PC"}
+            onRedo={() => redo(full.id)}
           />
         ) : (
           <div className="hidden rounded-2xl border border-sv-border bg-sv-surface md:block" />
@@ -450,9 +499,30 @@ function Setup({
   );
 }
 
-function MeetingRow({ t, active, onClick }: { t: Transcript; active: boolean; onClick: () => void }) {
+function MeetingRow({
+  t,
+  active,
+  onClick,
+  onDeleted,
+  onError,
+}: {
+  t: Transcript;
+  active: boolean;
+  onClick: () => void;
+  onDeleted: () => void;
+  onError: (e: string) => void;
+}) {
   const live = t.status === "running";
+  const [confirm, setConfirm] = useState(false);
+  useEffect(() => {
+    if (!confirm) return;
+    const timer = setTimeout(() => setConfirm(false), 4000);
+    return () => clearTimeout(timer);
+  }, [confirm]);
+  const act =
+    "flex h-7 items-center justify-center rounded-md px-1.5 text-sv-muted transition hover:bg-sv-surface hover:text-sv-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sv-accent";
   return (
+    <div className="group relative">
     <button
       onClick={onClick}
       aria-current={active}
@@ -485,6 +555,37 @@ function MeetingRow({ t, active, onClick }: { t: Transcript; active: boolean; on
         </span>
       </span>
     </button>
+      {!live && (
+        <div
+          className={`absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-0.5 rounded-lg bg-sv-surface-2 p-0.5 ${
+            confirm ? "" : "opacity-0 group-focus-within:opacity-100 group-hover:opacity-100"
+          }`}
+        >
+          <button className={act} title="Save…" aria-label={`Save ${title(t)}`} onClick={() => transcriptSaveAs(t.id).catch((e) => onError(String(e)))}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden>
+              <path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19.5h14" />
+            </svg>
+          </button>
+          <button
+            className={`${act} ${confirm ? "gap-1 text-sv-bad hover:text-sv-bad" : ""}`}
+            title={confirm ? "Click again to delete" : "Delete"}
+            aria-label={confirm ? `Confirm delete ${title(t)}` : `Delete ${title(t)}`}
+            onClick={async () => {
+              if (!confirm) return setConfirm(true);
+              try {
+                await transcriptDelete(t.id);
+                onDeleted();
+              } catch (e) {
+                onError(String(e));
+              }
+            }}
+          >
+            <TrashIcon />
+            {confirm && <span className="text-xs font-medium">Delete?</span>}
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -496,6 +597,8 @@ function MeetingPanel({
   onSummarized,
   summaryWith,
   onSettings,
+  redoWith,
+  onRedo,
 }: {
   t: Transcript;
   stopping: boolean;
@@ -504,7 +607,17 @@ function MeetingPanel({
   onSummarized: (t: Transcript) => void;
   summaryWith?: Choice;
   onSettings: () => void;
+  /** Where "Transcribe again" would send the audio; null while a job runs. */
+  redoWith: string | null;
+  onRedo: () => void;
 }) {
+  const [confirmRedo, setConfirmRedo] = useState(false);
+  useEffect(() => {
+    if (!confirmRedo) return;
+    const timer = setTimeout(() => setConfirmRedo(false), 5000);
+    return () => clearTimeout(timer);
+  }, [confirmRedo]);
+  const player = usePlayer(t.id);
   const paras = useMemo(() => transcriptParagraphs(t.lines), [t]);
   const scroller = useRef<HTMLDivElement>(null);
   const bottom = useRef<HTMLDivElement>(null);
@@ -527,6 +640,25 @@ function MeetingPanel({
           <>
             {dayLabel(t.created)} · {timeOf(t.created)}
             {!live && ` · ${clock(t.duration_ms ?? t.done_ms)}`}
+            {t.redo && " · transcribing again…"}
+            {!live && redoWith && (
+              <>
+                {" · "}
+                <button
+                  onClick={() => {
+                    if (!confirmRedo) return setConfirmRedo(true);
+                    setConfirmRedo(false);
+                    onRedo();
+                  }}
+                  title={`Transcribe this meeting's audio again with ${redoWith}. The Overview is kept.`}
+                  className={`rounded font-medium hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sv-accent ${
+                    confirmRedo ? "text-sv-warn" : "text-sv-accent"
+                  }`}
+                >
+                  {confirmRedo ? `Replace the text? Transcribe with ${redoWith}` : "Transcribe again"}
+                </button>
+              </>
+            )}
           </>
         }
         copyText={(t.summary ? t.summary.trim() + "\n\n---\n\n" : "") + paras.map((p) => speakerLabel(p.speaker) + p.text).join("\n\n")}
@@ -550,7 +682,23 @@ function MeetingPanel({
           <ol className="space-y-5">
             {paras.map((p, i) => (
               <li key={i} className="grid grid-cols-[3.5rem_minmax(0,1fr)] gap-3">
-                <span className="pt-0.5 text-right text-[11px] tabular-nums text-sv-muted">{clock(p.start)}</span>
+                {live || !p.speaker ? (
+                  <span className="pt-0.5 text-right text-[11px] tabular-nums text-sv-muted">{clock(p.start)}</span>
+                ) : (
+                  <button
+                    onClick={() => player.toggle(i, p.speaker!, p.start, p.end)}
+                    aria-label={player.playing === i ? "Stop playing" : `Play from ${clock(p.start)}`}
+                    title={player.playing === i ? "Stop" : "Play this part"}
+                    className={`flex h-fit items-center justify-end gap-1 rounded pt-0.5 text-[11px] tabular-nums transition hover:text-sv-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sv-accent ${
+                      player.playing === i ? "text-sv-accent" : "text-sv-muted"
+                    }`}
+                  >
+                    <svg viewBox="0 0 12 12" className="h-2.5 w-2.5 shrink-0" fill="currentColor" aria-hidden>
+                      {player.playing === i ? <rect x="2" y="2" width="8" height="8" rx="1" /> : <path d="M3 1.5v9l7.5-4.5z" />}
+                    </svg>
+                    {clock(p.start)}
+                  </button>
+                )}
                 <div className="max-w-[72ch]">
                   <div className={`text-xs font-semibold ${p.speaker === "you" ? "text-sv-accent" : "text-sv-text"}`}>
                     {p.speaker === "you" ? "You" : "Others"}
@@ -578,4 +726,36 @@ function MeetingPanel({
       </div>
     </section>
   );
+}
+
+/** Plays one paragraph of a meeting's audio at a time; a second click stops it. */
+function usePlayer(id: number) {
+  const [playing, setPlaying] = useState<number | null>(null);
+  const audio = useRef<{ el: HTMLAudioElement; url: string } | null>(null);
+  const stop = useCallback(() => {
+    if (audio.current) {
+      audio.current.el.pause();
+      URL.revokeObjectURL(audio.current.url);
+      audio.current = null;
+    }
+    setPlaying(null);
+  }, []);
+  useEffect(() => stop, [id, stop]);
+  const toggle = async (i: number, speaker: "you" | "others", start: number, end: number) => {
+    const again = playing === i;
+    stop();
+    if (again) return;
+    setPlaying(i);
+    try {
+      const bytes = await meetingAudioClip(id, speaker, start, end);
+      const url = URL.createObjectURL(new Blob([bytes], { type: "audio/wav" }));
+      const el = new Audio(url);
+      audio.current = { el, url };
+      el.onended = stop;
+      await el.play();
+    } catch {
+      stop();
+    }
+  };
+  return { playing, toggle };
 }

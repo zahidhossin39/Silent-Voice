@@ -69,7 +69,20 @@ fn endpoint(base_url: &str) -> String {
 /// Fetch the full list of model ids a provider offers (GET {base_url}/models).
 /// Works for OpenRouter, OpenAI, Groq, Together, LM Studio, etc.
 pub async fn list_models(base_url: &str, api_key: &str) -> Result<Vec<String>, String> {
-    let url = format!("{}/models", base_url.trim_end_matches('/'));
+    let mut ids = list_models_at(base_url, api_key, "/models").await?;
+    // OpenRouter leaves its speech-to-text models off the main list.
+    if base_url.contains("openrouter.ai") {
+        if let Ok(stt) = list_models_at(base_url, api_key, "/models?output_modalities=transcription").await {
+            ids.extend(stt);
+        }
+    }
+    ids.sort();
+    ids.dedup();
+    Ok(ids)
+}
+
+async fn list_models_at(base_url: &str, api_key: &str, path: &str) -> Result<Vec<String>, String> {
+    let url = format!("{}{path}", base_url.trim_end_matches('/'));
     let mut req = client().get(&url);
     if !api_key.is_empty() {
         req = req.bearer_auth(api_key);
@@ -82,9 +95,7 @@ pub async fn list_models(base_url: &str, api_key: &str) -> Result<Vec<String>, S
         return Err(format!("Provider returned {}", resp.status()));
     }
     let parsed: ModelsResponse = resp.json().await.map_err(|e| e.to_string())?;
-    let mut ids: Vec<String> = parsed.data.into_iter().map(|m| m.id).collect();
-    ids.sort();
-    Ok(ids)
+    Ok(parsed.data.into_iter().map(|m| m.id).collect())
 }
 
 /// Run a system+user chat completion and return the assistant text.

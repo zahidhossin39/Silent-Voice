@@ -106,6 +106,7 @@ function AddMenu({ onAdd }: { onAdd: (name: string) => void }) {
 
 function Card({ p, api, onRemove }: { p: ApiProvider; api: ProvidersApi; onRemove: () => void }) {
   const [browsing, setBrowsing] = useState(false);
+  const [browsingStt, setBrowsingStt] = useState(false);
   const [editUrl, setEditUrl] = useState(!p.base_url);
   const s = statusOf(p, api.tests[p.id]);
   const preset = presetOf(p);
@@ -189,14 +190,17 @@ function Card({ p, api, onRemove }: { p: ApiProvider; api: ProvidersApi; onRemov
           </Seg>
         </div>
         {p.uses.includes("stt") && (
-          <input
-            value={p.stt_model}
-            onChange={(e) => api.update(p.id, { stt_model: e.target.value })}
-            placeholder="Speech-to-text model"
-            aria-label="Speech-to-text model"
-            spellCheck={false}
-            className="h-8 w-48 rounded-md border border-sv-border bg-sv-bg px-2 text-xs outline-none focus:border-sv-accent"
-          />
+          <button
+            onClick={() => setBrowsingStt((b) => !b)}
+            aria-expanded={browsingStt}
+            title="Choose the speech-to-text model"
+            className={`flex h-8 max-w-[16rem] items-center gap-2 rounded-md border bg-sv-bg px-2 text-xs transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sv-accent ${
+              browsingStt ? "border-sv-accent" : "border-sv-border hover:border-sv-muted/60"
+            }`}
+          >
+            <span className="min-w-0 truncate">{p.stt_model ? showModel(p.stt_model) : "Choose a model"}</span>
+            <span className="shrink-0 text-sv-accent">{browsingStt ? "Done" : "Change"}</span>
+          </button>
         )}
         <div className="min-w-0 flex-1">
           <TestLine t={api.tests[p.id]} />
@@ -207,6 +211,19 @@ function Card({ p, api, onRemove }: { p: ApiProvider; api: ProvidersApi; onRemov
           Test
         </Btn>
       </footer>
+      {browsingStt && p.uses.includes("stt") && (
+        <div className="px-5 pb-4">
+          <ModelPicker
+            p={p}
+            api={api}
+            inline
+            stt
+            value={p.stt_model}
+            onPick={(m) => api.update(p.id, { stt_model: m })}
+            onPicked={() => setBrowsingStt(false)}
+          />
+        </div>
+      )}
     </article>
   );
 }

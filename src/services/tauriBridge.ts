@@ -832,6 +832,8 @@ export interface Transcript {
   done_ms: number;
   work_ms: number;
   lines: TranscriptLine[];
+  /** A saved meeting being transcribed again (running, but not recording). */
+  redo?: boolean;
   /** A meeting's AI-written Overview (Markdown). */
   summary?: string | null;
 }
@@ -843,14 +845,14 @@ const ENDS_SENTENCE = /[.?!…。？！]["'”’)]*\s*$/;
 
 /** Runs of the same speaker, about TRANSCRIPT_PARAGRAPH lines, ending on a sentence end when one comes within twice that: mirrors `paragraphs` in transcripts.rs. */
 export function transcriptParagraphs(lines: TranscriptLine[]) {
-  const out: { start: number; speaker?: "you" | "others"; text: string }[] = [];
+  const out: { start: number; end: number; speaker?: "you" | "others"; text: string }[] = [];
   let from = 0;
   for (let i = 1; i <= lines.length; i++) {
     const n = i - from;
     const full = n >= 2 * TRANSCRIPT_PARAGRAPH || (n >= TRANSCRIPT_PARAGRAPH && ENDS_SENTENCE.test(lines[i - 1].text));
     if (i === lines.length || full || lines[i].speaker !== lines[from].speaker) {
       const group = lines.slice(from, i);
-      out.push({ start: group[0].start_ms, speaker: group[0].speaker, text: group.map((l) => l.text).join(" ") });
+      out.push({ start: group[0].start_ms, end: group[group.length - 1].end_ms, speaker: group[0].speaker, text: group.map((l) => l.text).join(" ") });
       from = i;
     }
   }
@@ -927,6 +929,24 @@ export async function transcriptSaveAs(id: number): Promise<boolean> {
 export async function meetingStart(cloud?: { base_url: string; api_key: string; model: string }): Promise<Transcript> {
   if (!isTauri()) throw new Error("Needs the desktop app");
   return invoke<Transcript>("meeting_start", { cloud: cloud ?? null });
+}
+
+/** Transcribe a saved meeting again from its audio; updates arrive like a recording's. */
+export async function meetingRetranscribe(id: number, cloud?: { base_url: string; api_key: string; model: string }): Promise<Transcript> {
+  if (!isTauri()) throw new Error("Needs the desktop app");
+  return invoke<Transcript>("meeting_retranscribe", { id, cloud: cloud ?? null });
+}
+
+/** Ids of the meetings whose name, Overview or words contain `query`. */
+export async function meetingsSearch(query: string): Promise<number[]> {
+  if (!isTauri()) return [];
+  return invoke<number[]>("meetings_search", { query });
+}
+
+/** A stretch of one meeting track, as WAV bytes. */
+export async function meetingAudioClip(id: number, speaker: "you" | "others", startMs: number, endMs: number): Promise<ArrayBuffer> {
+  if (!isTauri()) throw new Error("Needs the desktop app");
+  return invoke<ArrayBuffer>("meeting_audio_clip", { id, speaker, startMs, endMs });
 }
 
 /** Stop recording; the transcript then finishes the queued pieces. */

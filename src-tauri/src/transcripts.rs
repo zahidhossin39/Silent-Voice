@@ -60,6 +60,9 @@ pub struct Transcript {
     /// The meeting's Overview (Markdown), written by an LLM on request.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub summary: Option<String>,
+    /// A saved meeting being transcribed again from its audio (not recording).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub redo: bool,
 }
 
 impl Transcript {
@@ -79,6 +82,7 @@ impl Transcript {
             work_ms: 0,
             lines: Vec::new(),
             summary: None,
+            redo: false,
         }
     }
 }
@@ -163,6 +167,43 @@ pub fn audio_path(id: i64, speaker: Speaker) -> PathBuf {
     dir().join(format!("{id}-{}.wav", if speaker == Speaker::You { "you" } else { "others" }))
 }
 
+/// Meetings whose name, Overview or words contain `query` (any case), newest first.
+pub fn search(query: &str) -> Vec<i64> {
+    search_in(&dir(), query)
+}
+
+fn search_in(dir: &Path, query: &str) -> Vec<i64> {
+    let q = query.trim().to_lowercase();
+    all_in(dir)
+        .into_iter()
+        .filter(|t| t.kind == Kind::Meeting)
+        .filter(|t| {
+            q.is_empty()
+                || t.name.to_lowercase().contains(&q)
+                || t.summary.as_ref().is_some_and(|s| s.to_lowercase().contains(&q))
+                || t.lines.iter().any(|l| l.text.to_lowercase().contains(&q))
+        })
+        .map(|t| t.id)
+        .collect()
+}
+
+/// `start_ms..end_ms` of one track as a small WAV, for the page to play.
+pub fn audio_clip(id: i64, speaker: Speaker, start_ms: u64, end_ms: u64) -> Result<Vec<u8>, String> {
+    let mut r = hound::WavReader::open(audio_path(id, speaker)).map_err(|_| "This meeting's audio wasn't saved.".to_string())?;
+    let spec = r.spec();
+    let rate = spec.sample_rate as u64;
+    let from = (start_ms * rate / 1000).min(r.duration() as u64);
+    let n = (end_ms.saturating_sub(start_ms).min(10 * 60_000) * rate / 1000) as usize;
+    r.seek(from as u32).map_err(|e| e.to_string())?;
+    let mut out = std::io::Cursor::new(Vec::new());
+    let mut w = hound::WavWriter::new(&mut out, spec).map_err(|e| e.to_string())?;
+    for s in r.samples::<i16>().take(n) {
+        w.write_sample(s.map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+    }
+    w.finalize().map_err(|e| e.to_string())?;
+    Ok(out.into_inner())
+}
+
 /// At startup nothing is running, so a "running" transcript means the app was
 /// closed mid-way: mark it stopped so it offers Resume.
 pub fn mark_interrupted() {
@@ -173,6 +214,7 @@ fn mark_interrupted_in(dir: &Path) {
     for mut t in all_in(dir) {
         if t.status == Status::Running {
             t.status = Status::Stopped;
+            t.redo = false;
             let _ = save_in(dir, &t);
         }
     }
@@ -293,7 +335,40 @@ mod tests {
                 Line { start_ms: 3_661_005, end_ms: 3_725_500, text: "Last part.".into(), speaker: None },
             ],
             summary: None,
+            redo: false,
         }
+    }
+
+    #[test]
+    #[ignore] // reads a real saved meeting: SV_TEST_MEETING = its id
+    fn a_real_meeting_clip_is_a_playable_wav_of_the_asked_length() {
+        let id: i64 = std::env::var("SV_TEST_MEETING").unwrap().parse().unwrap();
+        let bytes = audio_clip(id, Speaker::Others, 60_000, 63_500).unwrap();
+        let r = hound::WavReader::new(std::io::Cursor::new(bytes)).unwrap();
+        assert_eq!((r.spec().sample_rate, r.duration()), (16_000, 56_000));
+        assert!(!search("").is_empty());
+    }
+
+    #[test]
+    fn search_finds_meetings_by_name_overview_or_words() {
+        let dir = std::env::temp_dir().join(format!("sv-search-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let meeting = |id, name: &str, summary: Option<&str>, words: &str| Transcript {
+            id,
+            kind: Kind::Meeting,
+            name: name.into(),
+            summary: summary.map(Into::into),
+            lines: vec![said(Speaker::Others, 0, words)],
+            ..sample()
+        };
+        save_in(&dir, &meeting(1, "Standup", None, "the budget is fine")).unwrap();
+        save_in(&dir, &meeting(2, "", Some("## Summary
+Hiring plan"), "hello")).unwrap();
+        save_in(&dir, &Transcript { id: 3, ..sample() }).unwrap(); // a file, never listed
+        let found = |q| search_in(&dir, q);
+        let r = (found("BUDGET"), found("hiring"), found("standup"), found("nothing"), found(" "));
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(r, (vec![1], vec![2], vec![1], vec![], vec![2, 1]));
     }
 
     #[test]
