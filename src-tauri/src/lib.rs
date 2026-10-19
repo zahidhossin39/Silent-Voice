@@ -272,9 +272,14 @@ pub async fn run_local_llm(
     system_prompt: &str,
     text: &str,
 ) -> Result<String, String> {
+    // Held through the chat, so a meeting summary can't swap the model out mid-dictation.
+    let _turn = LOCAL_LLM_TURN.lock().await;
     ensure_local_llm(app, model_id).await?;
     llm::openai::chat(&llm::llama::base_url(), "", model_id, system_prompt, text).await
 }
+
+/// Taken to start the local model and, for short dictation calls, to use it.
+static LOCAL_LLM_TURN: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 /// Start the bundled llama-server with `model_id` unless it already runs it.
 pub async fn ensure_local_llm(app: &AppHandle, model_id: &str) -> Result<(), String> {
@@ -1052,15 +1057,25 @@ async fn meeting_summarize(
     let t = transcribe_job::unless_running(id, BUSY, || transcripts::load(id))?;
     let budget = if local { meeting_summary::LOCAL_TOKENS } else { meeting_summary::CLOUD_TOKENS };
     let base_url = if local { llm::llama::base_url() } else { base_url };
-    // ponytail: a dictation with a different local model restarts llama-server
-    // and fails this summary; the user presses Summarize again.
     let summary = meeting_summary::summarize(&t, budget, |prompt, text| {
         let (app, model, base_url, api_key) = (app.clone(), model.clone(), base_url.clone(), api_key.clone());
         async move {
-            if local {
-                ensure_local_llm(&app, &model).await?;
+            if !local {
+                return llm::openai::chat_long(&base_url, &api_key, &model, prompt, &text).await;
             }
-            llm::openai::chat_long(&base_url, &api_key, &model, prompt, &text).await
+            // A dictation with another local model restarts llama-server under this
+            // long call: load ours back (after that dictation is done) and redo the part.
+            let mut tries = 0;
+            loop {
+                {
+                    let _turn = LOCAL_LLM_TURN.lock().await;
+                    ensure_local_llm(&app, &model).await?;
+                }
+                match llm::openai::chat_long(&base_url, &api_key, &model, prompt, &text).await {
+                    Err(_) if tries < 3 && !app.state::<AppState>().llama.lock().map_err(|e| e.to_string())?.is_running_model(&model) => tries += 1,
+                    r => return r,
+                }
+            }
         }
     })
     .await
