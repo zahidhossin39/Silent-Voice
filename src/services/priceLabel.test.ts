@@ -8,6 +8,11 @@ describe("model prices", () => {
   it("shows audio-only speech-to-text per hour of audio", () => {
     expect(priceLabel({ id: "w", pricing: { prompt: "0.00000333", completion: "0" } }, true)).toBe("$0.012 per hour of audio");
   });
+  it("reads MAI-Transcribe's price as already per hour", () => {
+    expect(priceLabel({ id: "microsoft/mai-transcribe-1.5", pricing: { prompt: "0.36", completion: "0" } }, true)).toBe("$0.36 per hour of audio");
+    const whisper = { id: "w", pricing: { prompt: "0.0001", completion: "0" } }; // $0.36/hour per second
+    expect(modelCost(whisper, true)).toBeCloseTo(modelCost({ id: "m", pricing: { prompt: "0.36", completion: "0" } }, true)!);
+  });
   it("says Free, and gives no price when the provider has none or a per-request one", () => {
     expect(priceLabel({ id: "f", pricing: { prompt: "0", completion: "0" } }, false)).toBe("Free");
     expect(priceLabel({ id: "g" }, false)).toBeNull();

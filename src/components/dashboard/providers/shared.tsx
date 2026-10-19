@@ -168,26 +168,31 @@ export const isChatModel = (m: string) => !!m && !NOT_CHAT.test(m);
 export const showModel = (m: string) => m.replace(/^models\//, "");
 
 /** Splits "openai/gpt-4o" into a family to group by; ids without a slash share one group. */
-/** A model's cost to sort by (prompt + completion, USD per token); null when the provider gives none. */
-export function modelCost(m?: ModelInfo): number | null {
+/** A model's cost to sort by (prompt + completion, USD per token; for audio-only
+ * speech-to-text, USD per hour); null when the provider gives none. */
+export function modelCost(m?: ModelInfo, stt = false): number | null {
   const p = Number(m?.pricing?.prompt);
   const c = Number(m?.pricing?.completion);
   // OpenRouter marks a price set per request (its auto router) with -1.
   if (!m?.pricing || !Number.isFinite(p) || !Number.isFinite(c) || p < 0 || c < 0) return null;
-  return p + c;
+  return stt && c === 0 ? perHour(p) : p + c;
 }
+
+/** OpenRouter bills audio-only speech-to-text per second of audio, except a few
+ * (Microsoft's MAI-Transcribe: 0.36 = Azure's $0.36/hour) priced per hour. */
+// shortcut: per-hour is told apart by size (no model costs $36+/hour); upgrade if OpenRouter adds a unit field.
+const perHour = (p: number) => (p >= 0.01 ? p : p * 3600);
 
 const usd = (n: number) => `$${n >= 10 ? n.toFixed(0) : n >= 0.1 ? n.toFixed(2) : n.toPrecision(2)}`;
 
 /** "$0.30 in · $1.20 out per 1M tokens", "$0.012 per hour" (speech-to-text billed by audio), "Free". */
 export function priceLabel(m: ModelInfo | undefined, stt: boolean): string | null {
-  const cost = modelCost(m);
+  const cost = modelCost(m, stt);
   if (cost === null) return null;
   if (cost === 0) return "Free";
   const p = Number(m!.pricing!.prompt);
   const c = Number(m!.pricing!.completion);
-  // shortcut: OpenRouter prices audio-only STT per second of audio (no output price); a few use other units, upgrade if it adds a unit field.
-  if (stt && c === 0 && p < 0.01) return `${usd(p * 3600)} per hour of audio`;
+  if (stt && c === 0) return `${usd(perHour(p))} per hour of audio`;
   return `${usd(p * 1e6)} in · ${usd(c * 1e6)} out per 1M tokens`;
 }
 
@@ -257,7 +262,7 @@ export function ModelPicker({
   }, [list, q, stt]);
   const unsorted = showOther || q ? [...chat, ...other] : chat;
   // Models without a price go last either way.
-  const costOf = (m: string) => modelCost(info?.[m]) ?? (sort === "cheap" ? Infinity : -Infinity);
+  const costOf = (m: string) => modelCost(info?.[m], stt) ?? (sort === "cheap" ? Infinity : -Infinity);
   const visible = sort === "name" || !priced ? unsorted : [...unsorted].sort((a, b) => (sort === "cheap" ? costOf(a) - costOf(b) : costOf(b) - costOf(a)));
   const custom = q.trim() && !(list ?? []).some((m) => showModel(m) === q.trim() || m === q.trim()) ? q.trim() : null;
   const rows = custom ? [custom, ...visible] : visible;
