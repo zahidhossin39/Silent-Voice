@@ -431,6 +431,7 @@ fn stop_mic_probe() -> Result<(), String> {
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 fn update_runtime_config(
+    app: AppHandle,
     state: State<AppState>,
     model_id: String,
     language: String,
@@ -445,6 +446,11 @@ fn update_runtime_config(
     use_gpu: bool,
 ) -> Result<(), String> {
     let mut cfg = state.config.lock().map_err(|e| e.to_string())?;
+    // What the loaded voice model is built from (the word list is baked into Parakeet).
+    let stt_key = |c: &RuntimeConfig| {
+        format!("{}|{}|{}|{}|{}|{}|{}", c.model_id, c.language, c.vocabulary, c.use_vocabulary, c.vocabulary_strength, c.use_gpu, c.stt_source)
+    };
+    let before = stt_key(&cfg);
     cfg.model_id = model_id;
     cfg.language = language;
     cfg.audio_device = audio_device;
@@ -456,9 +462,20 @@ fn update_runtime_config(
     cfg.stt_api_key = stt_api_key;
     cfg.stt_cloud_model = stt_cloud_model;
     cfg.use_gpu = use_gpu;
-    state
-        .config_pushed
-        .store(true, std::sync::atomic::Ordering::Relaxed);
+    let changed = stt_key(&cfg) != before;
+    drop(cfg);
+    // Startup has its own preload; after that, rebuild the model as soon as the
+    // user stops typing, so the next dictation doesn't wait ~10 s for it.
+    if state.config_pushed.swap(true, std::sync::atomic::Ordering::Relaxed) && changed {
+        static GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let gen = GEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+            if GEN.load(std::sync::atomic::Ordering::Relaxed) == gen {
+                let _ = transcription::whisper::preload(&app).await;
+            }
+        });
+    }
     Ok(())
 }
 
@@ -843,7 +860,7 @@ async fn api_test_stt(base_url: String, api_key: String, model: String) -> Resul
     // 0.5s of silence at 16kHz — enough for providers to accept the request
     // and return a (likely empty) transcript.
     capture::write_wav(&path, &vec![0.0f32; 8_000])?;
-    let result = llm::openai::transcribe_audio(&base_url, &api_key, &model, &path, "").await;
+    let result = llm::openai::transcribe_audio(&base_url, &api_key, &model, &path, "", "").await;
     let _ = std::fs::remove_file(&path);
     result.map(|t| {
         if t.is_empty() {
@@ -960,8 +977,8 @@ fn file_transcribe_cancel() {
 
 /// Record the mic (You) and the computer's sound (Others) into a live transcript.
 #[tauri::command]
-async fn meeting_start(app: AppHandle, cloud: Option<transcribe_job::Cloud>) -> Result<transcripts::Transcript, String> {
-    meeting_job::start(&app, cloud)
+async fn meeting_start(app: AppHandle, cloud: Option<transcribe_job::Cloud>, language: Option<String>) -> Result<transcripts::Transcript, String> {
+    meeting_job::start(&app, cloud, language)
 }
 
 /// The mic and speakers a meeting would record: `[mic, speakers]`.
@@ -980,8 +997,8 @@ async fn meeting_stop(app: AppHandle) -> Result<(), String> {
 
 /// Transcribe a saved meeting again from its audio.
 #[tauri::command]
-async fn meeting_retranscribe(app: AppHandle, id: i64, cloud: Option<transcribe_job::Cloud>) -> Result<transcripts::Transcript, String> {
-    meeting_job::retranscribe(&app, id, cloud)
+async fn meeting_retranscribe(app: AppHandle, id: i64, cloud: Option<transcribe_job::Cloud>, language: Option<String>) -> Result<transcripts::Transcript, String> {
+    meeting_job::retranscribe(&app, id, cloud, language)
 }
 
 /// Ids of the meetings that mention `query`, newest first.
@@ -1524,7 +1541,7 @@ pub fn run() {
                         std::thread::sleep(std::time::Duration::from_millis(500));
                     }
                     std::thread::sleep(std::time::Duration::from_secs(5));
-                    let r = meeting_job::start(&app, None);
+                    let r = meeting_job::start(&app, None, None);
                     logging::log_info("selftest", &format!("meeting started: {:?}", r.map(|t| t.id)));
                     if let Some(w) = app.get_webview_window("main") {
                         let _ = w.show();

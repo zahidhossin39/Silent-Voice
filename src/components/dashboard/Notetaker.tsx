@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Page from "../shared/Page";
 import Select from "../shared/Select";
 import { useSettingsStore } from "../../stores/settingsStore";
+import { LANGUAGES, STT_MODELS, honorsLanguage } from "../../services/catalog";
 import TranscriptHeader, { clock } from "../shared/TranscriptHeader";
 import { TrashIcon } from "../shared/TranscriptCard";
 import MeetingOverview, { GearIcon, SummarySettings, useSummaryChoice, type Choice, type SummaryChoice } from "./MeetingOverview";
@@ -30,6 +31,8 @@ import {
 const CONSENT_KEY = "sv-notetaker-consent-seen";
 /** "local", or the id of the cloud provider that transcribes meetings. */
 const STT_KEY = "sv-notetaker-stt";
+/** The meetings' language code, or "" for the dictation language. */
+const LANG_KEY = "sv-notetaker-language";
 
 /** True while a meeting records (for the sidebar dot). */
 export function useMeetingRecording(): boolean {
@@ -162,6 +165,33 @@ export default function Notetaker() {
     }
   });
   const cloud = sttProviders.find((p) => p.id === sttKey);
+  const [lang, setLang] = useState(() => {
+    try {
+      return localStorage.getItem(LANG_KEY) ?? "";
+    } catch {
+      return "";
+    }
+  });
+  const pickLang = (v: string) => {
+    setLang(v);
+    try {
+      localStorage.setItem(LANG_KEY, v);
+    } catch {
+      /* remembered for this visit only */
+    }
+  };
+  const dictationLang = useSettingsStore((s) => s.settings.language);
+  const localModel = STT_MODELS.find((m) => m.id === useSettingsStore.getState().settings.active_stt_model);
+  const meetingLang = lang || dictationLang;
+  const langName = (c: string) => LANGUAGES.find((l) => l.code === c)?.name ?? c;
+  // Parakeet, Moonshine and .en models ignore the language: say so instead of failing quietly.
+  const langNote = cloud
+    ? meetingLang === "auto"
+      ? `${cloud.name} detects the language of each part.`
+      : `${cloud.name} is told the meeting is in ${langName(meetingLang)}.`
+    : !honorsLanguage(localModel) && meetingLang !== "en"
+      ? `Your voice model (${localModel?.label ?? "this PC's"}) only understands ${localModel?.id.startsWith("sense-voice") ? "a few languages" : "English"}. For ${meetingLang === "auto" ? "other languages" : langName(meetingLang)}, transcribe with a cloud provider or download a Whisper model.`
+      : `Transcribed in ${meetingLang === "auto" ? "whatever language is spoken" : langName(meetingLang)}.`;
   const summary = useSummaryChoice();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const pickStt = (v: string) => {
@@ -178,7 +208,7 @@ export default function Notetaker() {
   const redo = async (id: number) => {
     setError(null);
     try {
-      const t = await meetingRetranscribe(id, cloudArg);
+      const t = await meetingRetranscribe(id, cloudArg, lang || undefined);
       upsert(t);
       setFull(t);
     } catch (e) {
@@ -190,7 +220,7 @@ export default function Notetaker() {
     setError(null);
     setStarting(true);
     try {
-      const t = await meetingStart(cloudArg);
+      const t = await meetingStart(cloudArg, lang || undefined);
       upsert(t);
       setSelected(t.id);
       setFull(t);
@@ -268,6 +298,17 @@ export default function Notetaker() {
             <NotetakerSettings
               onClose={() => setSettingsOpen(false)}
               summary={summary}
+              language={
+                <Select value={lang} onChange={pickLang} className="w-full" disabled={!!recording}>
+                  <option value="">Same as dictation ({langName(dictationLang)})</option>
+                  {LANGUAGES.map((l) => (
+                    <option key={l.code} value={l.code}>
+                      {l.name}
+                    </option>
+                  ))}
+                </Select>
+              }
+              languageNote={langNote}
               stt={
                 <Select value={cloud ? cloud.id : "local"} onChange={pickStt} className="w-full" disabled={!!recording}>
                   <option value="local">On this PC (your voice model)</option>
@@ -372,11 +413,15 @@ function NotetakerSettings({
   summary,
   stt,
   sttNote,
+  language,
+  languageNote,
 }: {
   onClose: () => void;
   summary: SummaryChoice;
   stt: React.ReactNode;
   sttNote: string;
+  language: React.ReactNode;
+  languageNote: string;
 }) {
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -405,6 +450,9 @@ function NotetakerSettings({
         <p className="mb-2 mt-0.5 text-xs text-sv-muted">Turns the meeting's audio into text as people talk.</p>
         {stt}
         <p className="mt-1.5 text-xs text-sv-muted">{sttNote}</p>
+        <h4 className="mb-1.5 mt-4 text-xs font-semibold text-sv-muted">Language spoken</h4>
+        {language}
+        <p className="mt-1.5 text-xs text-sv-muted">{languageNote}</p>
       </section>
       <section className="border-t border-sv-border pt-4">
         <h3 className="text-sm font-semibold">Summary</h3>

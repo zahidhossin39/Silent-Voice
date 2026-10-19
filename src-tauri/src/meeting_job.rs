@@ -37,8 +37,13 @@ enum Msg {
 static CAPTURE: Mutex<Option<(Live, Live)>> = Mutex::new(None);
 
 /// The user's settings, transcribing with `cloud` when given.
-fn cfg_for(app: &AppHandle, cloud: Option<transcribe_job::Cloud>) -> Result<Cfg, String> {
+/// `language` overrides the dictation language for meetings ("auto" detects it).
+fn cfg_for(app: &AppHandle, cloud: Option<transcribe_job::Cloud>, language: Option<String>) -> Result<Cfg, String> {
     let mut cfg = Cfg::load(app)?;
+    if let Some(l) = language.filter(|l| !l.is_empty()) {
+        cfg.english = crate::system::hotkey::english_text(&l, &cfg.model_id);
+        cfg.language = l;
+    }
     if let Some(c) = cloud {
         if c.base_url.trim().is_empty() || c.model.trim().is_empty() {
             return Err("Pick a speech-to-text model for this provider in Cloud providers.".into());
@@ -56,8 +61,8 @@ fn model_name(cfg: &Cfg) -> String {
     cfg.cloud.as_ref().map_or_else(|| cfg.model_id.clone(), |c| c.model.clone())
 }
 
-pub fn start(app: &AppHandle, cloud: Option<transcribe_job::Cloud>) -> Result<Transcript, String> {
-    let cfg = cfg_for(app, cloud)?;
+pub fn start(app: &AppHandle, cloud: Option<transcribe_job::Cloud>, language: Option<String>) -> Result<Transcript, String> {
+    let cfg = cfg_for(app, cloud, language)?;
     let id = transcripts::new_id()?;
     transcribe_job::claim(id)?;
     // Unnamed until the user names it: the page shows the start time instead.
@@ -132,8 +137,8 @@ fn capture_track(speaker: Speaker, source: Source, id: i64, tx: &Sender<Msg>) ->
 
 /// Transcribe a saved meeting again from its two WAVs, with today's model
 /// (or `cloud`). The new text replaces the old as it comes; the Overview stays.
-pub fn retranscribe(app: &AppHandle, id: i64, cloud: Option<transcribe_job::Cloud>) -> Result<Transcript, String> {
-    let cfg = cfg_for(app, cloud)?;
+pub fn retranscribe(app: &AppHandle, id: i64, cloud: Option<transcribe_job::Cloud>, language: Option<String>) -> Result<Transcript, String> {
+    let cfg = cfg_for(app, cloud, language)?;
     let readers = [Speaker::You, Speaker::Others]
         .map(|s| hound::WavReader::open(transcripts::audio_path(id, s)).map_err(|_| "This meeting's audio wasn't saved, so it can't be transcribed again.".to_string()));
     let [you, others] = readers;

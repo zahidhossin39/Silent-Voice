@@ -35,7 +35,8 @@ pub async fn transcribe_dispatch(
             stt_api_key,
             stt_cloud_model,
             audio_path,
-            vocabulary,
+            prompt_for(language, vocabulary),
+            language,
         )
         .await
         {

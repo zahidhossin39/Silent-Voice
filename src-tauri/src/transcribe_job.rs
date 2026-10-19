@@ -81,7 +81,7 @@ pub fn unless_running<T>(id: i64, busy: &str, f: impl FnOnce() -> Result<T, Stri
 /// Shared with the meeting recorder.
 pub(crate) struct Cfg {
     pub(crate) model_id: String,
-    language: String,
+    pub(crate) language: String,
     vocabulary: String,
     use_vocabulary: bool,
     use_gpu: bool,

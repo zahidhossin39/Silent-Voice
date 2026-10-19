@@ -233,11 +233,14 @@ pub async fn transcribe_audio(
     model: &str,
     wav_path: &std::path::Path,
     vocabulary: &str,
+    language: &str,
 ) -> Result<String, String> {
+    // "auto" (or unset) lets the model detect it.
+    let language = Some(language).filter(|l| !l.is_empty() && *l != "auto");
     if base_url.contains("openrouter.ai") {
-        transcribe_audio_openrouter(base_url, api_key, model, wav_path, vocabulary).await
+        transcribe_audio_openrouter(base_url, api_key, model, wav_path, vocabulary, language).await
     } else {
-        transcribe_audio_multipart(base_url, api_key, model, wav_path, vocabulary).await
+        transcribe_audio_multipart(base_url, api_key, model, wav_path, vocabulary, language).await
     }
 }
 
@@ -257,6 +260,7 @@ async fn transcribe_audio_multipart(
     model: &str,
     wav_path: &std::path::Path,
     vocabulary: &str,
+    language: Option<&str>,
 ) -> Result<String, String> {
     let url = format!(
         "{}/audio/transcriptions",
@@ -282,6 +286,9 @@ async fn transcribe_audio_multipart(
         let vocab = vocabulary.trim();
         if !vocab.is_empty() {
             form = form.text("prompt", vocab.to_string());
+        }
+        if let Some(l) = language {
+            form = form.text("language", l.to_string());
         }
 
         let mut req = client().post(&url).multipart(form);
@@ -326,6 +333,8 @@ struct OpenRouterInputAudio<'a> {
 struct OpenRouterTranscriptionRequest<'a> {
     model: &'a str,
     input_audio: OpenRouterInputAudio<'a>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    language: Option<&'a str>,
 }
 
 async fn transcribe_audio_openrouter(
@@ -336,6 +345,7 @@ async fn transcribe_audio_openrouter(
     // OpenRouter's transcription API documents no `prompt`/vocabulary field —
     // custom vocabulary only applies to local + multipart (OpenAI/Groq) STT.
     _vocabulary: &str,
+    language: Option<&str>,
 ) -> Result<String, String> {
     use base64::Engine;
 
@@ -352,6 +362,7 @@ async fn transcribe_audio_openrouter(
     let body = OpenRouterTranscriptionRequest {
         model,
         input_audio: OpenRouterInputAudio { data, format: "wav" },
+        language,
     };
 
     let mut attempt = 0usize;
@@ -399,7 +410,7 @@ mod tests {
     fn real_provider_transcribes() {
         let v = |k: &str| std::env::var(k).unwrap();
         let rt = tokio::runtime::Runtime::new().unwrap();
-        let out = rt.block_on(super::transcribe_audio(&v("SV_TEST_BASE"), &v("SV_TEST_KEY"), &v("SV_TEST_MODEL"), std::path::Path::new(&v("SV_TEST_WAV")), ""));
+        let out = rt.block_on(super::transcribe_audio(&v("SV_TEST_BASE"), &v("SV_TEST_KEY"), &v("SV_TEST_MODEL"), std::path::Path::new(&v("SV_TEST_WAV")), "", ""));
         println!("stt: {out:?}");
         assert!(out.is_ok_and(|t| !t.trim().is_empty()));
     }
