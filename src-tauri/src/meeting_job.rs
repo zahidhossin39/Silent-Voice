@@ -44,11 +44,16 @@ fn cfg_for(app: &AppHandle, cloud: Option<transcribe_job::Cloud>) -> Result<Cfg,
             return Err("Pick a speech-to-text model for this provider in Cloud providers.".into());
         }
         // Cloud Whisper punctuates whole sentences itself; the repair model is for Parakeet.
+        // cfg.model_id stays the local model: it's what a failed cloud call falls back to.
         cfg.english = false;
-        cfg.model_id = c.model.clone();
         cfg.cloud = Some(c);
     }
     Ok(cfg)
+}
+
+/// The model a meeting is transcribed with, as the page shows it.
+fn model_name(cfg: &Cfg) -> String {
+    cfg.cloud.as_ref().map_or_else(|| cfg.model_id.clone(), |c| c.model.clone())
 }
 
 pub fn start(app: &AppHandle, cloud: Option<transcribe_job::Cloud>) -> Result<Transcript, String> {
@@ -56,7 +61,7 @@ pub fn start(app: &AppHandle, cloud: Option<transcribe_job::Cloud>) -> Result<Tr
     let id = transcripts::new_id()?;
     transcribe_job::claim(id)?;
     // Unnamed until the user names it: the page shows the start time instead.
-    let mut t = Transcript::new(id, Kind::Meeting, String::new(), String::new(), cfg.model_id.clone());
+    let mut t = Transcript::new(id, Kind::Meeting, String::new(), String::new(), model_name(&cfg));
     let (tx, rx) = channel();
     let started = transcripts::save(&t).and_then(|()| {
         let mic = capture_track(Speaker::You, Source::Mic(cfg.mic.clone()), id, &tx)?;
@@ -153,7 +158,7 @@ pub fn retranscribe(app: &AppHandle, id: i64, cloud: Option<transcribe_job::Clou
     t.work_ms = 0;
     t.status = Status::Running;
     t.redo = true;
-    t.model_id = cfg.model_id.clone();
+    t.model_id = model_name(&cfg);
     if let Err(e) = transcripts::save(&t) {
         transcribe_job::release(id);
         return Err(e);
