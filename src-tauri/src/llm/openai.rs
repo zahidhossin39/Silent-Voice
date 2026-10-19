@@ -410,7 +410,7 @@ mod tests {
     fn real_provider_transcribes() {
         let v = |k: &str| std::env::var(k).unwrap();
         let rt = tokio::runtime::Runtime::new().unwrap();
-        let out = rt.block_on(super::transcribe_audio(&v("SV_TEST_BASE"), &v("SV_TEST_KEY"), &v("SV_TEST_MODEL"), std::path::Path::new(&v("SV_TEST_WAV")), "", ""));
+        let out = rt.block_on(super::transcribe_audio(&v("SV_TEST_BASE"), &v("SV_TEST_KEY"), &v("SV_TEST_MODEL"), std::path::Path::new(&v("SV_TEST_WAV")), "", &std::env::var("SV_TEST_LANG").unwrap_or_default()));
         println!("stt: {out:?}");
         assert!(out.is_ok_and(|t| !t.trim().is_empty()));
     }
