@@ -48,9 +48,10 @@ fn cfg_for(app: &AppHandle, cloud: Option<transcribe_job::Cloud>, language: Opti
         if c.base_url.trim().is_empty() || c.model.trim().is_empty() {
             return Err("Pick a speech-to-text model for this provider in Cloud providers.".into());
         }
-        // Cloud Whisper punctuates whole sentences itself; the repair model is for Parakeet.
+        // Each cloud piece is punctuated alone, so pauses become full stops: the
+        // English repair model fixes that at Stop. Other languages are left as sent.
         // cfg.model_id stays the local model: it's what a failed cloud call falls back to.
-        cfg.english = false;
+        cfg.english = cfg.language.starts_with("en");
         cfg.cloud = Some(c);
     }
     Ok(cfg)
