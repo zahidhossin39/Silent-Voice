@@ -92,6 +92,9 @@ pub(crate) struct Cfg {
     pub(crate) mic: Option<String>,
     /// A cloud provider to transcribe with instead of the local model.
     pub(crate) cloud: Option<Cloud>,
+    /// The languages a meeting may be in, when the user picked several; then
+    /// `language` is "auto" and a piece in another script is redone in the first.
+    pub(crate) languages: Vec<String>,
 }
 
 /// An OpenAI-compatible speech-to-text endpoint (`/audio/transcriptions`).
@@ -122,6 +125,7 @@ impl Cfg {
             sensitivity: c.input_sensitivity,
             mic: c.audio_device.clone(),
             cloud: None,
+            languages: Vec::new(),
         })
     }
 }
@@ -284,23 +288,96 @@ pub(crate) fn transcribe_piece(app: &AppHandle, samples: &[f32], cfg: &Cfg) -> R
     // Whisper invent a sentence or answer just "Thank you." for the whole piece.
     let trimmed = crate::audio::gate::trim_silence(samples, cfg.sensitivity);
     capture::write_wav(&path, trimmed.as_deref().unwrap_or(samples))?;
-    let text = tauri::async_runtime::block_on(crate::transcription::whisper::transcribe_dispatch(
-        app,
-        &path,
-        &cfg.model_id,
-        cfg.threads,
-        &cfg.language,
-        &cfg.vocabulary,
-        cfg.use_vocabulary,
-        cfg.use_gpu,
-        if cfg.cloud.is_some() { "cloud" } else { "local" },
-        cfg.cloud.as_ref().map_or("", |c| c.base_url.as_str()),
-        cfg.cloud.as_ref().map_or("", |c| c.api_key.as_str()),
-        cfg.cloud.as_ref().map_or("", |c| c.model.as_str()),
-    ));
+    let decode = |language: &str| {
+        tauri::async_runtime::block_on(crate::transcription::whisper::transcribe_dispatch(
+            app,
+            &path,
+            &cfg.model_id,
+            cfg.threads,
+            language,
+            &cfg.vocabulary,
+            cfg.use_vocabulary,
+            cfg.use_gpu,
+            if cfg.cloud.is_some() { "cloud" } else { "local" },
+            cfg.cloud.as_ref().map_or("", |c| c.base_url.as_str()),
+            cfg.cloud.as_ref().map_or("", |c| c.api_key.as_str()),
+            cfg.cloud.as_ref().map_or("", |c| c.model.as_str()),
+        ))
+    };
+    let mut text = decode(&cfg.language);
+    // Auto-detect guessed a language the user didn't pick (Hindi in a Bangla +
+    // English call): redo it in their first language.
+    if let (Ok(t), Some(first)) = (&text, cfg.languages.first()) {
+        if foreign_script(t, &cfg.languages) {
+            crate::logging::log_info("transcribe", "piece came back in another script; redone in the first language");
+            text = decode(first);
+        }
+    }
     let _ = std::fs::remove_file(&path);
     let text = text?;
     Ok(textfmt::collapse_repeated_words(&textfmt::strip_fillers(text.trim())).trim().to_string())
+}
+
+/// The scripts a language is written in; None for one this check doesn't know.
+fn scripts_of(lang: &str) -> Option<&'static [&'static str]> {
+    Some(match lang {
+        "bn" | "as" => &["bengali"],
+        "hi" | "mr" | "ne" | "sa" => &["devanagari"],
+        "ar" | "fa" | "ur" | "ps" | "sd" => &["arabic"],
+        "ru" | "uk" | "bg" | "sr" | "mk" | "be" | "kk" | "mn" => &["cyrillic"],
+        "el" => &["greek"],
+        "he" | "yi" => &["hebrew"],
+        "th" => &["thai"],
+        "ko" => &["hangul"],
+        "ja" => &["kana", "han"],
+        "zh" | "yue" => &["han"],
+        "ta" => &["tamil"],
+        "te" => &["telugu"],
+        "kn" => &["kannada"],
+        "ml" => &["malayalam"],
+        "gu" => &["gujarati"],
+        "pa" => &["gurmukhi"],
+        "si" => &["sinhala"],
+        // Latin-script languages: Latin is always allowed anyway.
+        "en" | "es" | "fr" | "de" | "it" | "pt" | "nl" | "pl" | "tr" | "id" | "ms" | "vi" | "sv" | "da" | "no" | "fi" | "cs" | "ro" | "hu" | "tl" | "sw" => &[],
+        _ => return None,
+    })
+}
+
+fn script_of(c: char) -> Option<&'static str> {
+    Some(match c as u32 {
+        0x0980..=0x09FF => "bengali",
+        0x0900..=0x097F => "devanagari",
+        0x0600..=0x06FF | 0x0750..=0x077F => "arabic",
+        0x0400..=0x04FF => "cyrillic",
+        0x0370..=0x03FF => "greek",
+        0x0590..=0x05FF => "hebrew",
+        0x0E00..=0x0E7F => "thai",
+        0xAC00..=0xD7AF | 0x1100..=0x11FF => "hangul",
+        0x3040..=0x30FF => "kana",
+        0x4E00..=0x9FFF => "han",
+        0x0B80..=0x0BFF => "tamil",
+        0x0C00..=0x0C7F => "telugu",
+        0x0C80..=0x0CFF => "kannada",
+        0x0D00..=0x0D7F => "malayalam",
+        0x0A80..=0x0AFF => "gujarati",
+        0x0A00..=0x0A7F => "gurmukhi",
+        0x0D80..=0x0DFF => "sinhala",
+        _ => return None,
+    })
+}
+
+/// True when `text` has letters in a script none of `languages` is written in.
+/// Latin always passes: English words run through most people's speech.
+fn foreign_script(text: &str, languages: &[String]) -> bool {
+    let mut allowed: Vec<&str> = Vec::new();
+    for l in languages {
+        match scripts_of(l) {
+            Some(s) => allowed.extend_from_slice(s),
+            None => return false, // a language we can't check: don't guess
+        }
+    }
+    text.chars().filter_map(script_of).any(|s| !allowed.contains(&s))
 }
 
 /// Repair punctuation across the last `n` lines as one paragraph. Each piece was
@@ -337,6 +414,17 @@ pub(crate) fn split_like(text: &str, like: &[&str]) -> Option<Vec<String>> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_piece_in_a_script_none_of_the_picked_languages_use_is_foreign() {
+        let bn_en = ["bn".to_string(), "en".to_string()];
+        assert!(!foreign_script("আমি ভালো আছি, I mean really.", &bn_en));
+        assert!(foreign_script("Resources दिया थे नहीं जगह.", &bn_en));
+        assert!(!foreign_script("Mas Summer ki kovar.", &bn_en)); // Latin: can't tell, passes
+        assert!(!foreign_script("दिया", &["xx".to_string()])); // unknown language: no check
+        assert!(foreign_script("こんにちは", &["zh".to_string()]));
+    }
+
     use super::*;
     use crate::audio::vad::FRAME;
 

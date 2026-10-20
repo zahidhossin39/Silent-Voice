@@ -186,11 +186,16 @@ export default function Notetaker() {
     },
   ];
   const localModel = STT_MODELS.find((m) => m.id === useSettingsStore.getState().settings.active_stt_model);
-  const meetingLang = lang || dictationLang;
+  // "bn,en": the first is the main language, the rest are also spoken.
+  const [firstLang = "", ...alsoLangs] = lang.split(",");
+  const meetingLang = firstLang || dictationLang;
+  const listed = alsoLangs.length > 0 ? [meetingLang, ...alsoLangs] : null;
   const langName = (c: string) => LANGUAGES.find((l) => l.code === c)?.name ?? c;
   // Parakeet, Moonshine and .en models ignore the language: say so instead of failing quietly.
   // Measured on a Bangla meeting: Whisper turbo wrote English, v3 garbled it; these got it right.
-  const langNote = cloud
+  const langNote = listed
+    ? `Each part is checked for ${listed.map(langName).join(", ")}. A part that comes back in another script (Hindi letters in a Bangla call, say) is transcribed again in ${langName(meetingLang)}.`
+    : cloud
     ? meetingLang !== "en" && /whisper/i.test(sttModelOf(cloud))
       ? `Whisper models handle ${meetingLang === "auto" ? "languages other than English" : langName(meetingLang)} poorly (turbo turns them into English). For better results pick microsoft/mai-transcribe-2 or elevenlabs/scribe-v2 from OpenRouter.`
       : meetingLang === "auto"
@@ -292,14 +297,46 @@ export default function Notetaker() {
               onClose={() => setSettingsOpen(false)}
               summary={summary}
               language={
-                <Select value={lang} onChange={pickLang} className="w-full" disabled={!!recording}>
-                  <option value="">Same as dictation ({langName(dictationLang)})</option>
-                  {LANGUAGES.map((l) => (
-                    <option key={l.code} value={l.code}>
-                      {l.name}
-                    </option>
-                  ))}
-                </Select>
+                <div className="flex flex-col gap-2">
+                  <Select value={firstLang} onChange={(v) => pickLang(v && v !== "auto" ? [v, ...alsoLangs.filter((x) => x !== v)].join(",") : v)} className="w-full" disabled={!!recording}>
+                    <option value="">Same as dictation ({langName(dictationLang)})</option>
+                    {LANGUAGES.map((l) => (
+                      <option key={l.code} value={l.code}>
+                        {l.name}
+                      </option>
+                    ))}
+                  </Select>
+                  {meetingLang !== "auto" && (
+                    <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                      <span className="text-sv-muted">Also spoken:</span>
+                      {alsoLangs.map((code) => (
+                        <button
+                          key={code}
+                          onClick={() => pickLang([firstLang || meetingLang, ...alsoLangs.filter((x) => x !== code)].join(","))}
+                          disabled={!!recording}
+                          aria-label={`Remove ${langName(code)}`}
+                          className="flex items-center gap-1 rounded-full border border-sv-border px-2 py-0.5 hover:border-sv-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sv-accent"
+                        >
+                          {langName(code)} <span aria-hidden>×</span>
+                        </button>
+                      ))}
+                      <select
+                        value=""
+                        onChange={(e) => e.target.value && pickLang([firstLang || meetingLang, ...alsoLangs, e.target.value].join(","))}
+                        disabled={!!recording}
+                        aria-label="Add a language"
+                        className="h-6 rounded-md border border-sv-border bg-sv-bg px-1 text-xs text-sv-muted outline-none focus:border-sv-accent"
+                      >
+                        <option value="">+ Add</option>
+                        {LANGUAGES.filter((l) => l.code !== "auto" && l.code !== meetingLang && !alsoLangs.includes(l.code)).map((l) => (
+                          <option key={l.code} value={l.code}>
+                            {l.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
               }
               languageNote={langNote}
               stt={
@@ -514,7 +551,7 @@ function SpeakersSetting() {
       <p className="mt-0.5 text-xs text-sv-muted">
         {state === "busy"
           ? "Working…"
-          : "After you stop, Others is split into Speaker 1, Speaker 2… on this PC. Takes about 10 s per minute of meeting; the text shows meanwhile. Downloads 47 MB the first time."}
+          : "After you stop, Others is split into Speaker 1, Speaker 2… on this PC. Takes about 15 s per minute of meeting; the text shows meanwhile. Downloads 47 MB the first time."}
       </p>
       {error && <p className="mt-1 text-xs text-sv-warn">{error}</p>}
     </section>

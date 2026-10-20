@@ -41,8 +41,14 @@ static CAPTURE: Mutex<Option<(Live, Live)>> = Mutex::new(None);
 fn cfg_for(app: &AppHandle, cloud: Option<transcribe_job::Cloud>, language: Option<String>) -> Result<Cfg, String> {
     let mut cfg = Cfg::load(app)?;
     if let Some(l) = language.filter(|l| !l.is_empty()) {
-        cfg.english = crate::system::hotkey::english_text(&l, &cfg.model_id);
+        // "bn,en": several languages, detected per piece and held to that list.
+        let list: Vec<String> = l.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
+        let l = if list.len() > 1 { "auto".to_string() } else { l };
+        cfg.english = if list.len() > 1 { list.iter().all(|x| x == "en") } else { crate::system::hotkey::english_text(&l, &cfg.model_id) };
         cfg.language = l;
+        if list.len() > 1 {
+            cfg.languages = list;
+        }
     }
     if let Some(c) = cloud {
         if c.base_url.trim().is_empty() || c.model.trim().is_empty() {
@@ -265,7 +271,7 @@ fn work(app: AppHandle, mut t: Transcript, rx: impl IntoIterator<Item = Msg>, cf
 }
 
 /// Label each Others line with who said it (Speaker 1, 2, ...) when the speaker
-/// models are downloaded. Runs after the meeting is saved: about 10 s per minute
+/// models are downloaded. Runs after the meeting is saved: about 15 s per minute
 /// of audio, so the text is readable meanwhile and the labels arrive after.
 fn tell_speakers_apart(app: &AppHandle, id: i64) {
     if !crate::models::registry::diarize_installed() {
