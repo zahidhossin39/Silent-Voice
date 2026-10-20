@@ -11,7 +11,9 @@ set -euo pipefail
 WHISPER_TAG=b4938
 LLAMA_TAG=b10631
 PIPER_TAG=2023.11.14-2
-SHERPA_TAG=v1.13.6
+# Same release as the committed Windows DLLs: the C structs must match the
+# Rust FFI (v1.13.6 added a field to the speaker-segmentation config).
+SHERPA_TAG=v1.13.4
 
 OS=$(uname -s)
 TRIPLE=$(rustc -vV | sed -n 's/^host: //p')
