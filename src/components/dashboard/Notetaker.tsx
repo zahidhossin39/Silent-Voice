@@ -20,6 +20,10 @@ import {
   transcriptSaveAs,
   transcribeCancel,
   speakerLabel,
+  speakerName,
+  diarizeInstalled,
+  downloadDiarizeModel,
+  deleteDiarizeModel,
   transcriptParagraphs,
   transcriptsList,
   type Transcript,
@@ -457,12 +461,63 @@ function NotetakerSettings({
         {stt}
         <p className="mt-1.5 text-xs text-sv-muted">{sttNote}</p>
       </section>
+      <SpeakersSetting />
       <section className="border-t border-sv-border pt-4">
         <h3 className="text-sm font-semibold">Summary</h3>
         <p className="mb-2 mt-0.5 text-xs text-sv-muted">Writes the Overview: key points, decisions and action items.</p>
         <SummarySettings s={summary} />
       </section>
     </div>
+  );
+}
+
+/** "Tell speakers apart": on = the speaker models are downloaded. */
+function SpeakersSetting() {
+  const [state, setState] = useState<"off" | "on" | "busy">("busy");
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    diarizeInstalled().then((on) => setState(on ? "on" : "off"));
+  }, []);
+  const toggle = async () => {
+    const was = state;
+    setState("busy");
+    setError(null);
+    try {
+      if (was === "on") {
+        await deleteDiarizeModel();
+        setState("off");
+      } else {
+        setState((await downloadDiarizeModel()) ? "on" : "off");
+      }
+    } catch (e) {
+      setError(String(e));
+      setState(was);
+    }
+  };
+  return (
+    <section className="border-t border-sv-border pt-4">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-sm font-semibold">Tell speakers apart</h3>
+        <button
+          role="switch"
+          aria-checked={state === "on"}
+          aria-label="Tell speakers apart"
+          disabled={state === "busy"}
+          onClick={toggle}
+          className={`relative h-5 w-9 shrink-0 rounded-full transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sv-accent disabled:opacity-50 ${
+            state === "on" ? "bg-sv-accent" : "bg-sv-border"
+          }`}
+        >
+          <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all ${state === "on" ? "left-[18px]" : "left-0.5"}`} />
+        </button>
+      </div>
+      <p className="mt-0.5 text-xs text-sv-muted">
+        {state === "busy"
+          ? "Working…"
+          : "After you stop, Others is split into Speaker 1, Speaker 2… on this PC. Takes about 10 s per minute of meeting; the text shows meanwhile. Downloads 47 MB the first time."}
+      </p>
+      {error && <p className="mt-1 text-xs text-sv-warn">{error}</p>}
+    </section>
   );
 }
 
@@ -736,7 +791,7 @@ function MeetingPanel({
             )}
           </>
         }
-        copyText={(t.summary ? t.summary.trim() + "\n\n---\n\n" : "") + paras.map((p) => speakerLabel(p.speaker) + p.text).join("\n\n")}
+        copyText={(t.summary ? t.summary.trim() + "\n\n---\n\n" : "") + paras.map((p) => speakerLabel(p.speaker, p.who) + p.text).join("\n\n")}
         busy={live}
         onRenamed={onRenamed}
         onDeleted={onDeleted}
@@ -784,7 +839,7 @@ function MeetingPanel({
                 )}
                 <div className={`max-w-[72ch] rounded-md transition-colors ${current === i ? "-mx-2 bg-sv-accent/10 px-2" : ""}`} aria-current={current === i || undefined}>
                   <div className={`text-xs font-semibold ${p.speaker === "you" ? "text-sv-accent" : "text-sv-text"}`}>
-                    {p.speaker === "you" ? "You" : "Others"}
+                    {speakerName(p.speaker, p.who) || "Others"}
                   </div>
                   <p className="mt-0.5 text-[15px] leading-relaxed text-sv-text">{p.text}</p>
                 </div>

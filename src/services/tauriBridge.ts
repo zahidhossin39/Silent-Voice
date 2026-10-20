@@ -763,6 +763,18 @@ export async function vadInstalled(): Promise<boolean> {
   if (!isTauri()) return false;
   return invoke<boolean>("vad_installed");
 }
+export async function downloadDiarizeModel(): Promise<boolean> {
+  if (!isTauri()) return false;
+  return invoke<boolean>("download_diarize_model");
+}
+export async function diarizeInstalled(): Promise<boolean> {
+  if (!isTauri()) return false;
+  return invoke<boolean>("diarize_installed");
+}
+export async function deleteDiarizeModel(): Promise<void> {
+  if (!isTauri()) return;
+  await invoke<void>("delete_diarize_model");
+}
 export async function deleteVadModel(): Promise<void> {
   if (!isTauri()) return;
   await invoke<void>("delete_vad_model");
@@ -820,6 +832,8 @@ export interface TranscriptLine {
   text: string;
   /** Recorded meetings only: the mic ("you") or the computer's sound ("others"). */
   speaker?: "you" | "others";
+  /** Which of the Others (1, 2, ...), once their voices were told apart. */
+  who?: number;
 }
 
 export interface Transcript {
@@ -849,23 +863,29 @@ const ENDS_SENTENCE = /[.?!…。？！]["'”’)]*\s*$/;
 
 /** Runs of the same speaker, about TRANSCRIPT_PARAGRAPH lines, ending on a sentence end when one comes within twice that: mirrors `paragraphs` in transcripts.rs. */
 export function transcriptParagraphs(lines: TranscriptLine[]) {
-  const out: { start: number; end: number; speaker?: "you" | "others"; text: string }[] = [];
+  const out: { start: number; end: number; speaker?: "you" | "others"; who?: number; text: string }[] = [];
   let from = 0;
   for (let i = 1; i <= lines.length; i++) {
     const n = i - from;
     const full = n >= 2 * TRANSCRIPT_PARAGRAPH || (n >= TRANSCRIPT_PARAGRAPH && ENDS_SENTENCE.test(lines[i - 1].text));
-    if (i === lines.length || full || lines[i].speaker !== lines[from].speaker) {
+    if (i === lines.length || full || lines[i].speaker !== lines[from].speaker || lines[i].who !== lines[from].who) {
       const group = lines.slice(from, i);
-      out.push({ start: group[0].start_ms, end: group[group.length - 1].end_ms, speaker: group[0].speaker, text: group.map((l) => l.text).join(" ") });
+      out.push({ start: group[0].start_ms, end: group[group.length - 1].end_ms, speaker: group[0].speaker, who: group[0].who, text: group.map((l) => l.text).join(" ") });
       from = i;
     }
   }
   return out;
 }
 
-/** "You: " / "Others: " before a meeting paragraph; mirrors `label` in transcripts.rs. */
-export function speakerLabel(speaker?: "you" | "others"): string {
-  return speaker === "you" ? "You: " : speaker === "others" ? "Others: " : "";
+/** Who said a meeting paragraph: "You", "Speaker 2", or "Others" before the voices are told apart. */
+export function speakerName(speaker?: "you" | "others", who?: number): string {
+  return speaker === "you" ? "You" : who ? `Speaker ${who}` : speaker === "others" ? "Others" : "";
+}
+
+/** "You: " / "Speaker 2: " / "Others: " before a meeting paragraph; mirrors `label` in transcripts.rs. */
+export function speakerLabel(speaker?: "you" | "others", who?: number): string {
+  const name = speakerName(speaker, who);
+  return name && `${name}: `;
 }
 
 export const MEDIA_EXTENSIONS = ["mp3", "m4a", "mp4", "mov", "wav", "flac", "ogg", "mkv", "aac", "m4v"];
