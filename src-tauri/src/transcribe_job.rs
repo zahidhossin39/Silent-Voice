@@ -246,7 +246,7 @@ fn run<V: FnMut(&[f32]) -> Option<Vec<bool>>>(
                     Ok(text) => {
                         fails = 0;
                         if !text.is_empty() {
-                            t.lines.push(Line { start_ms, end_ms, text, speaker: None });
+                            t.lines.push(Line { start_ms, end_ms, text, speaker: None, who: None });
                             new_text = true;
                             open += 1;
                             if open == PARAGRAPH {

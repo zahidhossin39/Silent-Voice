@@ -261,6 +261,40 @@ fn work(app: AppHandle, mut t: Transcript, rx: impl IntoIterator<Item = Msg>, cf
     transcribe_job::finish(&app, &t);
     if undo.is_some() {
         transcripts::drop_backup(t.id);
+    }    tell_speakers_apart(&app, t.id);
+}
+
+/// Label each Others line with who said it (Speaker 1, 2, ...) when the speaker
+/// models are downloaded. Runs after the meeting is saved: about 10 s per minute
+/// of audio, so the text is readable meanwhile and the labels arrive after.
+fn tell_speakers_apart(app: &AppHandle, id: i64) {
+    if !crate::models::registry::diarize_installed() {
+        return;
+    }
+    let started = Instant::now();
+    let turns = (|| {
+        let mut r = hound::WavReader::open(transcripts::audio_path(id, Speaker::Others)).map_err(|e| e.to_string())?;
+        let samples: Vec<f32> = r.samples::<i16>().map_while(Result::ok).map(|s| s as f32 / 32768.0).collect();
+        crate::system::diarize::turns(&crate::models::registry::diarize_dir(), &samples)
+    })();
+    let turns = match turns {
+        Ok(t) => t,
+        Err(e) => return crate::logging::log_error("meeting", &format!("speakers not told apart: {e}")),
+    };
+    // Reloaded under the job lock: the user may have renamed it meanwhile, or
+    // started Transcribe again (that run labels its own lines).
+    let saved = transcribe_job::unless_running(id, "transcribing", || {
+        let mut t = transcripts::load(id)?;
+        for l in t.lines.iter_mut().filter(|l| l.speaker == Some(Speaker::Others)) {
+            l.who = crate::system::diarize::who_spoke(&turns, l.start_ms, l.end_ms);
+        }
+        transcripts::save(&t)?;
+        Ok(t)
+    });
+    if let Ok(t) = saved {
+        let n = t.lines.iter().filter_map(|l| l.who).max().unwrap_or(0);
+        crate::logging::log_info("meeting", &format!("{n} other speakers told apart in {:.0} s", started.elapsed().as_secs_f32()));
+        let _ = app.emit("transcript://update", &t);
     }
 }
 
@@ -305,7 +339,7 @@ fn run<V: FnMut(&[f32]) -> Option<Vec<bool>>>(
             }
             let start_ms = piece.start as u64 * 1000 / SR;
             let end_ms = start_ms + piece.samples.len() as u64 * 1000 / SR;
-            added |= add_line(&mut t.lines, Line { start_ms, end_ms, text, speaker: Some(speaker) });
+            added |= add_line(&mut t.lines, Line { start_ms, end_ms, text, speaker: Some(speaker), who: None });
         }
         added
     };
@@ -428,7 +462,7 @@ mod tests {
     use crate::audio::vad::FRAME;
 
     fn line(speaker: Speaker, start_ms: u64, text: &str) -> Line {
-        Line { start_ms, end_ms: start_ms + 2_000, text: text.into(), speaker: Some(speaker) }
+        Line { start_ms, end_ms: start_ms + 2_000, text: text.into(), speaker: Some(speaker), who: None }
     }
 
     #[test]

@@ -17,6 +17,9 @@ pub struct Line {
     /// Who said it, in a recorded meeting; absent for files.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub speaker: Option<Speaker>,
+    /// Which of the Others it was (1, 2, ...), once the voices were told apart.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub who: Option<u32>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
@@ -300,7 +303,7 @@ pub fn paragraphs(lines: &[Line]) -> Vec<std::ops::Range<usize>> {
     for i in 1..=lines.len() {
         let n = i - from;
         let full = n >= 2 * PARAGRAPH || (n >= PARAGRAPH && ends_sentence(&lines[i - 1].text));
-        if i == lines.len() || full || lines[i].speaker != lines[from].speaker {
+        if i == lines.len() || full || (lines[i].speaker, lines[i].who) != (lines[from].speaker, lines[from].who) {
             out.push(from..i);
             from = i;
         }
@@ -312,11 +315,12 @@ fn ends_sentence(text: &str) -> bool {
     text.trim_end().trim_end_matches(['"', '\'', '”', '’', ')']).ends_with(['.', '?', '!', '…', '。', '？', '！'])
 }
 
-pub(crate) fn label(l: &Line) -> &'static str {
-    match l.speaker {
-        Some(Speaker::You) => "You: ",
-        Some(Speaker::Others) => "Others: ",
-        None => "",
+pub(crate) fn label(l: &Line) -> String {
+    match (l.speaker, l.who) {
+        (Some(Speaker::You), _) => "You: ".into(),
+        (Some(Speaker::Others), Some(n)) => format!("Speaker {n}: "),
+        (Some(Speaker::Others), None) => "Others: ".into(),
+        (None, _) => String::new(),
     }
 }
 
@@ -367,8 +371,8 @@ mod tests {
             done_ms: 3_725_500,
             work_ms: 0,
             lines: vec![
-                Line { start_ms: 0, end_ms: 11_900, text: "First part.".into(), speaker: None },
-                Line { start_ms: 3_661_005, end_ms: 3_725_500, text: "Last part.".into(), speaker: None },
+                Line { start_ms: 0, end_ms: 11_900, text: "First part.".into(), speaker: None, who: None },
+                Line { start_ms: 3_661_005, end_ms: 3_725_500, text: "Last part.".into(), speaker: None, who: None },
             ],
             summary: None,
             redo: false,
@@ -426,7 +430,7 @@ Hiring plan"), "hello")).unwrap();
         assert_eq!(render(&t, Format::Md), "# talk.mp3\n\n**[0:00]** First part. Last part.\n\n");
         // A seventh line starts the second paragraph.
         for i in 0..5 {
-            t.lines.push(Line { start_ms: 3_725_500 + i * 1000, end_ms: 3_726_000 + i * 1000, text: format!("L{i}."), speaker: None });
+            t.lines.push(Line { start_ms: 3_725_500 + i * 1000, end_ms: 3_726_000 + i * 1000, text: format!("L{i}."), speaker: None, who: None });
         }
         assert_eq!(render(&t, Format::Txt), "First part. Last part. L0. L1. L2. L3.\n\nL4.\n");
         assert!(render(&t, Format::Md).ends_with("**[1:02:09]** L4.\n\n"));
@@ -472,7 +476,17 @@ Hiring plan"), "hello")).unwrap();
     }
 
     fn said(speaker: Speaker, start_ms: u64, text: &str) -> Line {
-        Line { start_ms, end_ms: start_ms + 2_000, text: text.into(), speaker: Some(speaker) }
+        Line { start_ms, end_ms: start_ms + 2_000, text: text.into(), speaker: Some(speaker), who: None }
+    }
+
+    #[test]
+    fn each_told_apart_speaker_gets_a_paragraph_and_a_label() {
+        let mut lines = vec![said(Speaker::Others, 0, "a."), said(Speaker::Others, 3_000, "b."), said(Speaker::Others, 6_000, "c.")];
+        lines[0].who = Some(1);
+        lines[1].who = Some(1);
+        lines[2].who = Some(2);
+        assert_eq!(paragraphs(&lines), vec![0..2, 2..3]);
+        assert_eq!((label(&lines[2]), label(&said(Speaker::Others, 0, "x"))), ("Speaker 2: ".to_string(), "Others: ".to_string()));
     }
 
     #[test]

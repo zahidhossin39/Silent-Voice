@@ -339,6 +339,44 @@ pub async fn download_vad_model(app: AppHandle, stop_flag: Option<&DownloadStopF
     Ok(true)
 }
 
+const SEGMENTATION_URL: &str = "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-segmentation-models/sherpa-onnx-pyannote-segmentation-3-0.tar.bz2";
+const EMBEDDING_URL: &str = "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/nemo_en_titanet_small.onnx";
+
+/// The two speaker models (~47 MB download, 46 MB on disk).
+pub async fn download_diarize_model(app: AppHandle, stop_flag: Option<&DownloadStopFlag>) -> Result<bool, String> {
+    registry::ensure_dirs().map_err(|e| e.to_string())?;
+    let dir = registry::diarize_dir();
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    if !dir.join("embedding.onnx").exists()
+        && !download_to(app.clone(), "speakers".into(), EMBEDDING_URL.into(), dir.join("embedding.onnx"), stop_flag).await?
+    {
+        return Ok(false);
+    }
+    if registry::diarize_installed() {
+        return Ok(true);
+    }
+    let archive = dir.join("segmentation.tar.bz2");
+    if !download_to(app, "speakers".into(), SEGMENTATION_URL.into(), archive.clone(), stop_flag).await? {
+        return Ok(false);
+    }
+    let seg = dir.join("seg");
+    let _ = std::fs::remove_dir_all(&seg); // leftovers of a failed extract
+    std::fs::create_dir_all(&seg).map_err(|e| e.to_string())?;
+    extract_tar_bz2(archive.clone(), seg.clone(), true).await?;
+    let _ = std::fs::remove_file(&archive);
+    std::fs::rename(seg.join("model.int8.onnx"), dir.join("segmentation.int8.onnx")).map_err(|_| "segmentation archive did not contain the expected files".to_string())?;
+    let _ = std::fs::remove_dir_all(&seg);
+    Ok(registry::diarize_installed())
+}
+
+pub fn delete_diarize_model() -> Result<(), String> {
+    let dir = registry::diarize_dir();
+    if dir.is_dir() {
+        std::fs::remove_dir_all(&dir).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 pub fn delete_vad_model() -> Result<(), String> {
     let dir = registry::vad_dir();
     if dir.is_dir() {

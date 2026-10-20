@@ -1432,6 +1432,18 @@ fn vad_installed() -> bool { models::registry::vad_installed() }
 #[tauri::command]
 async fn delete_vad_model() -> Result<(), String> { models::downloader::delete_vad_model() }
 
+#[tauri::command]
+async fn download_diarize_model(app: AppHandle, state: State<'_, AppState>) -> Result<bool, String> {
+    let model_id = "speakers".to_string();
+    let (flag, lock_guard) = state.register_download(&model_id).await?;
+    let _guard = DownloadGuard(&state, model_id, lock_guard);
+    models::downloader::download_diarize_model(app, Some(&flag)).await
+}
+#[tauri::command]
+fn diarize_installed() -> bool { models::registry::diarize_installed() }
+#[tauri::command]
+async fn delete_diarize_model() -> Result<(), String> { models::downloader::delete_diarize_model() }
+
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -1806,6 +1818,9 @@ pub fn run() {
             delete_gector_model,
             download_vad_model,
             vad_installed,
+            download_diarize_model,
+            diarize_installed,
+            delete_diarize_model,
             delete_vad_model,
         ])
         .build(tauri::generate_context!())

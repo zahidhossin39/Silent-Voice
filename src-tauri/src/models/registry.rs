@@ -309,6 +309,16 @@ pub fn vad_installed() -> bool {
     vad_dir().join("silero_vad.onnx").exists() && punct_installed()
 }
 
+/// Speaker separation for meetings: pyannote segmentation + titanet voice embeddings.
+pub fn diarize_dir() -> PathBuf {
+    models_dir().join("speakers")
+}
+
+pub fn diarize_installed() -> bool {
+    let d = diarize_dir();
+    d.join("segmentation.int8.onnx").exists() && d.join("embedding.onnx").exists()
+}
+
 pub fn coedit_dir() -> PathBuf {
     models_dir().join("coedit")
 }

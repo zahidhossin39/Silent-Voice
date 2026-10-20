@@ -222,7 +222,7 @@ mod tests {
         let mut t = Transcript::new(1, Kind::Meeting, String::new(), String::new(), "m".into());
         for i in 0..lines {
             let speaker = Some(if i % 2 == 0 { Speaker::You } else { Speaker::Others });
-            t.lines.push(Line { start_ms: i as u64 * 1000, end_ms: i as u64 * 1000 + 900, text: words(text_words), speaker });
+            t.lines.push(Line { start_ms: i as u64 * 1000, end_ms: i as u64 * 1000 + 900, text: words(text_words), speaker, who: None });
         }
         t
     }
