@@ -17,13 +17,13 @@ import type { Ctx } from "./catalog";
 import { GhostButton, IconButton, Toggle } from "./parts";
 import { PauseIcon, PlayIcon, XIcon } from "./icons";
 
-function DownloadButton({
+export function DownloadButton({
   modelId,
   sizeLabel,
   start,
   before,
 }: {
-  modelId: "coedit" | "gector";
+  modelId: string;
   sizeLabel: string;
   start: () => Promise<void>;
   before?: ReactNode;
@@ -89,7 +89,7 @@ function DownloadButton({
   );
 }
 
-function RemoveButton({ onClick }: { onClick: () => void }) {
+export function RemoveButton({ onClick }: { onClick: () => void }) {
   return (
     <button
       type="button"

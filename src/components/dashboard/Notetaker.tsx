@@ -2,6 +2,8 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import Page from "../shared/Page";
 import Select from "../shared/Select";
 import { useNotetakerSettings, useSettingsStore } from "../../stores/settingsStore";
+import { DownloadButton, RemoveButton } from "./settings/downloads";
+import { Toggle } from "./settings/parts";
 import { LANGUAGES, STT_MODELS, honorsLanguage } from "../../services/catalog";
 import TranscriptHeader, { clock } from "../shared/TranscriptHeader";
 import { TrashIcon } from "../shared/TranscriptCard";
@@ -213,7 +215,7 @@ export default function Notetaker() {
   const redo = async (id: number) => {
     setError(null);
     try {
-      const t = await meetingRetranscribe(id, cloudArg, lang || undefined);
+      const t = await meetingRetranscribe(id, cloudArg, lang || undefined, nt.speakers);
       upsert(t);
       setFull(t);
     } catch (e) {
@@ -225,7 +227,7 @@ export default function Notetaker() {
     setError(null);
     setStarting(true);
     try {
-      const t = await meetingStart(cloudArg, lang || undefined);
+      const t = await meetingStart(cloudArg, lang || undefined, nt.speakers);
       upsert(t);
       setSelected(t.id);
       setFull(t);
@@ -508,52 +510,51 @@ function NotetakerSettings({
   );
 }
 
-/** "Tell speakers apart": on = the speaker models are downloaded. */
+/** "Tell speakers apart": download the speaker models first, then switch it on or off. */
 function SpeakersSetting() {
-  const [state, setState] = useState<"off" | "on" | "busy">("busy");
+  const [nt, setNt] = useNotetakerSettings();
+  const [ready, setReady] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    diarizeInstalled().then((on) => setState(on ? "on" : "off"));
+    diarizeInstalled().then(setReady);
   }, []);
-  const toggle = async () => {
-    const was = state;
-    setState("busy");
-    setError(null);
-    try {
-      if (was === "on") {
-        await deleteDiarizeModel();
-        setState("off");
-      } else {
-        setState((await downloadDiarizeModel()) ? "on" : "off");
-      }
-    } catch (e) {
-      setError(String(e));
-      setState(was);
-    }
-  };
   return (
     <section className="border-t border-sv-border pt-4">
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-sm font-semibold">Tell speakers apart</h3>
-        <button
-          role="switch"
-          aria-checked={state === "on"}
-          aria-label="Tell speakers apart"
-          disabled={state === "busy"}
-          onClick={toggle}
-          className={`relative h-5 w-9 shrink-0 rounded-full transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sv-accent disabled:opacity-50 ${
-            state === "on" ? "bg-sv-accent" : "bg-sv-border"
-          }`}
-        >
-          <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all ${state === "on" ? "left-[18px]" : "left-0.5"}`} />
-        </button>
+        {ready === null ? null : ready ? (
+          <div className="flex items-center gap-3">
+            <RemoveButton
+              onClick={async () => {
+                await deleteDiarizeModel();
+                setReady(false);
+              }}
+            />
+            <Toggle label="Tell speakers apart" checked={nt.speakers} onChange={(v) => setNt({ speakers: v })} />
+          </div>
+        ) : (
+          <DownloadButton
+            modelId="speakers"
+            sizeLabel="47 MB"
+            start={async () => {
+              setError(null);
+              try {
+                if (await downloadDiarizeModel()) {
+                  setReady(true);
+                  setNt({ speakers: true });
+                }
+              } catch (e) {
+                setError(String(e));
+              }
+            }}
+          />
+        )}
       </div>
       <p className="mt-0.5 text-xs text-sv-muted">
-        {state === "busy"
-          ? "Working…"
-          : "After you stop, Others is split into Speaker 1, Speaker 2… on this PC. Takes about 15 s per minute of meeting; the text shows meanwhile. Downloads 47 MB the first time."}
+        After you stop, Others is split into Speaker 1, Speaker 2… by voice, on this PC. Takes about 15 s per minute of meeting; the text shows
+        meanwhile.
       </p>
-      {error && <p className="mt-1 text-xs text-sv-warn">{error}</p>}
+      {error && <p className="mt-1 text-xs text-sv-warn">Download failed: {error}</p>}
     </section>
   );
 }

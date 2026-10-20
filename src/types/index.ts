@@ -216,6 +216,8 @@ export interface NotetakerSettings {
   summary_models: Record<string, string>;
   /** The "Let people know you're recording" note was dismissed. */
   consent_seen: boolean;
+  /** Tell the Others apart (Speaker 1, 2...) after Stop; needs the speaker models. */
+  speakers: boolean;
 }
 
 export interface Settings {

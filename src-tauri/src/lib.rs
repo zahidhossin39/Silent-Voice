@@ -982,8 +982,8 @@ fn file_transcribe_cancel() {
 
 /// Record the mic (You) and the computer's sound (Others) into a live transcript.
 #[tauri::command]
-async fn meeting_start(app: AppHandle, cloud: Option<transcribe_job::Cloud>, language: Option<String>) -> Result<transcripts::Transcript, String> {
-    meeting_job::start(&app, cloud, language)
+async fn meeting_start(app: AppHandle, cloud: Option<transcribe_job::Cloud>, language: Option<String>, speakers: Option<bool>) -> Result<transcripts::Transcript, String> {
+    meeting_job::start(&app, cloud, language, speakers.unwrap_or(false))
 }
 
 /// The mic and speakers a meeting would record: `[mic, speakers]`.
@@ -1002,8 +1002,8 @@ async fn meeting_stop(app: AppHandle) -> Result<(), String> {
 
 /// Transcribe a saved meeting again from its audio.
 #[tauri::command]
-async fn meeting_retranscribe(app: AppHandle, id: i64, cloud: Option<transcribe_job::Cloud>, language: Option<String>) -> Result<transcripts::Transcript, String> {
-    meeting_job::retranscribe(&app, id, cloud, language)
+async fn meeting_retranscribe(app: AppHandle, id: i64, cloud: Option<transcribe_job::Cloud>, language: Option<String>, speakers: Option<bool>) -> Result<transcripts::Transcript, String> {
+    meeting_job::retranscribe(&app, id, cloud, language, speakers.unwrap_or(false))
 }
 
 /// Ids of the meetings that mention `query`, newest first.
@@ -1568,7 +1568,7 @@ pub fn run() {
                         std::thread::sleep(std::time::Duration::from_millis(500));
                     }
                     std::thread::sleep(std::time::Duration::from_secs(5));
-                    let r = meeting_job::start(&app, None, None);
+                    let r = meeting_job::start(&app, None, None, false);
                     logging::log_info("selftest", &format!("meeting started: {:?}", r.map(|t| t.id)));
                     if let Some(w) = app.get_webview_window("main") {
                         let _ = w.show();

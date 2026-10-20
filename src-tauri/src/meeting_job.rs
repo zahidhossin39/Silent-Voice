@@ -68,8 +68,9 @@ fn model_name(cfg: &Cfg) -> String {
     cfg.cloud.as_ref().map_or_else(|| cfg.model_id.clone(), |c| c.model.clone())
 }
 
-pub fn start(app: &AppHandle, cloud: Option<transcribe_job::Cloud>, language: Option<String>) -> Result<Transcript, String> {
-    let cfg = cfg_for(app, cloud, language)?;
+pub fn start(app: &AppHandle, cloud: Option<transcribe_job::Cloud>, language: Option<String>, speakers: bool) -> Result<Transcript, String> {
+    let mut cfg = cfg_for(app, cloud, language)?;
+    cfg.speakers = speakers;
     let id = transcripts::new_id()?;
     transcribe_job::claim(id)?;
     // Unnamed until the user names it: the page shows the start time instead.
@@ -144,8 +145,9 @@ fn capture_track(speaker: Speaker, source: Source, id: i64, tx: &Sender<Msg>) ->
 
 /// Transcribe a saved meeting again from its two WAVs, with today's model
 /// (or `cloud`). The new text replaces the old as it comes; the Overview stays.
-pub fn retranscribe(app: &AppHandle, id: i64, cloud: Option<transcribe_job::Cloud>, language: Option<String>) -> Result<Transcript, String> {
-    let cfg = cfg_for(app, cloud, language)?;
+pub fn retranscribe(app: &AppHandle, id: i64, cloud: Option<transcribe_job::Cloud>, language: Option<String>, speakers: bool) -> Result<Transcript, String> {
+    let mut cfg = cfg_for(app, cloud, language)?;
+    cfg.speakers = speakers;
     let readers = [Speaker::You, Speaker::Others]
         .map(|s| hound::WavReader::open(transcripts::audio_path(id, s)).map_err(|_| "This meeting's audio wasn't saved, so it can't be transcribed again.".to_string()));
     let [you, others] = readers;
@@ -267,7 +269,9 @@ fn work(app: AppHandle, mut t: Transcript, rx: impl IntoIterator<Item = Msg>, cf
     transcribe_job::finish(&app, &t);
     if undo.is_some() {
         transcripts::drop_backup(t.id);
-    }    tell_speakers_apart(&app, t.id);
+    }    if cfg.speakers {
+        tell_speakers_apart(&app, t.id);
+    }
 }
 
 /// Label each Others line with who said it (Speaker 1, 2, ...) when the speaker

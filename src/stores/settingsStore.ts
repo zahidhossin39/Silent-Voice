@@ -65,6 +65,7 @@ function legacyNotetaker(): NotetakerSettings {
     summary_with: get("sv-notetaker-summary-with") ?? "",
     summary_models: obj("sv-notetaker-summary-models"),
     consent_seen: get("sv-notetaker-consent-seen") === "1",
+    speakers: true,
   };
 }
 

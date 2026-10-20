@@ -95,6 +95,8 @@ pub(crate) struct Cfg {
     /// The languages a meeting may be in, when the user picked several; then
     /// `language` is "auto" and a piece in another script is redone in the first.
     pub(crate) languages: Vec<String>,
+    /// Tell the Others apart after Stop (the Notetaker switch).
+    pub(crate) speakers: bool,
 }
 
 /// An OpenAI-compatible speech-to-text endpoint (`/audio/transcriptions`).
@@ -126,6 +128,7 @@ impl Cfg {
             mic: c.audio_device.clone(),
             cloud: None,
             languages: Vec::new(),
+            speakers: false,
         })
     }
 }

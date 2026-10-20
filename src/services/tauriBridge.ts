@@ -951,15 +951,15 @@ export async function transcriptSaveAs(id: number): Promise<boolean> {
 /** Record the mic and the computer's sound into a live transcript, transcribed
  * locally or, with `cloud`, by a provider's speech-to-text. */
 /** `language`: the meeting's language code ("auto" detects); unset = the dictation language. */
-export async function meetingStart(cloud?: { base_url: string; api_key: string; model: string }, language?: string): Promise<Transcript> {
+export async function meetingStart(cloud?: { base_url: string; api_key: string; model: string }, language?: string, speakers = false): Promise<Transcript> {
   if (!isTauri()) throw new Error("Needs the desktop app");
-  return invoke<Transcript>("meeting_start", { cloud: cloud ?? null, language: language ?? null });
+  return invoke<Transcript>("meeting_start", { cloud: cloud ?? null, language: language ?? null, speakers });
 }
 
 /** Transcribe a saved meeting again from its audio; updates arrive like a recording's. */
-export async function meetingRetranscribe(id: number, cloud?: { base_url: string; api_key: string; model: string }, language?: string): Promise<Transcript> {
+export async function meetingRetranscribe(id: number, cloud?: { base_url: string; api_key: string; model: string }, language?: string, speakers = false): Promise<Transcript> {
   if (!isTauri()) throw new Error("Needs the desktop app");
-  return invoke<Transcript>("meeting_retranscribe", { id, cloud: cloud ?? null, language: language ?? null });
+  return invoke<Transcript>("meeting_retranscribe", { id, cloud: cloud ?? null, language: language ?? null, speakers });
 }
 
 /** Ids of the meetings whose name, Overview or words contain `query`. */
