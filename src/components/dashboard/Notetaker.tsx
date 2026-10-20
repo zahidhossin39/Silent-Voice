@@ -196,7 +196,7 @@ export default function Notetaker() {
   // Parakeet, Moonshine and .en models ignore the language: say so instead of failing quietly.
   // Measured on a Bangla meeting: Whisper turbo wrote English, v3 garbled it; these got it right.
   const langNote = listed
-    ? `Each part is checked for ${listed.map(langName).join(", ")}. A part that comes back in another script (Hindi letters in a Bangla call, say) is transcribed again in ${langName(meetingLang)}.`
+    ? `Each part is checked for ${listed.map(langName).join(", ")}. A part that comes back in another script (Hindi letters in a Bangla call, say) is transcribed again in the first of them with its own letters (Bengali rather than English, say).`
     : cloud
     ? meetingLang !== "en" && /whisper/i.test(sttModelOf(cloud))
       ? `Whisper models handle ${meetingLang === "auto" ? "languages other than English" : langName(meetingLang)} poorly (turbo turns them into English). For better results pick microsoft/mai-transcribe-2 or elevenlabs/scribe-v2 from OpenRouter.`

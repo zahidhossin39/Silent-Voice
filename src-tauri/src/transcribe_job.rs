@@ -310,10 +310,10 @@ pub(crate) fn transcribe_piece(app: &AppHandle, samples: &[f32], cfg: &Cfg) -> R
     let mut text = decode(&cfg.language);
     // Auto-detect guessed a language the user didn't pick (Hindi in a Bangla +
     // English call): redo it in their first language.
-    if let (Ok(t), Some(first)) = (&text, cfg.languages.first()) {
+    if let (Ok(t), Some(redo)) = (&text, redo_language(&cfg.languages)) {
         if foreign_script(t, &cfg.languages) {
-            crate::logging::log_info("transcribe", "piece came back in another script; redone in the first language");
-            text = decode(first);
+            crate::logging::log_info("transcribe", &format!("piece came back in another script; redone in '{redo}'"));
+            text = decode(redo);
         }
     }
     let _ = std::fs::remove_file(&path);
@@ -368,6 +368,13 @@ fn script_of(c: char) -> Option<&'static str> {
         0x0D80..=0x0DFF => "sinhala",
         _ => return None,
     })
+}
+
+/// The language a wrong-script piece is redone in: the first one with its own
+/// script (Bangla in "en,bn"). Auto-detect confuses those, not English: redone
+/// as English, a Hindi-looking Bangla piece came back as English nonsense.
+fn redo_language(languages: &[String]) -> Option<&String> {
+    languages.iter().find(|l| scripts_of(l).is_some_and(|s| !s.is_empty())).or(languages.first())
 }
 
 /// True when `text` has letters in a script none of `languages` is written in.
@@ -426,6 +433,9 @@ mod tests {
         assert!(!foreign_script("Mas Summer ki kovar.", &bn_en)); // Latin: can't tell, passes
         assert!(!foreign_script("दिया", &["xx".to_string()])); // unknown language: no check
         assert!(foreign_script("こんにちは", &["zh".to_string()]));
+        let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        assert_eq!(redo_language(&s(&["en", "bn"])).map(String::as_str), Some("bn"));
+        assert_eq!(redo_language(&s(&["en", "es"])).map(String::as_str), Some("en"));
     }
 
     use super::*;
