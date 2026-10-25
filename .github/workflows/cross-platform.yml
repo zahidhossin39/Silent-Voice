@@ -8,6 +8,7 @@ on:
   push:
     paths:
       - "src-tauri/**"
+      - "scripts/sherpa-layout.c"
       - ".github/workflows/cross-platform.yml"
 
 jobs:
@@ -26,6 +27,14 @@ jobs:
     name: ${{ matrix.label }}
     steps:
       - uses: actions/checkout@v4
+
+      # The Rust FFI structs are tested against layout.txt; this proves
+      # layout.txt is what the committed header really compiles to (docs/adr/0002).
+      - name: sherpa-onnx layout.txt matches the C header
+        shell: bash
+        run: |
+          cc -I src-tauri/sidecars/sherpa/include scripts/sherpa-layout.c -o sherpa-layout
+          ./sherpa-layout | diff - src-tauri/sidecars/sherpa/include/layout.txt
 
       - uses: dtolnay/rust-toolchain@stable
 

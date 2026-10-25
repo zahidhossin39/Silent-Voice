@@ -54,6 +54,14 @@ if ! grep -q "Silent Voice starting" "$LOGDIR/silent-voice.log" 2>/dev/null; the
 fi
 echo "PASS: launches and reaches startup"
 
+# The bundled sherpa-onnx must be the release the FFI structs mirror (docs/adr/0002).
+want=$(tr -d '[:space:]' < src-tauri/sidecars/sherpa/VERSION)
+if ! grep -q "sherpa-onnx $want loaded" "$LOGDIR/silent-voice.log"; then
+  echo "FAIL: no 'sherpa-onnx $want loaded' line: $(grep -i sherpa "$LOGDIR/silent-voice.log" | tail -2)"
+  exit 1
+fi
+echo "PASS: sherpa-onnx $want loaded"
+
 if [ "$(uname -s)" = Darwin ]; then
   # Public annotation (job logs need admin rights): what the paste returned.
   line=$(grep "paste from worker thread" "$LOGDIR/silent-voice.log" | tail -1)

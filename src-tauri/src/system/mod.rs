@@ -26,6 +26,10 @@ pub mod notice;
 pub mod overlay;
 pub mod paste;
 pub mod secure_field;
+// Before the FFI modules: defines the `c_layout!` macro they use.
+#[cfg(test)]
+#[macro_use]
+mod sherpa_layout_tests;
 pub mod sherpa;
 pub mod sherpa_stt;
 pub mod diarize;

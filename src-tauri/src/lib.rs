@@ -1540,6 +1540,9 @@ pub fn run() {
             transcripts::mark_interrupted();
             tray::build_tray(app.handle())?;
             overlay::create_overlay(app.handle())?;
+            // Load sherpa-onnx now, off the UI thread, so its version check
+            // logs once at startup instead of at the first TTS/STT use.
+            std::thread::spawn(|| { let _ = system::sherpa::lib(); });
 
             // Transcribe-a-file check on a real file, no UI needed: waits for the
             // dashboard to push the user's settings (model, language) first.

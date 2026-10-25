@@ -1,0 +1,42 @@
+SherpaOnnxOfflineTtsVitsModelConfig 56 model=0 lexicon=8 tokens=16 data_dir=24 noise_scale=32 noise_scale_w=36 length_scale=40 dict_dir=48
+SherpaOnnxOfflineTtsMatchaModelConfig 56 acoustic_model=0 vocoder=8 lexicon=16 tokens=24 data_dir=32 noise_scale=40 length_scale=44 dict_dir=48
+SherpaOnnxOfflineTtsKokoroModelConfig 64 model=0 voices=8 tokens=16 data_dir=24 length_scale=32 dict_dir=40 lexicon=48 lang=56
+SherpaOnnxOfflineTtsKittenModelConfig 40 model=0 voices=8 tokens=16 data_dir=24 length_scale=32
+SherpaOnnxOfflineTtsZipvoiceModelConfig 64 tokens=0 encoder=8 decoder=16 vocoder=24 data_dir=32 lexicon=40 feat_scale=48 t_shift=52 target_rms=56 guidance_scale=60
+SherpaOnnxOfflineTtsPocketModelConfig 64 lm_flow=0 lm_main=8 encoder=16 decoder=24 text_conditioner=32 vocab_json=40 token_scores_json=48 voice_embedding_cache_capacity=56
+SherpaOnnxOfflineTtsSupertonicModelConfig 56 duration_predictor=0 text_encoder=8 vector_estimator=16 vocoder=24 tts_json=32 unicode_indexer=40 voice_style=48
+SherpaOnnxOfflineTtsModelConfig 416 vits=0 num_threads=56 debug=60 provider=64 matcha=72 kokoro=128 kitten=192 zipvoice=232 pocket=296 supertonic=360
+SherpaOnnxOfflineTtsConfig 448 model=0 rule_fsts=416 max_num_sentences=424 rule_fars=432 silence_scale=440
+SherpaOnnxGeneratedAudio 16 samples=0 n=8 sample_rate=12
+SherpaOnnxFeatureConfig 8 sample_rate=0 feature_dim=4
+SherpaOnnxOfflineTransducerModelConfig 24 encoder=0 decoder=8 joiner=16
+SherpaOnnxOfflineParaformerModelConfig 8 model=0
+SherpaOnnxOfflineNemoEncDecCtcModelConfig 8 model=0
+SherpaOnnxOfflineWhisperModelConfig 48 encoder=0 decoder=8 language=16 task=24 tail_paddings=32 enable_token_timestamps=36 enable_segment_timestamps=40
+SherpaOnnxOfflineTdnnModelConfig 8 model=0
+SherpaOnnxOfflineSenseVoiceModelConfig 24 model=0 language=8 use_itn=16
+SherpaOnnxOfflineMoonshineModelConfig 40 preprocessor=0 encoder=8 uncached_decoder=16 cached_decoder=24 merged_decoder=32
+SherpaOnnxOfflineFireRedAsrModelConfig 16 encoder=0 decoder=8
+SherpaOnnxOfflineDolphinModelConfig 8 model=0
+SherpaOnnxOfflineZipformerCtcModelConfig 8 model=0
+SherpaOnnxOfflineCanaryModelConfig 40 encoder=0 decoder=8 src_lang=16 tgt_lang=24 use_pnc=32
+SherpaOnnxOfflineWenetCtcModelConfig 8 model=0
+SherpaOnnxOfflineOmnilingualAsrCtcModelConfig 8 model=0
+SherpaOnnxOfflineMedAsrCtcModelConfig 8 model=0
+SherpaOnnxOfflineFunASRNanoModelConfig 88 encoder_adaptor=0 llm=8 embedding=16 tokenizer=24 system_prompt=32 user_prompt=40 max_new_tokens=48 temperature=52 top_p=56 seed=60 language=64 itn=72 hotwords=80
+SherpaOnnxOfflineFireRedAsrCtcModelConfig 8 model=0
+SherpaOnnxOfflineQwen3ASRModelConfig 64 conv_frontend=0 encoder=8 decoder=16 tokenizer=24 max_total_len=32 max_new_tokens=36 temperature=40 top_p=44 seed=48 hotwords=56
+SherpaOnnxOfflineCohereTranscribeModelConfig 32 encoder=0 decoder=8 language=16 use_punct=24 use_itn=28
+SherpaOnnxOfflineModelConfig 504 transducer=0 paraformer=24 nemo_ctc=32 whisper=40 tdnn=88 tokens=96 num_threads=104 debug=108 provider=112 model_type=120 modeling_unit=128 bpe_vocab=136 telespeech_ctc=144 sense_voice=152 moonshine=176 fire_red_asr=216 dolphin=232 zipformer_ctc=240 canary=248 wenet_ctc=288 omnilingual=296 medasr=304 funasr_nano=312 fire_red_asr_ctc=400 qwen3_asr=408 cohere_transcribe=472
+SherpaOnnxOfflineLMConfig 16 model=0 scale=8
+SherpaOnnxHomophoneReplacerConfig 24 dict_dir=0 lexicon=8 rule_fsts=16
+SherpaOnnxOfflineRecognizerConfig 608 feat_config=0 model_config=8 lm_config=512 decoding_method=528 max_active_paths=536 hotwords_file=544 hotwords_score=552 rule_fsts=560 rule_fars=568 blank_penalty=576 hr=584
+SherpaOnnxOfflineRecognizerResult 128 text=0 timestamps=8 count=16 tokens=24 tokens_arr=32 json=40 lang=48 emotion=56 event=64 durations=72 ys_log_probs=80 segment_timestamps=88 segment_durations=96 segment_texts=104 segment_texts_arr=112 segment_count=120
+SherpaOnnxOnlinePunctuationModelConfig 32 cnn_bilstm=0 bpe_vocab=8 num_threads=16 debug=20 provider=24
+SherpaOnnxOnlinePunctuationConfig 32 model=0
+SherpaOnnxOfflineSpeakerSegmentationPyannoteModelConfig 8 model=0
+SherpaOnnxOfflineSpeakerSegmentationModelConfig 24 pyannote=0 num_threads=8 debug=12 provider=16
+SherpaOnnxSpeakerEmbeddingExtractorConfig 24 model=0 num_threads=8 debug=12 provider=16
+SherpaOnnxFastClusteringConfig 8 num_clusters=0 threshold=4
+SherpaOnnxOfflineSpeakerDiarizationConfig 64 segmentation=0 embedding=24 clustering=48 min_duration_on=56 min_duration_off=60
+SherpaOnnxOfflineSpeakerDiarizationSegment 12 start=0 end=4 speaker=8

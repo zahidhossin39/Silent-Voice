@@ -138,6 +138,20 @@ pub fn who_spoke(turns: &[Turn], start_ms: u64, end_ms: u64) -> Option<u32> {
     Some(order.iter().position(|w| *w == who)? as u32 + 1)
 }
 
+
+// Layout of every struct above, checked against the C header (sherpa_layout_tests.rs).
+#[cfg(test)]
+pub(crate) fn layout_lines() -> String {
+    c_layout! {
+        PyannoteConfig = SherpaOnnxOfflineSpeakerSegmentationPyannoteModelConfig { model }
+        SegmentationConfig = SherpaOnnxOfflineSpeakerSegmentationModelConfig { pyannote, num_threads, debug, provider }
+        EmbeddingConfig = SherpaOnnxSpeakerEmbeddingExtractorConfig { model, num_threads, debug, provider }
+        ClusteringConfig = SherpaOnnxFastClusteringConfig { num_clusters, threshold }
+        DiarizationConfig = SherpaOnnxOfflineSpeakerDiarizationConfig { segmentation, embedding, clustering, min_duration_on, min_duration_off }
+        RawSegment = SherpaOnnxOfflineSpeakerDiarizationSegment { start, end, speaker }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1174,6 +1174,40 @@ mod seg_tests {
     }
 }
 
+
+// Layout of every struct above, checked against the C header (sherpa_layout_tests.rs).
+#[cfg(test)]
+pub(crate) fn layout_lines() -> String {
+    c_layout! {
+        FeatureConfig = SherpaOnnxFeatureConfig { sample_rate, feature_dim }
+        TransducerModelConfig = SherpaOnnxOfflineTransducerModelConfig { encoder, decoder, joiner }
+        ParaformerModelConfig = SherpaOnnxOfflineParaformerModelConfig { model }
+        NemoCtcModelConfig = SherpaOnnxOfflineNemoEncDecCtcModelConfig { model }
+        WhisperModelConfig = SherpaOnnxOfflineWhisperModelConfig { encoder, decoder, language, task, tail_paddings, enable_token_timestamps, enable_segment_timestamps }
+        TdnnModelConfig = SherpaOnnxOfflineTdnnModelConfig { model }
+        SenseVoiceModelConfig = SherpaOnnxOfflineSenseVoiceModelConfig { model, language, use_itn }
+        MoonshineModelConfig = SherpaOnnxOfflineMoonshineModelConfig { preprocessor, encoder, uncached_decoder, cached_decoder, merged_decoder }
+        FireRedAsrModelConfig = SherpaOnnxOfflineFireRedAsrModelConfig { encoder, decoder }
+        DolphinModelConfig = SherpaOnnxOfflineDolphinModelConfig { model }
+        ZipformerCtcModelConfig = SherpaOnnxOfflineZipformerCtcModelConfig { model }
+        CanaryModelConfig = SherpaOnnxOfflineCanaryModelConfig { encoder, decoder, src_lang, tgt_lang, use_pnc }
+        WenetCtcModelConfig = SherpaOnnxOfflineWenetCtcModelConfig { model }
+        OmnilingualCtcModelConfig = SherpaOnnxOfflineOmnilingualAsrCtcModelConfig { model }
+        MedAsrCtcModelConfig = SherpaOnnxOfflineMedAsrCtcModelConfig { model }
+        FunAsrNanoModelConfig = SherpaOnnxOfflineFunASRNanoModelConfig { encoder_adaptor, llm, embedding, tokenizer, system_prompt, user_prompt, max_new_tokens, temperature, top_p, seed, language, itn, hotwords }
+        FireRedAsrCtcModelConfig = SherpaOnnxOfflineFireRedAsrCtcModelConfig { model }
+        Qwen3AsrModelConfig = SherpaOnnxOfflineQwen3ASRModelConfig { conv_frontend, encoder, decoder, tokenizer, max_total_len, max_new_tokens, temperature, top_p, seed, hotwords }
+        CohereTranscribeModelConfig = SherpaOnnxOfflineCohereTranscribeModelConfig { encoder, decoder, language, use_punct, use_itn }
+        OfflineModelConfig = SherpaOnnxOfflineModelConfig { transducer, paraformer, nemo_ctc, whisper, tdnn, tokens, num_threads, debug, provider, model_type, modeling_unit, bpe_vocab, telespeech_ctc, sense_voice, moonshine, fire_red_asr, dolphin, zipformer_ctc, canary, wenet_ctc, omnilingual, medasr, funasr_nano, fire_red_asr_ctc, qwen3_asr, cohere_transcribe }
+        OfflineLmConfig = SherpaOnnxOfflineLMConfig { model, scale }
+        HomophoneReplacerConfig = SherpaOnnxHomophoneReplacerConfig { dict_dir, lexicon, rule_fsts }
+        OfflineRecognizerConfig = SherpaOnnxOfflineRecognizerConfig { feat_config, model_config, lm_config, decoding_method, max_active_paths, hotwords_file, hotwords_score, rule_fsts, rule_fars, blank_penalty, hr }
+        OfflineRecognizerResult = SherpaOnnxOfflineRecognizerResult { text, timestamps, count, tokens, tokens_arr, json, lang, emotion, event, durations, ys_log_probs, segment_timestamps, segment_durations, segment_texts, segment_texts_arr, segment_count }
+        OnlinePunctuationModelConfig = SherpaOnnxOnlinePunctuationModelConfig { cnn_bilstm, bpe_vocab, num_threads, debug, provider }
+        OnlinePunctuationConfig = SherpaOnnxOnlinePunctuationConfig { model }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

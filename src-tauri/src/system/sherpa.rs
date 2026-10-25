@@ -15,7 +15,7 @@
 #![allow(non_snake_case)]
 
 use libloading::{library_filename, Library, Symbol};
-use std::ffi::{c_char, c_float, c_int, CString};
+use std::ffi::{c_char, c_float, c_int, CStr, CString};
 use std::path::Path;
 use std::sync::OnceLock;
 
@@ -146,6 +146,18 @@ type WriteWaveFn =
 static ORT: OnceLock<Result<Library, String>> = OnceLock::new();
 static LIB: OnceLock<Result<Library, String>> = OnceLock::new();
 
+// The one sherpa-onnx release every platform ships (docs/adr/0002).
+const PINNED_VERSION: &str = include_str!("../../sidecars/sherpa/VERSION");
+
+fn check_version(found: &str) -> Result<(), String> {
+    let want = PINNED_VERSION.trim();
+    if found == want {
+        Ok(())
+    } else {
+        Err(format!("sherpa-onnx {found} found, {want} expected — reinstall the app."))
+    }
+}
+
 pub(crate) fn lib() -> Result<&'static Library, String> {
     LIB.get_or_init(|| {
         let dir = crate::system::paths::bundled_dir().join("sherpa");
@@ -165,8 +177,20 @@ pub(crate) fn lib() -> Result<&'static Library, String> {
             return Err(e.clone());
         }
         let dll = dir.join(library_filename("sherpa-onnx-c-api"));
-        unsafe { Library::new(&dll) }
-            .map_err(|e| format!("could not load {}: {e} — reinstall the app.", dll.display()))
+        let lib = unsafe { Library::new(&dll) }
+            .map_err(|e| format!("could not load {}: {e} — reinstall the app.", dll.display()))?;
+        // Refuse a library whose structs may differ from ours before any
+        // config is passed to it: a mismatch reads fields at the wrong offset.
+        let found = unsafe { lib.get::<unsafe extern "C" fn() -> *const c_char>(b"SherpaOnnxGetVersionStr\0") }
+            .ok()
+            .map(|f| unsafe { CStr::from_ptr(f()) }.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "(unknown version)".into());
+        let r = check_version(&found).map(|_| lib);
+        match &r {
+            Ok(_) => crate::logging::log_info("sherpa", &format!("sherpa-onnx {found} loaded")),
+            Err(e) => crate::logging::log_error("sherpa", e),
+        }
+        r
     })
     .as_ref()
     .map_err(|e| e.clone())
@@ -278,9 +302,42 @@ pub fn synthesize(
     Ok(())
 }
 
+
+// Layout of every struct above, checked against the C header (sherpa_layout_tests.rs).
+#[cfg(test)]
+pub(crate) fn layout_lines() -> String {
+    c_layout! {
+        VitsModelConfig = SherpaOnnxOfflineTtsVitsModelConfig { model, lexicon, tokens, data_dir, noise_scale, noise_scale_w, length_scale, dict_dir }
+        MatchaModelConfig = SherpaOnnxOfflineTtsMatchaModelConfig { acoustic_model, vocoder, lexicon, tokens, data_dir, noise_scale, length_scale, dict_dir }
+        KokoroModelConfig = SherpaOnnxOfflineTtsKokoroModelConfig { model, voices, tokens, data_dir, length_scale, dict_dir, lexicon, lang }
+        KittenModelConfig = SherpaOnnxOfflineTtsKittenModelConfig { model, voices, tokens, data_dir, length_scale }
+        ZipvoiceModelConfig = SherpaOnnxOfflineTtsZipvoiceModelConfig { tokens, encoder, decoder, vocoder, data_dir, lexicon, feat_scale, t_shift, target_rms, guidance_scale }
+        PocketModelConfig = SherpaOnnxOfflineTtsPocketModelConfig { lm_flow, lm_main, encoder, decoder, text_conditioner, vocab_json, token_scores_json, voice_embedding_cache_capacity }
+        SupertonicModelConfig = SherpaOnnxOfflineTtsSupertonicModelConfig { duration_predictor, text_encoder, vector_estimator, vocoder, tts_json, unicode_indexer, voice_style }
+        TtsModelConfig = SherpaOnnxOfflineTtsModelConfig { vits, num_threads, debug, provider, matcha, kokoro, kitten, zipvoice, pocket, supertonic }
+        TtsConfig = SherpaOnnxOfflineTtsConfig { model, rule_fsts, max_num_sentences, rule_fars, silence_scale }
+        GeneratedAudio = SherpaOnnxGeneratedAudio { samples, n, sample_rate }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_the_pinned_version_loads() {
+        assert!(check_version("1.13.4").is_ok());
+        let e = check_version("1.13.6").unwrap_err();
+        assert_eq!(e, "sherpa-onnx 1.13.6 found, 1.13.4 expected — reinstall the app.");
+        assert!(check_version("(unknown version)").is_err());
+    }
+
+    // Needs the sherpa DLLs next to the test exe (see below).
+    #[test]
+    #[ignore]
+    fn bundled_library_is_the_pinned_version() {
+        lib().expect("bundled sherpa-onnx must load and match VERSION");
+    }
 
     // Requires the Bangla voice in %APPDATA%\SilentVoice\tts and the sherpa
     // DLLs next to the test exe (copy target/debug/sherpa → target/debug/deps/sherpa).
