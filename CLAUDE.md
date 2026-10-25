@@ -6,7 +6,9 @@ transcribed (optionally AI-processed) text pastes at the cursor. Tauri v2
 bundled llama.cpp for local LLM, Piper + sherpa-onnx for TTS.
 
 **Deep reference:** `docs/HANDBOOK.md` holds the full architecture, subsystem
-histories, and the WHY behind every rule below. **Read the matching handbook
+histories, and the WHY behind every rule below. Decisions that are hard to
+reverse are recorded in `docs/adr/` (0001 system-audio capture per OS, 0002
+the pinned, checked sherpa-onnx version): read them before changing those areas. **Read the matching handbook
 section before touching:** overlay/pill, hotkey pipeline, inline proofreading
 (squiggles/UIA), TTS engines, model catalogs, the updater, or release steps.
 
