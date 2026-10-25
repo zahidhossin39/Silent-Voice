@@ -11,13 +11,13 @@ set -euo pipefail
 WHISPER_TAG=b4938
 LLAMA_TAG=b10631
 PIPER_TAG=2023.11.14-2
-# Same release as the committed Windows DLLs: the C structs must match the
-# Rust FFI (v1.13.6 added a field to the speaker-segmentation config).
-SHERPA_TAG=v1.13.4
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
+# One version for every platform (docs/adr/0002): the Rust FFI structs mirror
+# this release's c-api.h, and the app refuses any other at load.
+SHERPA_TAG=v$(tr -d '[:space:]' < "$ROOT/src-tauri/sidecars/sherpa/VERSION")
 
 OS=$(uname -s)
 TRIPLE=$(rustc -vV | sed -n 's/^host: //p')
-ROOT=$(cd "$(dirname "$0")/.." && pwd)
 SIDECARS="$ROOT/src-tauri/sidecars"
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
