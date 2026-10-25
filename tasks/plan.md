@@ -45,9 +45,9 @@ Research: `docs/research/cross-platform-meeting-audio.md` (Gemini, checked
 ## Task list (details in tasks/todo.md)
 
 ### Phase 1: sherpa-onnx, one version (b)
-- [ ] Task 1: One version file plus the committed header
-- [ ] Task 2: Version check at load, logged at startup
-- [ ] Task 3: Struct layout tests, checked against C in CI
+- [x] Task 1: One version file plus the committed header
+- [x] Task 2: Version check at load, logged at startup
+- [x] Task 3: Struct layout tests, checked against C in CI
 
 ### Checkpoint A
 - [ ] Windows: cargo test, app starts and logs "sherpa-onnx 1.13.4"

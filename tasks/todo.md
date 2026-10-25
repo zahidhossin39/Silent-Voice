@@ -61,7 +61,7 @@ program and diffs its output against the numbers in the Rust tests.
 - [ ] CI Linux: the C-vs-Rust diff step passes on 1.13.4
 
 **Dependencies:** Task 1
-**Files:** `scripts/sherpa-layout.c`, `src-tauri/src/system/sherpa_layout_tests.rs` (new), `.github/workflows/cross-platform-build.yml`
+**Files:** `scripts/sherpa-layout.c`, `src-tauri/src/system/sherpa_layout_tests.rs` (new), `src-tauri/sidecars/sherpa/include/layout.txt` (new), `.github/workflows/cross-platform.yml` (runs on every Rust push, macOS and Linux)
 **Scope:** M
 
 ### Checkpoint A (after Tasks 1-3)
