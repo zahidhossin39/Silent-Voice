@@ -985,3 +985,23 @@ export async function meetingDevices(): Promise<{ mic: string | null; speakers: 
   const [mic, speakers] = await invoke<[string | null, string | null]>("meeting_devices");
   return { mic, speakers };
 }
+
+/** Why the computer's sound can't be recorded here; null when it can. */
+export type CaptureSupport = { kind: "unsupported" | "permission" | "failed"; reason?: string } | null;
+
+/** Browser preview: add `?capture=unsupported|permission|failed` to the URL to see each state. */
+export async function meetingCaptureSupport(): Promise<CaptureSupport> {
+  if (!isTauri()) {
+    const kind = new URLSearchParams(window.location.search).get("capture");
+    if (kind === "unsupported") return { kind, reason: "needs macOS 13 or newer" };
+    if (kind === "permission") return { kind };
+    if (kind === "failed") return { kind, reason: "No speakers or headphones found." };
+    return null;
+  }
+  return invoke<CaptureSupport>("meeting_capture_support");
+}
+
+/** macOS: open System Settings at Screen & System Audio Recording. */
+export async function meetingOpenCaptureSettings(): Promise<void> {
+  if (isTauri()) await invoke("meeting_open_capture_settings");
+}

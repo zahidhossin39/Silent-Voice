@@ -34,7 +34,8 @@ enum Msg {
 }
 
 /// The two running captures; Stop takes them.
-static CAPTURE: Mutex<Option<(Live, Live)>> = Mutex::new(None);
+/// The mic, and the computer's sound when it can be captured here.
+static CAPTURE: Mutex<Option<(Live, Option<Live>)>> = Mutex::new(None);
 
 /// The user's settings, transcribing with `cloud` when given.
 /// `language` overrides the dictation language for meetings ("auto" detects it).
@@ -78,16 +79,14 @@ pub fn start(app: &AppHandle, cloud: Option<transcribe_job::Cloud>, language: Op
     let (tx, rx) = channel();
     let started = transcripts::save(&t).and_then(|()| {
         let mic = capture_track(Speaker::You, Source::Mic(cfg.mic.clone()), id, &tx)?;
-        match capture_track(Speaker::Others, Source::Speakers, id, &tx) {
-            Ok(speakers) => Ok((mic, speakers)),
-            Err(e) => {
-                let _ = mic.0.stop();
-                Err(e)
-            }
-        }
+        // Without the computer's sound (old macOS, permission refused, no
+        // sound server) the meeting still records You, and says why.
+        let speakers = capture_track(Speaker::Others, Source::Speakers, id, &tx)
+            .inspect_err(|e| crate::logging::log_error("meeting", &format!("recording You only: {e}")));
+        Ok((mic, speakers))
     });
     drop(tx);
-    let ((mic, mic_wav), (speakers, speakers_wav)) = match started {
+    let ((mic, mic_wav), speakers) = match started {
         Ok(x) => x,
         Err(e) => {
             // Nothing was recorded: leave no entry behind, and free the slot.
@@ -96,8 +95,18 @@ pub fn start(app: &AppHandle, cloud: Option<transcribe_job::Cloud>, language: Op
             return Err(e);
         }
     };
+    let (speakers, speakers_wav) = match speakers {
+        Ok((live, wav)) => (Some(live), wav),
+        Err(e) => {
+            t.error = Some(format!("Only your side was recorded. {e}"));
+            (None, None)
+        }
+    };
     if let Some(e) = mic_wav.or(speakers_wav) {
         t.error = Some(format!("The audio isn't being saved ({e}). The transcript still is."));
+    }
+    if t.error.is_some() {
+        transcripts::save(&t)?;
     }
     *CAPTURE.lock().map_err(|e| e.to_string())? = Some((mic, speakers));
     crate::system::tray::set_meeting_recording(app, true);
@@ -217,7 +226,7 @@ pub fn stop(app: &AppHandle) -> Result<(), String> {
     };
     crate::system::tray::set_meeting_recording(app, false);
     // Both stop even if one failed (an unplugged headset): what was heard is kept.
-    let (a, b) = (mic.stop(), speakers.stop());
+    let (a, b) = (mic.stop(), speakers.map_or(Ok(()), Live::stop));
     a.and(b)
 }
 

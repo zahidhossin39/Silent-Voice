@@ -994,6 +994,29 @@ fn meeting_devices(state: State<AppState>) -> [Option<String>; 2] {
     [m, s]
 }
 
+/// Why the computer's sound (Others) can't be recorded here, or null when it
+/// can: `{kind: "unsupported" | "permission" | "failed", reason?}`.
+#[tauri::command]
+fn meeting_capture_support() -> Option<serde_json::Value> {
+    use audio::system_audio::CaptureError::*;
+    audio::system_audio::support().err().map(|e| match e {
+        Unsupported(reason) => serde_json::json!({ "kind": "unsupported", "reason": reason }),
+        PermissionDenied => serde_json::json!({ "kind": "permission" }),
+        Failed(reason) => serde_json::json!({ "kind": "failed", "reason": reason }),
+    })
+}
+
+/// macOS: open System Settings at Screen & System Audio Recording.
+#[tauri::command]
+fn meeting_open_capture_settings() -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    std::process::Command::new("open")
+        .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 /// Stop recording; the transcript finishes the queued pieces, then reads "done".
 #[tauri::command]
 async fn meeting_stop(app: AppHandle) -> Result<(), String> {
@@ -1764,6 +1787,8 @@ pub fn run() {
             meetings_search,
             meeting_audio_clip,
             meeting_devices,
+            meeting_capture_support,
+            meeting_open_capture_settings,
             transcripts_list,
             transcript_get,
             transcript_delete,

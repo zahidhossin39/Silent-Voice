@@ -19,15 +19,16 @@ pub enum CaptureError {
 impl fmt::Display for CaptureError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Self::Unsupported(why) => write!(f, "Recording other people isn't possible here: {why}"),
-            Self::PermissionDenied => f.write_str("Silent Voice isn't allowed to record the computer's sound."),
+            Self::Unsupported(why) => write!(f, "Recording other people {why}."),
+            Self::PermissionDenied => f.write_str(
+                "Silent Voice isn't allowed to record the computer's sound: allow it in System Settings > Privacy & Security > Screen & System Audio Recording, then restart Silent Voice.",
+            ),
             Self::Failed(e) => f.write_str(e),
         }
     }
 }
 
 /// Can the computer's sound be captured here, and if not, why.
-#[allow(dead_code)] // the Notetaker page asks this (plan task 9)
 pub fn support() -> Result<(), CaptureError> {
     imp::support()
 }
@@ -76,7 +77,7 @@ mod imp {
     use super::*;
 
     pub fn support() -> Result<(), CaptureError> {
-        Err(CaptureError::Unsupported("not built for this system yet".into()))
+        Err(CaptureError::Unsupported("isn't supported on this system".into()))
     }
 
     pub fn open(_: Arc<Mutex<Vec<f32>>>, _: Arc<Mutex<Option<String>>>) -> Result<(Box<dyn Any>, u32), CaptureError> {

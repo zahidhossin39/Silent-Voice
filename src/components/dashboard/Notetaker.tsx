@@ -12,7 +12,10 @@ import { ModelPicker } from "./providers/shared";
 import {
   listenEvent,
   meetingAudioClip,
+  meetingCaptureSupport,
   meetingDevices,
+  meetingOpenCaptureSettings,
+  type CaptureSupport,
   meetingRetranscribe,
   meetingsSearch,
   meetingStart,
@@ -83,6 +86,7 @@ export default function Notetaker() {
   const [full, setFull] = useState<Transcript | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [devices, setDevices] = useState<{ mic: string | null; speakers: string | null }>({ mic: null, speakers: null });
+  const [capture, setCapture] = useState<CaptureSupport>(null);
   const [starting, setStarting] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [nt, setNt] = useNotetakerSettings();
@@ -109,6 +113,7 @@ export default function Notetaker() {
       setSelected((s) => s ?? l[0]?.id ?? null);
     });
     meetingDevices().then(setDevices, () => {});
+    meetingCaptureSupport().then(setCapture, () => {});
     const un = listenEvent<Transcript>("transcript://update", (t) => {
       if (t.kind !== "meeting") return;
       upsert(t);
@@ -382,6 +387,7 @@ export default function Notetaker() {
             <Setup
               mic={devices.mic}
               speakers={devices.speakers}
+              capture={capture}
               btMic={btMic}
               showConsent={!consentSeen}
               onConsentSeen={dismissConsent}
@@ -590,15 +596,44 @@ function RecordingPill({ startedAt, stopping, onStop }: { startedAt: number; sto
   );
 }
 
+/** Why Others can't be recorded here, and the fix where there is one. Start still records You. */
+function CaptureNote({ capture }: { capture: NonNullable<CaptureSupport> }) {
+  return (
+    <div className="space-y-2 rounded-lg bg-sv-warn/10 px-3 py-2 text-xs leading-relaxed text-sv-warn" role="status">
+      {capture.kind === "permission" ? (
+        <>
+          <p>
+            Silent Voice needs permission to record the computer's sound. Allow it in System Settings &gt; Privacy &amp;
+            Security &gt; Screen &amp; System Audio Recording, then restart Silent Voice. macOS may ask again from time
+            to time. Until then, recording keeps only your side.
+          </p>
+          <button
+            onClick={() => meetingOpenCaptureSettings()}
+            className="rounded-md border border-sv-warn/40 px-2 py-0.5 font-medium hover:bg-sv-warn/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sv-warn"
+          >
+            Open System Settings
+          </button>
+        </>
+      ) : capture.kind === "unsupported" ? (
+        <p>Recording other people {capture.reason}. Recording keeps only your side.</p>
+      ) : (
+        <p>Can't record the computer's sound: {capture.reason} Recording keeps only your side.</p>
+      )}
+    </div>
+  );
+}
+
 function Setup({
   mic,
   speakers,
+  capture,
   btMic,
   showConsent,
   onConsentSeen,
 }: {
   mic: string | null;
   speakers: string | null;
+  capture: CaptureSupport;
   btMic: boolean;
   showConsent: boolean;
   onConsentSeen: () => void;
@@ -611,11 +646,15 @@ function Setup({
           {mic ?? "Default microphone"}
         </dd>
         <dt className="text-sv-muted">Others</dt>
-        <dd className="truncate" title={speakers ?? undefined}>
-          {speakers ? `What plays on ${speakers}` : "What plays on your speakers"}
-        </dd>
-
+        {capture ? (
+          <dd className="text-sv-muted">Not recorded</dd>
+        ) : (
+          <dd className="truncate" title={speakers ?? undefined}>
+            {speakers ? `What plays on ${speakers}` : "What plays on your speakers"}
+          </dd>
+        )}
       </dl>
+      {capture && <CaptureNote capture={capture} />}
       {btMic ? (
         <p className="rounded-lg bg-sv-warn/10 px-3 py-2 text-xs leading-relaxed text-sv-warn">
           This mic looks like a Bluetooth headset. Recording from it switches the headset to call quality, so everyone
