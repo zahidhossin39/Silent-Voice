@@ -1445,6 +1445,28 @@ fn diarize_installed() -> bool { models::registry::diarize_installed() }
 async fn delete_diarize_model() -> Result<(), String> { models::downloader::delete_diarize_model() }
 
 
+fn capture_selftest(secs: u64) -> String {
+    if let Err(e) = audio::system_audio::support() {
+        return format!("capture: {e}");
+    }
+    let got = std::sync::Arc::new(std::sync::Mutex::new(Vec::<f32>::new()));
+    let g = got.clone();
+    let live = match audio::live::Live::start(audio::live::Source::Speakers, move |c| g.lock().unwrap().extend(c), |_| {}) {
+        Ok(l) => l,
+        Err(e) => return format!("capture: {e}"),
+    };
+    std::thread::sleep(std::time::Duration::from_secs(secs));
+    let stopped = live.stop();
+    let s = got.lock().unwrap();
+    let peak = s.iter().fold(0f32, |m, x| m.max(x.abs()));
+    let rms = (s.iter().map(|x| x * x).sum::<f32>() / s.len().max(1) as f32).sqrt();
+    format!(
+        "capture: captured {:.1} s, peak {peak:.4}, rms {rms:.4}{}",
+        s.len() as f32 / audio::capture::WHISPER_SAMPLE_RATE as f32,
+        stopped.err().map(|e| format!(", then failed: {e}")).unwrap_or_default()
+    )
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     logging::log_info("app", &format!("Silent Voice starting (v{})", env!("CARGO_PKG_VERSION")));
@@ -1543,6 +1565,12 @@ pub fn run() {
             // Load sherpa-onnx now, off the UI thread, so its version check
             // logs once at startup instead of at the first TTS/STT use.
             std::thread::spawn(|| { let _ = system::sherpa::lib(); });
+            // Others-capture check, release builds too (CI on macOS/Linux):
+            // record the computer's sound for this many seconds, log one line,
+            // save nothing.
+            if let Some(secs) = std::env::var("SV_SELFTEST_CAPTURE").ok().and_then(|v| v.parse::<u64>().ok()) {
+                std::thread::spawn(move || logging::log_info("selftest", &capture_selftest(secs)));
+            }
 
             // Transcribe-a-file check on a real file, no UI needed: waits for the
             // dashboard to push the user's settings (model, language) first.
@@ -1848,6 +1876,29 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::should_unload;
+
+    /// Real speakers: the self-test line reports sound while a tone plays and
+    /// near-silence after. `cargo test --lib capture_selftest -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn capture_selftest_hears_a_tone_and_silence() {
+        let player = std::thread::spawn(|| {
+            let (_out, handle) = rodio::OutputStream::try_default().unwrap();
+            let sink = rodio::Sink::try_new(&handle).unwrap();
+            sink.append(rodio::source::Source::amplify(
+                rodio::source::Source::take_duration(rodio::source::SineWave::new(440.0), std::time::Duration::from_secs(3)),
+                0.3,
+            ));
+            sink.sleep_until_end();
+        });
+        let loud = super::capture_selftest(2);
+        player.join().unwrap();
+        let quiet = super::capture_selftest(2);
+        println!("{loud}\n{quiet}");
+        let rms = |l: &str| l.split("rms ").nth(1).unwrap().split(',').next().unwrap().parse::<f32>().unwrap();
+        assert!(rms(&loud) > 0.05, "{loud}");
+        assert!(rms(&quiet) < 0.01, "{quiet}");
+    }
 
     #[test]
     fn never_setting_and_active_dictation_keep_the_model() {

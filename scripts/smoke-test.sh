@@ -11,7 +11,7 @@ if [ "$(uname -s)" = Linux ]; then
   echo "--- installed files ---"
   dpkg -L "$(dpkg -f ./out/*.deb Package)" | head -40
   [ -n "$BIN" ] || { echo "FAIL: no executable found in /usr/bin after installing the .deb"; exit 1; }
-  xvfb-run -a --server-args="-screen 0 1280x800x24" "$BIN" > app.log 2>&1 &
+  SV_SELFTEST_CAPTURE=5 xvfb-run -a --server-args="-screen 0 1280x800x24" "$BIN" > app.log 2>&1 &
 else
   APP=$(find src-tauri/target/release/bundle/macos -maxdepth 1 -name '*.app' | head -1)
   BIN=$(find "$APP/Contents/MacOS" -maxdepth 1 -type f | head -1)
@@ -20,7 +20,7 @@ else
   # Paste once, 20 s after startup, into a TextEdit window brought to the
   # front at 10 s: the v0.1.11 crash (keyboard-layout lookup off the main
   # thread) killed the app here, and v0.1.12 pasted nothing on real Macs.
-  SV_SELFTEST_PASTE=20 "$BIN" > app.log 2>&1 &
+  SV_SELFTEST_CAPTURE=5 SV_SELFTEST_PASTE=20 "$BIN" > app.log 2>&1 &
 fi
 PID=$!
 if [ "$(uname -s)" = Darwin ]; then
@@ -61,6 +61,15 @@ if ! grep -q "sherpa-onnx $want loaded" "$LOGDIR/silent-voice.log"; then
   exit 1
 fi
 echo "PASS: sherpa-onnx $want loaded"
+
+# Others capture (docs/adr/0001): one line whatever the outcome; a missing line
+# means the capture crashed or hung.
+line=$(grep "selftest: capture:" "$LOGDIR/silent-voice.log" | tail -1)
+echo "::notice title=Others capture self-test::$(uname -s): ${line:-no result logged}"
+if [ -z "$line" ]; then
+  echo "FAIL: the capture self-test never finished"
+  exit 1
+fi
 
 if [ "$(uname -s)" = Darwin ]; then
   # Public annotation (job logs need admin rights): what the paste returned.

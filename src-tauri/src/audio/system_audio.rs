@@ -7,6 +7,7 @@ use std::any::Any;
 use std::fmt;
 use std::sync::{Arc, Mutex};
 
+#[cfg_attr(windows, allow(dead_code))] // Windows only ever fails
 pub enum CaptureError {
     /// This OS (or version, or audio system) can't capture the computer's sound.
     Unsupported(String),
