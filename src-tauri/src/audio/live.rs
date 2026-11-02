@@ -1,5 +1,5 @@
 // Live audio for the meeting recorder: the mic, or the computer's own sound
-// (WASAPI loopback), as 16 kHz mono chunks every ~100 ms.
+// (audio/system_audio.rs), as 16 kHz mono chunks every ~100 ms.
 //
 // Loopback only delivers while something plays, so a quiet stretch would
 // vanish and the Others track would slide out of step with the mic. The wall
@@ -80,18 +80,16 @@ fn run(
     stop: &AtomicBool,
     ready: mpsc::Sender<Result<(), String>>,
 ) -> Result<(), String> {
-    let opened = open(&source);
-    let (stream, rate, raw, failed) = match opened {
+    let raw = Arc::new(Mutex::new(Vec::<f32>::new()));
+    let failed = Arc::new(Mutex::new(None));
+    // Held until return: dropping it stops the capture.
+    let (_capture, rate) = match open(&source, raw.clone(), failed.clone()) {
         Ok(x) => x,
         Err(e) => {
             let _ = ready.send(Err(e.clone()));
             return Err(e);
         }
     };
-    if let Err(e) = stream.play() {
-        let _ = ready.send(Err(e.to_string()));
-        return Err(e.to_string());
-    }
     let _ = ready.send(Ok(()));
     let started = Instant::now();
     let mut resampler = Resampler::new(rate, WHISPER_SAMPLE_RATE);
@@ -118,13 +116,16 @@ fn run(
     }
 }
 
-type Opened = (cpal::Stream, u32, Arc<Mutex<Vec<f32>>>, Arc<Mutex<Option<String>>>);
-
-/// Open the device; its callback downmixes to mono into `raw`.
-fn open(source: &Source) -> Result<Opened, String> {
-    let host = cpal::default_host();
-    let (device, config) = match source {
+/// Start the source pushing mono samples into `raw`. Returns the handle that
+/// keeps it running, and its sample rate.
+fn open(
+    source: &Source,
+    raw: Arc<Mutex<Vec<f32>>>,
+    failed: Arc<Mutex<Option<String>>>,
+) -> Result<(Box<dyn std::any::Any>, u32), String> {
+    match source {
         Source::Mic(name) => {
+            let host = cpal::default_host();
             let d = match name {
                 Some(n) => host
                     .input_devices()
@@ -134,20 +135,22 @@ fn open(source: &Source) -> Result<Opened, String> {
                 None => host.default_input_device().ok_or("No microphone found.")?,
             };
             let c = d.default_input_config().map_err(|e| e.to_string())?;
-            (d, c)
+            let rate = c.sample_rate().0;
+            Ok((Box::new(start_stream(&d, c, raw, failed)?), rate))
         }
-        // An input stream on an output device is WASAPI loopback in cpal.
-        Source::Speakers => {
-            let d = host.default_output_device().ok_or("No speakers or headphones found.")?;
-            let c = d.default_output_config().map_err(|e| e.to_string())?;
-            (d, c)
-        }
-    };
-    let rate = config.sample_rate().0;
+        Source::Speakers => crate::audio::system_audio::open(raw, failed).map_err(|e| e.to_string()),
+    }
+}
+
+/// Build and play an input stream on `device` whose callback downmixes to mono into `raw`.
+pub(super) fn start_stream(
+    device: &cpal::Device,
+    config: cpal::SupportedStreamConfig,
+    raw: Arc<Mutex<Vec<f32>>>,
+    failed: Arc<Mutex<Option<String>>>,
+) -> Result<cpal::Stream, String> {
     let channels = config.channels().max(1) as usize;
-    let raw = Arc::new(Mutex::new(Vec::<f32>::new()));
-    let failed = Arc::new(Mutex::new(None));
-    let (r, f) = (raw.clone(), failed.clone());
+    let (r, f) = (raw, failed);
     let err = move |e: cpal::StreamError| {
         if let Ok(mut slot) = f.lock() {
             slot.get_or_insert_with(|| format!("Audio device stopped: {e}"));
@@ -169,7 +172,8 @@ fn open(source: &Source) -> Result<Opened, String> {
         fmt => return Err(format!("Unsupported audio format: {fmt:?}")),
     }
     .map_err(|e| e.to_string())?;
-    Ok((stream, rate, raw, failed))
+    stream.play().map_err(|e| e.to_string())?;
+    Ok(stream)
 }
 
 /// Names of the mic (`mic`, or the default) and speakers a recording would use,
