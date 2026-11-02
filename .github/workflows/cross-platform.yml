@@ -88,6 +88,13 @@ jobs:
           # and a broken macOS build looked green.
           exit $CODE
 
+      # The tests that guard Mac/Linux code (FFI struct layouts, audio
+      # conversion) must run where that code ships, not only on Windows.
+      - name: Unit tests
+        working-directory: src-tauri
+        shell: bash
+        run: cargo test --lib --no-default-features --color=never
+
       - name: Post the errors as a commit comment
         if: always() && steps.check.outputs.code != '0'
         working-directory: src-tauri
