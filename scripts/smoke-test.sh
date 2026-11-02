@@ -11,6 +11,12 @@ if [ "$(uname -s)" = Linux ]; then
   echo "--- installed files ---"
   dpkg -L "$(dpkg -f ./out/*.deb Package)" | head -40
   [ -n "$BIN" ] || { echo "FAIL: no executable found in /usr/bin after installing the .deb"; exit 1; }
+  # A sound server whose default output is a null sink playing a tone: the
+  # app's Others capture must hear it (docs/adr/0001).
+  pulseaudio -D --exit-idle-time=-1 && sleep 1
+  pactl load-module module-null-sink sink_name=sv_test && pactl set-default-sink sv_test
+  python3 -c "import math,struct,wave;w=wave.open('tone.wav','wb');w.setnchannels(1);w.setsampwidth(2);w.setframerate(16000);w.writeframes(b''.join(struct.pack('<h',int(9830*math.sin(2*math.pi*440*i/16000))) for i in range(16000*40)))"
+  paplay tone.wav &
   SV_SELFTEST_CAPTURE=5 xvfb-run -a --server-args="-screen 0 1280x800x24" "$BIN" > app.log 2>&1 &
 else
   APP=$(find src-tauri/target/release/bundle/macos -maxdepth 1 -name '*.app' | head -1)
@@ -69,6 +75,14 @@ echo "::notice title=Others capture self-test::$(uname -s): ${line:-no result lo
 if [ -z "$line" ]; then
   echo "FAIL: the capture self-test never finished"
   exit 1
+fi
+if [ "$(uname -s)" = Linux ]; then
+  rms=$(echo "$line" | sed -n 's/.*rms \([0-9.]*\).*/\1/p')
+  if ! awk -v r="${rms:-0}" 'BEGIN { exit !(r > 0.05) }'; then
+    echo "FAIL: Others capture did not hear the tone playing on the default output"
+    exit 1
+  fi
+  echo "PASS: Others capture heard the tone (rms $rms)"
 fi
 
 if [ "$(uname -s)" = Darwin ]; then

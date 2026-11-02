@@ -64,7 +64,10 @@ mod imp {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
+use super::system_audio_linux as imp;
+
+#[cfg(not(any(windows, target_os = "linux")))]
 mod imp {
     use super::*;
 
