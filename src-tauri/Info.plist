@@ -9,6 +9,8 @@
   <string>Silent Voice records your voice so it can transcribe what you say. Audio never leaves your Mac.</string>
   <key>NSAppleEventsUsageDescription</key>
   <string>Silent Voice checks which app is in front so it can apply the right dictation profile.</string>
+  <key>NSScreenCaptureUsageDescription</key>
+  <string>Silent Voice records the computer's sound during a meeting so it can transcribe the other people. Nothing is shared or uploaded.</string>
   <key>LSUIElement</key>
   <false/>
 </dict>

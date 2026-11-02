@@ -27,6 +27,7 @@ impl fmt::Display for CaptureError {
 }
 
 /// Can the computer's sound be captured here, and if not, why.
+#[allow(dead_code)] // the Notetaker page asks this (plan task 9)
 pub fn support() -> Result<(), CaptureError> {
     imp::support()
 }
@@ -67,7 +68,10 @@ mod imp {
 #[cfg(target_os = "linux")]
 use super::system_audio_linux as imp;
 
-#[cfg(not(any(windows, target_os = "linux")))]
+#[cfg(target_os = "macos")]
+use super::system_audio_macos as imp;
+
+#[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
 mod imp {
     use super::*;
 
@@ -77,5 +81,60 @@ mod imp {
 
     pub fn open(_: Arc<Mutex<Vec<f32>>>, _: Arc<Mutex<Option<String>>>) -> Result<(Box<dyn Any>, u32), CaptureError> {
         support().map(|_| unreachable!())
+    }
+}
+
+/// Mix captured buffers down to one channel. Each entry is (channels in that
+/// buffer, its samples): several 1-channel buffers are planar audio, one
+/// n-channel buffer is interleaved. Platform-free so it is tested everywhere.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub(super) fn mix_to_mono(bufs: &[(usize, &[f32])]) -> Vec<f32> {
+    let total: usize = bufs.iter().map(|(n, _)| (*n).max(1)).sum();
+    let frames = bufs.iter().map(|(n, s)| s.len() / (*n).max(1)).min().unwrap_or(0);
+    (0..frames)
+        .map(|i| {
+            let sum: f32 = bufs.iter().map(|(n, s)| s[i * n.max(&1)..][..*n.max(&1)].iter().sum::<f32>()).sum();
+            sum / total as f32
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::mix_to_mono;
+
+    #[test]
+    fn planar_stereo_averages_the_two_channels() {
+        let (l, r) = ([1.0, 0.5, 0.0], [0.0, 0.5, 1.0]);
+        assert_eq!(mix_to_mono(&[(1, &l), (1, &r)]), vec![0.5, 0.5, 0.5]);
+    }
+
+    #[test]
+    fn interleaved_stereo_averages_each_frame() {
+        assert_eq!(mix_to_mono(&[(2, &[1.0, 0.0, 0.5, 0.5, 0.0, 1.0])]), vec![0.5, 0.5, 0.5]);
+    }
+
+    #[test]
+    fn mono_passes_through() {
+        assert_eq!(mix_to_mono(&[(1, &[0.1, -0.2])]), vec![0.1, -0.2]);
+    }
+
+    #[test]
+    fn nothing_in_nothing_out() {
+        assert!(mix_to_mono(&[]).is_empty());
+        assert!(mix_to_mono(&[(1, &[]), (1, &[])]).is_empty());
+    }
+
+    // ScreenCaptureKit may deliver 48 kHz stereo even when 16 kHz mono is asked for.
+    #[test]
+    fn a_48k_stereo_sine_comes_out_16k_mono_with_the_same_length_and_level() {
+        let n = 48_000;
+        let sine: Vec<f32> = (0..n).map(|i| 0.5 * (2.0 * std::f32::consts::PI * 440.0 * i as f32 / 48_000.0).sin()).collect();
+        let mono = mix_to_mono(&[(1, &sine), (1, &sine)]);
+        let mut out = Vec::new();
+        crate::audio::decode::Resampler::new(48_000, 16_000).push(&mono, &mut out);
+        assert!((out.len() as i64 - 16_000).abs() < 50, "{} samples for 1 s", out.len());
+        let rms = (out.iter().map(|x| x * x).sum::<f32>() / out.len() as f32).sqrt();
+        assert!((rms - 0.5 / 2f32.sqrt()).abs() < 0.02, "rms {rms}");
     }
 }

@@ -1446,9 +1446,8 @@ async fn delete_diarize_model() -> Result<(), String> { models::downloader::dele
 
 
 fn capture_selftest(secs: u64) -> String {
-    if let Err(e) = audio::system_audio::support() {
-        return format!("capture: {e}");
-    }
+    // Straight to open, not support(): CI should exercise the real start path
+    // (on macOS that asks for the permission; a runner says no at once).
     let got = std::sync::Arc::new(std::sync::Mutex::new(Vec::<f32>::new()));
     let g = got.clone();
     let live = match audio::live::Live::start(audio::live::Source::Speakers, move |c| g.lock().unwrap().extend(c), |_| {}) {
