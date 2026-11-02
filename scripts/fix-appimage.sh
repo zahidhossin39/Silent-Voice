@@ -47,5 +47,8 @@ TOOL="$WORK/appimagetool"
 curl -fsSL -o "$TOOL" \
   https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
 chmod +x "$TOOL"
+# mktemp -d makes the root 0700, and current appimagetool refuses an AppDir
+# that other users couldn't read or run.
+chmod -R go+rX "$ROOT"
 ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 "$TOOL" --no-appstream "$ROOT" "$APP"
 echo "fixed: $APP"
