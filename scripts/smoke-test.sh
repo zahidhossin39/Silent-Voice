@@ -49,6 +49,12 @@ if ! kill -0 $PID 2>/dev/null; then
   done
   exit 1
 fi
+# Up but never finished setup: show where each thread is stuck.
+if [ "$(uname -s)" = Linux ] && ! grep -q "tray and overlay ready" "$LOGDIR/silent-voice.log" 2>/dev/null; then
+  echo "--- app never finished setup; thread stacks ---"
+  sudo apt-get install -y gdb > /dev/null 2>&1
+  sudo gdb -p "$(pgrep -x silent-voice | head -1)" -batch -ex "thread apply all bt 25" 2>&1 | grep -E "^Thread|^#" | head -150
+fi
 kill $PID 2>/dev/null || true
 # Stop the app itself too ($PID is only xvfb-run on Linux); it is
 # single-instance, so a leftover copy breaks the next launch test.
