@@ -160,40 +160,46 @@ fn check_version(found: &str) -> Result<(), String> {
 
 pub(crate) fn lib() -> Result<&'static Library, String> {
     LIB.get_or_init(|| {
-        let dir = crate::system::paths::bundled_dir().join("sherpa");
-        // Pre-load OUR onnxruntime.dll by absolute path FIRST. Without this,
-        // Windows resolves the c-api DLL's `onnxruntime.dll` import through
-        // the normal search order and can pick up an incompatible copy (e.g.
-        // the OS-shipped one, or Piper's older 1.17 build) → API-version
-        // mismatch → access violation. A module already loaded under that
-        // name always wins dependency resolution, so loading ours first pins
-        // it.
-        let ort = ORT.get_or_init(|| {
-            let p = dir.join(library_filename("onnxruntime"));
-            unsafe { Library::new(&p) }
-                .map_err(|e| format!("could not load {}: {e} — reinstall the app.", p.display()))
-        });
-        if let Err(e) = ort {
-            return Err(e.clone());
-        }
-        let dll = dir.join(library_filename("sherpa-onnx-c-api"));
-        let lib = unsafe { Library::new(&dll) }
-            .map_err(|e| format!("could not load {}: {e} — reinstall the app.", dll.display()))?;
-        // Refuse a library whose structs may differ from ours before any
-        // config is passed to it: a mismatch reads fields at the wrong offset.
-        let found = unsafe { lib.get::<unsafe extern "C" fn() -> *const c_char>(b"SherpaOnnxGetVersionStr\0") }
-            .ok()
-            .map(|f| unsafe { CStr::from_ptr(f()) }.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "(unknown version)".into());
-        let r = check_version(&found).map(|_| lib);
-        match &r {
-            Ok(_) => crate::logging::log_info("sherpa", &format!("sherpa-onnx {found} loaded")),
-            Err(e) => crate::logging::log_error("sherpa", e),
+        // Every failure is logged, load errors too: CI greps this log.
+        let r = load();
+        if let Err(e) = &r {
+            crate::logging::log_error("sherpa", e);
         }
         r
     })
     .as_ref()
     .map_err(|e| e.clone())
+}
+
+fn load() -> Result<Library, String> {
+    let dir = crate::system::paths::bundled_dir().join("sherpa");
+    // Pre-load OUR onnxruntime.dll by absolute path FIRST. Without this,
+    // Windows resolves the c-api DLL's `onnxruntime.dll` import through
+    // the normal search order and can pick up an incompatible copy (e.g.
+    // the OS-shipped one, or Piper's older 1.17 build) → API-version
+    // mismatch → access violation. A module already loaded under that
+    // name always wins dependency resolution, so loading ours first pins
+    // it.
+    let ort = ORT.get_or_init(|| {
+        let p = dir.join(library_filename("onnxruntime"));
+        unsafe { Library::new(&p) }
+            .map_err(|e| format!("could not load {}: {e} — reinstall the app.", p.display()))
+    });
+    if let Err(e) = ort {
+        return Err(e.clone());
+    }
+    let dll = dir.join(library_filename("sherpa-onnx-c-api"));
+    let lib = unsafe { Library::new(&dll) }
+        .map_err(|e| format!("could not load {}: {e} — reinstall the app.", dll.display()))?;
+    // Refuse a library whose structs may differ from ours before any
+    // config is passed to it: a mismatch reads fields at the wrong offset.
+    let found = unsafe { lib.get::<unsafe extern "C" fn() -> *const c_char>(b"SherpaOnnxGetVersionStr\0") }
+        .ok()
+        .map(|f| unsafe { CStr::from_ptr(f()) }.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "(unknown version)".into());
+    check_version(&found)?;
+    crate::logging::log_info("sherpa", &format!("sherpa-onnx {found} loaded"));
+    Ok(lib)
 }
 
 /// Synthesize `text` (UTF-8, any script) into a 16-bit WAV at `out_wav`.

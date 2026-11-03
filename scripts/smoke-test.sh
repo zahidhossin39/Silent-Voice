@@ -35,14 +35,19 @@ if [ "$(uname -s)" = Darwin ]; then
   open -a TextEdit "$PWD/paste-target.txt"
   sleep 20
 else
-  sleep 30
+  # Webkit under xvfb can take most of a minute to reach setup; wait for the
+  # capture self-test line (the last thing startup logs) rather than a fixed time.
+  for _ in $(seq 90); do
+    grep -q "selftest: capture:" "$LOGDIR/silent-voice.log" 2>/dev/null && break
+    sleep 1
+  done
 fi
 
 echo "--- stdout/stderr ---"; cat app.log || true
 echo "--- app log ---"; cat "$LOGDIR/silent-voice.log" 2>/dev/null || echo "(no log file written)"
 
 if ! kill -0 $PID 2>/dev/null; then
-  echo "FAIL: the app exited within 30s of launch"
+  echo "FAIL: the app exited during startup"
   # macOS writes a crash report; its crashing frames name the cause.
   for r in "$HOME"/Library/Logs/DiagnosticReports/silent-voice*.ips; do
     [ -f "$r" ] && grep -o '"symbol":"[^"]*"' "$r" | head -12
@@ -53,7 +58,7 @@ fi
 if [ "$(uname -s)" = Linux ] && ! grep -q "tray and overlay ready" "$LOGDIR/silent-voice.log" 2>/dev/null; then
   echo "--- app never finished setup; thread stacks ---"
   sudo apt-get install -y gdb > /dev/null 2>&1
-  sudo gdb -p "$(pgrep -x silent-voice | head -1)" -batch -ex "thread apply all bt 25" 2>&1 | grep -E "^Thread|^#" | head -150
+  sudo gdb -p "$(pgrep -x silent-voice | head -1)" -batch -ex "thread apply 1 bt 40" -ex "thread apply all bt 8" 2>&1 | grep -E "^Thread|^#" | head -300
 fi
 kill $PID 2>/dev/null || true
 # Stop the app itself too ($PID is only xvfb-run on Linux); it is
