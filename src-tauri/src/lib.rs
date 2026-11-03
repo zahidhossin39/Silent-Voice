@@ -1580,10 +1580,8 @@ pub fn run() {
         })
         .setup(|app| {
             let _ = registry::ensure_dirs();
-            // A transcript still "running" means the app closed mid-way.
-            transcripts::mark_interrupted();
-            tray::build_tray(app.handle())?;
-            overlay::create_overlay(app.handle())?;
+            // Neither needs a window, so they run before anything that could
+            // block on the desktop (tray, overlay).
             // Load sherpa-onnx now, off the UI thread, so its version check
             // logs once at startup instead of at the first TTS/STT use.
             std::thread::spawn(|| { let _ = system::sherpa::lib(); });
@@ -1593,6 +1591,11 @@ pub fn run() {
             if let Some(secs) = std::env::var("SV_SELFTEST_CAPTURE").ok().and_then(|v| v.parse::<u64>().ok()) {
                 std::thread::spawn(move || logging::log_info("selftest", &capture_selftest(secs)));
             }
+            // A transcript still "running" means the app closed mid-way.
+            transcripts::mark_interrupted();
+            tray::build_tray(app.handle())?;
+            overlay::create_overlay(app.handle())?;
+            logging::log_info("app", "tray and overlay ready");
 
             // Transcribe-a-file check on a real file, no UI needed: waits for the
             // dashboard to push the user's settings (model, language) first.
