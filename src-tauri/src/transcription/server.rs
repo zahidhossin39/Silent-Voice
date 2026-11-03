@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 pub const WHISPER_PORT: u16 = 8090;
 
 /// whisper-server sits in the bundled-resource root beside the whisper DLLs —
-/// next to the executable on Windows/Linux, Contents/Resources on macOS.
+/// see paths::bundled_dir for where that is on each OS.
 fn server_exe() -> PathBuf {
     crate::system::paths::bundled_dir()
         .join(if cfg!(windows) { "whisper-server.exe" } else { "whisper-server" })
