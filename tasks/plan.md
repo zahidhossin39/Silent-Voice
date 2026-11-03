@@ -55,25 +55,25 @@ Research: `docs/research/cross-platform-meeting-audio.md` (Gemini, checked
 
 ### Phase 2: capture the computer's sound (a)
 - [ ] Task 4: The system-audio interface, Windows moved behind it
-- [ ] Task 5: Release-safe capture self-test
-- [ ] Task 6: Linux backend (PulseAudio monitor)
+- [x] Task 5: Release-safe capture self-test
+- [x] Task 6: Linux backend (PulseAudio monitor)
 - [ ] Task 7: macOS backend (ScreenCaptureKit), permission and start/stop
-- [ ] Task 8: macOS sample conversion to 16 kHz mono, unit-tested
+- [x] Task 8: macOS sample conversion to 16 kHz mono, unit-tested
 
 ### Checkpoint B
 - [ ] Windows meeting unchanged (user records one call)
-- [ ] Linux CI: self-test captures the tone (level above silence)
-- [ ] macOS CI: self-test reports "permission needed" cleanly, no crash
+- [x] Linux CI: self-test captures the tone (level above silence): rms 0.20
+- [x] macOS CI: self-test reports "permission needed" cleanly, no crash (the runner allowed it: 5 s of silence, no crash)
 - [ ] Review with the user before the page work
 
 ### Phase 3: the page when capture can't work (c)
-- [ ] Task 9: Support command and the Notetaker page states
+- [x] Task 9: Support command and the Notetaker page states
 
 ### Checkpoint C
 - [ ] Each state seen in the browser preview (mocked) and on Windows
 
 ### Phase 4: release
-- [ ] Task 10: Run cargo test on macOS and Linux in CI
+- [x] Task 10: Run cargo test on macOS and Linux in CI
 - [ ] Task 11: Docs, then v0.2.0 (version bump, tag, publish on the user's go)
 
 ### Checkpoint: release

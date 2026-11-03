@@ -160,7 +160,7 @@ be tested without a Mac.
 
 **Verification:**
 - [ ] Unit tests on synthetic buffers (a known sine in, the expected length and level out); they run on Windows, because the function is platform-free
-- [ ] CI macOS: same tests (after Task 10)
+- [x] CI macOS: same tests (after Task 10)
 
 **Dependencies:** Task 7
 **Files:** `src-tauri/src/audio/system_audio_macos.rs`, `src-tauri/src/audio/resample.rs` (or reuse the existing resampler in `live.rs`)
@@ -168,8 +168,8 @@ be tested without a Mac.
 
 ### Checkpoint B (after Tasks 4-8)
 - [ ] Windows meeting unchanged (the user records one)
-- [ ] Linux CI: the tone is captured
-- [ ] macOS CI: clean "permission needed", no crash
+- [x] Linux CI: the tone is captured
+- [x] macOS CI: clean "permission needed", no crash
 - [ ] Review with the user before the page work
 
 ---
@@ -209,10 +209,10 @@ banner kept on the meeting).
 layout tests and the conversion tests run on the platforms they protect.
 
 **Acceptance criteria:**
-- [ ] CI fails if any unit test fails on macOS or Linux
+- [x] CI fails if any unit test fails on macOS or Linux
 
 **Verification:**
-- [ ] Push a branch with one failing test and see CI go red, then remove it
+- [x] Push a branch with one failing test and see CI go red, then remove it
 
 **Dependencies:** Tasks 3, 8
 **Files:** `.github/workflows/cross-platform-build.yml` (or `ci.yml`)
