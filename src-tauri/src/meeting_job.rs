@@ -495,19 +495,23 @@ impl Recent {
     }
 }
 
-/// You pieces minus the ones that are only the speakers' sound (with thumps
-/// the gate let through), which would otherwise be transcribed as you.
+/// You pieces with the speakers' sound taken out, minus the ones where only
+/// that sound (with thumps the gate let through) was there, which would
+/// otherwise be transcribed as you.
 /// `delay`: how far the mic hears the speakers behind the computer's sound.
 fn only_yours(pieces: Vec<longform::Segment>, recent: &Recent, delay: i64) -> Vec<longform::Segment> {
     pieces
         .into_iter()
-        .filter(|p| {
+        .filter_map(|mut p| {
             let a = (p.start as i64 - delay).max(0) as usize;
-            let keep = !p.speech || recent.get(a, a + p.samples.len()).is_none_or(|sys| echo::holds_your_voice(&p.samples, sys));
-            if !keep {
+            let Some(sys) = recent.get(a, a + p.samples.len()).filter(|_| p.speech) else { return Some(p) };
+            let (cleaned, voice) = echo::without_echo(&p.samples, sys);
+            if !voice {
                 crate::logging::log_info("meeting", &format!("You piece at {} was only the speakers' sound; skipped", clock(p.start as u64 * 1000 / SR)));
+                return None;
             }
-            keep
+            p.samples = cleaned;
+            Some(p)
         })
         .collect()
 }

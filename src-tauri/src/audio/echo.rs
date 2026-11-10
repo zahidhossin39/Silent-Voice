@@ -1,5 +1,8 @@
 ﻿//! Meeting echo gate: mutes the parts of the mic track that are only the
 //! speakers' sound, so the mic hearing the call doesn't turn into "You" lines.
+//! Each mic piece it lets through then has the speakers' sound subtracted
+//! (`without_echo`) before it's transcribed, so keeping you when you talk over
+//! someone no longer keeps their echo too.
 //!
 //! Wispr Flow's meeting recorder does the same thing. GCC-PHAT between the mic
 //! and the computer's sound finds a steady delay while the mic hears the
@@ -19,7 +22,7 @@ const HOP: usize = 4_000;
 const WIN: usize = 16_000;
 /// FFT size: WIN padded so a delay doesn't wrap around.
 const N: usize = 32_768;
-/// Delays up to Â±0.5 s (a Bluetooth speaker adds ~0.2 s; the tracks can drift).
+/// Delays up to ±0.5 s (a Bluetooth speaker adds ~0.2 s; the tracks can drift).
 const MAX_LAG: usize = 8_000;
 /// Only the speech band is compared: a hum or DC shared by both tracks
 /// otherwise peaks at a fake 0 ms delay.
@@ -124,13 +127,13 @@ impl EchoGate {
         self.release()
     }
 
-    /// The rest of the mic audio, unchecked (less than a hop, or no speakers track).
     /// How far (samples) the mic hears the speakers behind the computer's
     /// sound, from the recent peaks that agree; 0 before any.
     pub fn delay(&self) -> i64 {
         median(&self.peaks.iter().filter(|(s, _)| *s >= SCORE).map(|(_, l)| *l).collect::<Vec<_>>())
     }
 
+    /// The rest of the mic audio, unchecked (less than a hop, or no speakers track).
     pub fn finish(mut self) -> Vec<f32> {
         let mut out = self.release();
         for h in std::mem::take(&mut self.pending) {
@@ -146,12 +149,12 @@ impl EchoGate {
             let end = self.done + HOP;
             let mic_end = self.mic_start + self.mic.len();
             let sys_end = self.sys_start + self.sys.len();
-            if mic_end < end || (sys_end < end && mic_end < end + WAIT) {
+            let heard = sys_end >= end;
+            if mic_end < end || (!heard && mic_end < end + WAIT) {
                 break;
             }
-            let from = self.done - self.mic_start;
-            let samples = self.mic[from..from + HOP].to_vec();
-            let (mut muted, mic, sys) = if sys_end >= end { self.echo_only(end) } else { (false, 0.0, 0.0) };
+            let samples = self.mic[self.done - self.mic_start..][..HOP].to_vec();
+            let (mut muted, mic, sys) = if heard { self.echo_only(end) } else { (false, 0.0, 0.0) };
             // Hangover: the room still rings for a moment after the speakers stop.
             if let Some(last) = self.pending.back().filter(|h| h.muted && !muted && sys < FLOOR) {
                 muted = sounds_like_echo(&self.ratios, &self.levels, mic, last.sys);
@@ -256,37 +259,75 @@ const BAND: std::ops::Range<usize> = (300 * FRAME / 16_000)..(3_400 * FRAME / 16
 /// own voice over the same calls 0.0034-0.045, even dictating quietly.
 const YOUR_VOICE: f32 = 0.003;
 
-/// Whether a mic piece holds the user's own voice and not only the speakers'
-/// sound (plus thumps the gate let through). `sys` is the computer's sound for
-/// the same moment, already shifted by the mic's delay, as long as `mic`.
+/// Frames per fit (~4 s): short enough to follow the echo's loudness swings
+/// (Windows' own mic processing moves it up to 8x), long enough not to fit
+/// away the user's voice.
+const FIT_FRAMES: usize = 62;
+
+/// Takes the speakers' sound out of a mic piece and says whether the user's
+/// own voice is left. `sys` is the computer's sound for the same moment,
+/// already shifted by the mic's delay, as long as `mic`.
 /// Per frequency, the part of the mic the speakers' sound explains (the best
-/// linear filter over the piece) is removed; what's left in the speech band
-/// must be loud enough in at least 20% of the frames.
-pub fn holds_your_voice(mic: &[f32], sys: &[f32]) -> bool {
+/// linear filter, fitted per ~4 s) is subtracted and the rest rebuilt by
+/// overlap-add. The voice check: what's left in the speech band must be loud
+/// enough in at least 20% of the frames. Thumps the gate let through sit
+/// below the band, so echo plus thumps alone fails it.
+pub fn without_echo(mic: &[f32], sys: &[f32]) -> (Vec<f32>, bool) {
     let n = mic.len().min(sys.len());
-    // Nothing playing: nothing to mistake for you.
+    // Nothing playing: nothing to take out, nothing to mistake for you.
     if n < FRAME || rms(&sys[..n]) < FLOOR {
-        return true;
+        return (mic.to_vec(), true);
     }
-    let fft = FftPlanner::new().plan_fft_forward(FRAME);
-    let win: Vec<f32> = (0..FRAME).map(|i| 0.5 - 0.5 * (2.0 * std::f32::consts::PI * i as f32 / (FRAME - 1) as f32).cos()).collect();
-    let band = |x: &[f32]| {
-        let mut b: Vec<Complex32> = x.iter().zip(&win).map(|(s, w)| Complex32::new(s * w, 0.0)).collect();
-        fft.process(&mut b);
-        b[BAND].to_vec()
+    let half = FRAME / 2;
+    let mut planner = FftPlanner::new();
+    let (fwd, inv) = (planner.plan_fft_forward(FRAME), planner.plan_fft_inverse(FRAME));
+    // Periodic Hann at 50% overlap sums to exactly 1, so overlap-add of the
+    // untouched frames gives the input back.
+    let win: Vec<f32> = (0..FRAME).map(|i| 0.5 - 0.5 * (2.0 * std::f32::consts::PI * i as f32 / FRAME as f32).cos()).collect();
+    let count = n / half + 2;
+    let padded = |x: &[f32]| {
+        let mut p = vec![0.0; half];
+        p.extend_from_slice(&x[..n]);
+        p.resize((count + 1) * half, 0.0);
+        p
     };
-    let frames: Vec<(Vec<Complex32>, Vec<Complex32>)> = (0..=n - FRAME).step_by(FRAME / 2).map(|i| (band(&sys[i..i + FRAME]), band(&mic[i..i + FRAME]))).collect();
-    // The speakers-to-mic filter that explains the most, per frequency.
-    let h: Vec<Complex32> = (0..BAND.len())
-        .map(|k| {
-            let (sxy, sxx) = frames.iter().fold((Complex32::default(), 0.0), |(a, b), (x, y)| (a + y[k] * x[k].conj(), b + x[k].norm_sqr()));
-            sxy / (sxx + 1e-12)
-        })
-        .collect();
-    let scale = win.iter().map(|w| w * w).sum::<f32>() * FRAME as f32 / 2.0;
-    let mut left: Vec<f32> = frames.iter().map(|(x, y)| (y.iter().zip(x).zip(&h).map(|((y, x), h)| (y - h * x).norm_sqr()).sum::<f32>() / scale).sqrt()).collect();
+    let (ys, xs) = (padded(mic), padded(sys));
+    let spectrum = |x: &[f32], i: usize| {
+        let mut b: Vec<Complex32> = x[i * half..i * half + FRAME].iter().zip(&win).map(|(s, w)| Complex32::new(s * w, 0.0)).collect();
+        fwd.process(&mut b);
+        b
+    };
+    let x: Vec<Vec<Complex32>> = (0..count).map(|i| spectrum(&xs, i)).collect();
+    let mut y: Vec<Vec<Complex32>> = (0..count).map(|i| spectrum(&ys, i)).collect();
+    // A short last block joins the one before, so no fit rests on a few frames.
+    let mut blocks: Vec<std::ops::Range<usize>> = (0..count).step_by(FIT_FRAMES).map(|s| s..(s + FIT_FRAMES).min(count)).collect();
+    if blocks.len() > 1 && blocks[blocks.len() - 1].len() < FIT_FRAMES / 2 {
+        let last = blocks.pop().unwrap();
+        blocks.last_mut().unwrap().end = last.end;
+    }
+    for b in blocks {
+        for k in 0..FRAME {
+            let (sxy, sxx) = b.clone().fold((Complex32::default(), 0.0), |(a, e), i| (a + y[i][k] * x[i][k].conj(), e + x[i][k].norm_sqr()));
+            let h = sxy / (sxx + 1e-12);
+            for i in b.clone() {
+                y[i][k] -= h * x[i][k];
+            }
+        }
+    }
+    let scale = win.iter().map(|w| w * w).sum::<f32>() * half as f32;
+    let mut left: Vec<f32> = y.iter().map(|r| (r[BAND].iter().map(|c| c.norm_sqr()).sum::<f32>() / scale).sqrt()).collect();
     left.sort_by(f32::total_cmp);
-    left[(left.len() - 1) * 4 / 5] >= YOUR_VOICE
+    let voice = left[(left.len() - 1) * 4 / 5] >= YOUR_VOICE;
+    let mut out = vec![0.0; (count + 1) * half];
+    for (i, mut r) in y.into_iter().enumerate() {
+        inv.process(&mut r);
+        for (o, c) in out[i * half..i * half + FRAME].iter_mut().zip(&r) {
+            *o += c.re / FRAME as f32;
+        }
+    }
+    let mut cleaned = out[half..half + n].to_vec();
+    cleaned.extend_from_slice(&mic[n..]);
+    (cleaned, voice)
 }
 
 fn trim(buf: &mut Vec<f32>, start: &mut usize, keep_from: usize) {
@@ -437,7 +478,7 @@ mod tests {
         let sys = talk(7, 4, 0.2);
         let mic: Vec<f32> = loud_echo_of(&sys).iter().zip(thumps(sys.len())).map(|(e, t)| e + t).collect();
         let aligned = &sys[..sys.len() - 480];
-        assert!(!holds_your_voice(&mic[480..], aligned));
+        assert!(!without_echo(&mic[480..], aligned).1);
     }
 
     #[test]
@@ -445,7 +486,18 @@ mod tests {
         let sys = talk(7, 4, 0.2);
         let you = talk(3, 4, 0.03);
         let mic: Vec<f32> = loud_echo_of(&sys).iter().zip(&you).map(|(e, y)| e + y).collect();
-        assert!(holds_your_voice(&mic[480..], &sys[..sys.len() - 480]));
+        let (out, voice) = without_echo(&mic[480..], &sys[..sys.len() - 480]);
+        assert!(voice);
+        // The echo is gone and your voice stays: what's left is close to you alone.
+        let err: Vec<f32> = out.iter().zip(&you[480..]).map(|(o, y)| o - y).collect();
+        assert_eq!(out.len(), mic.len() - 480);
+        assert!(rms(&err) < 0.25 * rms(&you), "left after removal {:.4} vs your voice {:.4}", rms(&err), rms(&you));
+    }
+
+    #[test]
+    fn with_nothing_playing_the_piece_is_left_alone() {
+        let mic = talk(3, 2, 0.03);
+        assert_eq!(without_echo(&mic, &vec![0.0; mic.len()]), (mic, true));
     }
 
     #[test]
@@ -464,7 +516,7 @@ mod tests {
         let check = |mic: &[f32], sys: &[f32], delay: &[i64], a: usize, b: usize| {
             let d = delay[(b / 1_600).min(delay.len() - 1)];
             let s0 = (a as i64 - d).max(0) as usize;
-            holds_your_voice(&mic[a..b], &sys[s0..(s0 + b - a).min(sys.len())])
+            without_echo(&mic[a..b], &sys[s0..(s0 + b - a).min(sys.len())]).1
         };
         let meetings = std::env::var("SV_TEST_MEETINGS").unwrap();
         let mut voice = Vec::new();
@@ -498,6 +550,75 @@ mod tests {
         println!("fake lines kept: {kept_fake:?}; your voice lost at: {lost_you:?}");
         assert!(lost_you.is_empty(), "your voice was dropped at {lost_you:?} s");
         assert!(kept_fake.len() <= 3, "{} fake You lines kept", kept_fake.len());
+    }
+
+    #[test]
+    #[ignore] // SV_TEST_MEETING (path without "-you.wav") + SV_TEST_CLIPS (the user's dictation WAVs)
+    fn echo_removal_on_a_real_call_keeps_your_voice() {
+        let read = |p: &str| -> Vec<f32> { hound::WavReader::open(p).unwrap().samples::<i16>().map(|s| s.unwrap() as f32 / 32768.0).collect() };
+        let base = std::env::var("SV_TEST_MEETING").unwrap();
+        let (mic, sys) = (read(&format!("{base}-you.wav")), read(&format!("{base}-others.wav")));
+        let mut clips: Vec<_> = std::fs::read_dir(std::env::var("SV_TEST_CLIPS").unwrap()).unwrap().map(|e| e.unwrap().path()).collect();
+        clips.sort();
+        let voice: Vec<f32> = clips.iter().flat_map(|c| read(c.to_str().unwrap())).collect();
+        // Your voice laid over the call from 60 s for 40 s (others talk throughout).
+        let (at, len) = (60 * 16_000, 40 * 16_000);
+        let mut with_you = mic.clone();
+        with_you[at..at + len].iter_mut().zip(&voice[..len]).for_each(|(m, v)| *m += v);
+        // As a meeting runs it: the gate's delay, then each 10 s piece cleaned.
+        let mut g = EchoGate::default();
+        let delay: Vec<i64> = mic.chunks(1_600).zip(sys.chunks(1_600)).map(|(m, s)| {
+            g.push_mic(m);
+            g.push_sys(s);
+            g.delay()
+        }).collect();
+        let clean = |m: &[f32]| -> Vec<f32> {
+            (0..m.len()).step_by(160_000).flat_map(|a| {
+                let b = (a + 160_000).min(m.len());
+                let s0 = (a as i64 - delay[(b / 1_600).min(delay.len() - 1)]).max(0) as usize;
+                let s = &sys[s0.min(sys.len())..(s0 + b - a).min(sys.len())];
+                if s.len() < b - a { m[a..b].to_vec() } else { without_echo(&m[a..b], s).0 }
+            }).collect()
+        };
+        let (plain, out) = (clean(&mic), clean(&with_you));
+        let band = |x: &[f32]| {
+            let mut b: Vec<Complex32> = x.iter().map(|s| Complex32::new(*s, 0.0)).collect();
+            FftPlanner::new().plan_fft_forward(b.len()).process(&mut b);
+            let n = b.len();
+            ((300 * n / 16_000..3_400 * n / 16_000).map(|k| b[k].norm_sqr()).sum::<f32>() * 2.0 / (n * n) as f32).sqrt()
+        };
+        // Echo: speech-band level of the mic before and after, over hops with the speakers playing.
+        let (mut raw, mut left) = (0.0, 0.0);
+        for h in (0..mic.len().min(plain.len()) / HOP).filter(|h| rms(&sys[h * HOP..(h + 1) * HOP]) > 0.05 && !(at..at + len).contains(&(h * HOP))) {
+            raw += band(&mic[h * HOP..(h + 1) * HOP]).powi(2);
+            left += band(&plain[h * HOP..(h + 1) * HOP]).powi(2);
+        }
+        println!("echo in the speech band: {:.1} dB down", 10.0 * (raw / left.max(1e-12)).log10());
+        // Your voice: the part of the output that is your voice (projection), vs your voice itself.
+        // The canceller shifts its output by a few ms: compare at the best shift.
+        let v = &voice[..len];
+        let (shift, corr, kept) = (0..480)
+            .map(|d| {
+                let o = &out[at + d..at + d + len];
+                let dot: f32 = o.iter().zip(v).map(|(a, b)| a * b).sum();
+                (d, dot / (o.iter().map(|x| x * x).sum::<f32>() * v.iter().map(|x| x * x).sum::<f32>()).sqrt(), dot / v.iter().map(|x| x * x).sum::<f32>())
+            })
+            .max_by(|a, b| a.1.total_cmp(&b.1))
+            .unwrap();
+        println!("your voice: {:.0}% of its level kept, output matches it at r = {corr:.2} ({shift} samples later)", kept * 100.0);
+        // Level of the output over your voice vs your voice alone, speech band.
+        println!("speech-band level over your voice: out {:.4} vs your voice {:.4}", band(&out[at..at + len]), band(v));
+        // Loudness pattern (32 ms frames, dB) of the output vs your voice, where you're talking.
+        let db = |x: &[f32]| 10.0 * (x.iter().map(|s| s * s).sum::<f32>() / x.len() as f32 + 1e-10).log10();
+        let frames: Vec<(f32, f32)> = (0..len / 512 - 1)
+            .filter(|f| rms(&v[f * 512..(f + 1) * 512]) > 0.01)
+            .map(|f| (db(&out[at + shift + f * 512..][..512]), db(&v[f * 512..(f + 1) * 512])))
+            .collect();
+        let mean = |k: fn(&(f32, f32)) -> f32| frames.iter().map(k).sum::<f32>() / frames.len() as f32;
+        let (mo, mv) = (mean(|f| f.0), mean(|f| f.1));
+        let cov: f32 = frames.iter().map(|(o, v)| (o - mo) * (v - mv)).sum();
+        let r = cov / (frames.iter().map(|(o, _)| (o - mo).powi(2)).sum::<f32>() * frames.iter().map(|(_, v)| (v - mv).powi(2)).sum::<f32>()).sqrt();
+        println!("loudness pattern over {} voiced frames: r = {r:.2}, output {:.1} dB vs your voice", frames.len(), mo - mv);
     }
 
     #[test]
