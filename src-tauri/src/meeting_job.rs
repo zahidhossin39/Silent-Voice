@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 
 use crate::audio::live::{Live, Source};
-use crate::audio::{capture, longform};
+use crate::audio::{capture, echo, longform};
 use crate::transcribe_job::{self, Cfg};
 use crate::transcripts::{self, paragraphs, Kind, Line, Speaker, Status, Transcript};
 
@@ -332,6 +332,7 @@ fn run<V: FnMut(&[f32]) -> Option<Vec<bool>>>(
     mut changed: impl FnMut(&mut Transcript, bool),
 ) {
     let mut heard = [0u64; 2];
+    let mut gate = echo::EchoGate::default();
     let mut fails = 0;
     let mut chunkers = chunkers.map(Some);
     // True when a line was added.
@@ -379,15 +380,59 @@ fn run<V: FnMut(&[f32]) -> Option<Vec<bool>>>(
         let i = speaker as usize;
         heard[i] += chunk.len() as u64;
         t.done_ms = heard.iter().max().unwrap() * 1000 / SR;
-        let pieces = chunkers[i].as_mut().map(|c| c.push(&chunk)).unwrap_or_default();
-        let added = add(t, speaker, pieces);
+        // The mic goes through the echo gate first, and comes out once the
+        // computer's sound for the same moment has arrived.
+        let mut added = false;
+        let mic = match speaker {
+            Speaker::You => gate.push_mic(&chunk),
+            Speaker::Others => {
+                let pieces = chunkers[i].as_mut().map(|c| c.push(&chunk)).unwrap_or_default();
+                added = add(t, speaker, pieces);
+                gate.push_sys(&chunk)
+            }
+        };
+        if !mic.is_empty() {
+            let pieces = chunkers[0].as_mut().map(|c| c.push(&mic)).unwrap_or_default();
+            added |= add(t, Speaker::You, pieces);
+        }
+        added |= mic_hint(t, &gate.stats);
         changed(t, added);
     }
+    let rest = gate.finish();
+    let pieces = chunkers[0].as_mut().map(|c| c.push(&rest)).unwrap_or_default();
+    let added = add(t, Speaker::You, pieces);
+    changed(t, added);
     for (i, speaker) in [Speaker::You, Speaker::Others].into_iter().enumerate() {
         let pieces = chunkers[i].take().map(|c| c.finish()).unwrap_or_default();
         let added = add(t, speaker, pieces);
         changed(t, added);
     }
+}
+
+const SILENT_MIC: &str = "Your mic is sending silence. It may be muted, or not the mic you talk into (Settings > Microphone).";
+const ECHO_MIC: &str = "Your mic is hearing your speakers, so those parts of your side are muted. Headphones keep every word you say.";
+
+/// Warn on the page when the mic sends only silence, or mostly hears the
+/// speakers. Only these warnings are set or cleared here; a real problem
+/// stays. True when the page needs an update.
+fn mic_hint(t: &mut Transcript, s: &echo::Stats) -> bool {
+    let silent = s.mic_secs >= 20.0 && s.loudest < 0.001;
+    let echo = s.playing >= 40 && s.muted * 2 >= s.playing;
+    let current = t.error.as_deref();
+    let want = if silent {
+        Some(SILENT_MIC)
+    } else if echo || current == Some(ECHO_MIC) {
+        // Kept once shown: the share can dip as the call goes on.
+        Some(ECHO_MIC)
+    } else {
+        None
+    };
+    let ours = current.is_none_or(|e| e == SILENT_MIC || e == ECHO_MIC);
+    if !ours || current == want {
+        return false;
+    }
+    t.error = want.map(str::to_string);
+    true
 }
 
 /// Insert `line` in time order. A You line that repeats what Others said at
@@ -583,6 +628,55 @@ mod tests {
         assert_eq!(t.done_ms, 9_000);
         let said: Vec<(Option<Speaker>, &str)> = t.lines.iter().map(|l| (l.speaker, l.text.as_str())).collect();
         assert_eq!(said, vec![(Some(Speaker::You), "mine"), (Some(Speaker::Others), "theirs")]);
+    }
+
+    #[test]
+    fn the_mic_hearing_the_speakers_writes_no_you_lines() {
+        // Others talk in bursts; the mic hears them 30 ms later, loud enough to
+        // pass as speech. 20 s in 0.1 s chunks.
+        let mut x = 7u64;
+        let others: Vec<f32> = (0..320_000)
+            .map(|i| {
+                x ^= x << 13;
+                x ^= x >> 7;
+                x ^= x << 17;
+                if (i / 8_000) % 3 == 0 { 0.0 } else { (x >> 40) as f32 / (1u64 << 24) as f32 - 0.5 }
+            })
+            .collect();
+        let mic: Vec<f32> = (0..others.len()).map(|i| i.checked_sub(480).map_or(0.0, |j| 0.4 * others[j])).collect();
+        let (tx, rx) = channel();
+        for (m, o) in mic.chunks(1_600).zip(others.chunks(1_600)) {
+            tx.send(Msg::Audio(Speaker::You, m.to_vec())).unwrap();
+            tx.send(Msg::Audio(Speaker::Others, o.to_vec())).unwrap();
+        }
+        drop(tx);
+        let mut t = Transcript::new(1, Kind::Meeting, String::new(), String::new(), "m".into());
+        // Distinct text per piece, so the word-level echo filter can't be what drops them.
+        let mut n = 0;
+        run(&mut t, rx, chunkers(), |_| { n += 1; Ok(format!("piece {n}")) }, |_, _| {});
+        let you = t.lines.iter().filter(|l| l.speaker == Some(Speaker::You)).count();
+        assert!(t.lines.iter().any(|l| l.speaker == Some(Speaker::Others)));
+        assert!(you <= 1, "{you} You lines from the mic hearing the speakers");
+        assert_eq!(t.error.as_deref(), Some(ECHO_MIC));
+    }
+
+    #[test]
+    fn mic_warnings_come_and_go_but_never_hide_a_real_problem() {
+        let mut t = Transcript::new(1, Kind::Meeting, String::new(), String::new(), "m".into());
+        let silent = echo::Stats { mic_secs: 25.0, loudest: 0.0, ..Default::default() };
+        assert!(mic_hint(&mut t, &silent));
+        assert_eq!(t.error.as_deref(), Some(SILENT_MIC));
+        // You unmuted: the warning goes.
+        assert!(mic_hint(&mut t, &echo::Stats { loudest: 0.1, ..silent }));
+        assert_eq!(t.error, None);
+        // Echo: shown, and kept when the share dips later.
+        assert!(mic_hint(&mut t, &echo::Stats { mic_secs: 30.0, loudest: 0.1, playing: 50, muted: 40 }));
+        assert!(!mic_hint(&mut t, &echo::Stats { mic_secs: 60.0, loudest: 0.1, playing: 100, muted: 40 }));
+        assert_eq!(t.error.as_deref(), Some(ECHO_MIC));
+        // A real problem is never replaced.
+        t.error = Some("Only your side was recorded.".into());
+        assert!(!mic_hint(&mut t, &silent));
+        assert_eq!(t.error.as_deref(), Some("Only your side was recorded."));
     }
 
     #[test]
