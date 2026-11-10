@@ -983,3 +983,32 @@ The why lives in `docs/adr/0001` and `docs/adr/0002`; this is where things are.
 AppImage's `usr/` tree), not beside the binary. `paths::bundled_dir()` handles
 that; before 2026-11 installed Linux builds could not load sherpa, llama, piper
 or whisper-server.
+
+**Who said what** (`meeting_job.rs`, `audio/echo.rs`, `system/diarize.rs`). Each
+step fixes a mistake measured on real calls:
+
+1. *Echo gate* (`echo::EchoGate`, inside `run`). With speakers instead of
+   headphones the mic hears the call, and those words became "You" lines. Every
+   0.25 s the gate runs GCC-PHAT (150 Hz-4 kHz only, which removes a fake 0 ms
+   peak) between the mic and Others. When 5 of the last 8 peaks agree on a delay,
+   the mic part is muted if it's no louder than the echo (3x the learned echo gain,
+   or 3x the mic noise floor), so you talking over them is kept. A 2 s walkback
+   and a one-hop hangover catch the lock-in delay and the room's ring. This is
+   the same idea as Wispr Flow's meeting echo gate. On the first real call it
+   muted 231 of 253 echo hops and none of the user's speech; unrelated audio
+   never locks. `mic_hint` puts "mic is hearing your speakers" or "mic is
+   sending silence" in the transcript's `error`, and never over a real error.
+2. *Cut at turns*: both tracks end a piece at the first pause once it holds 2 s
+   (`cut_at_pauses(TURN)`), so a line is usually one person.
+3. *Labels* (`tell_speakers_apart`, after Stop). Diarization turns label each
+   Others line (`who_spoke`). pyannote misses some speech, so a line no turn
+   covers gets the voice it sounds like (`voiceprints` + `fill_in`, cosine 0.5 or
+   more against each speaker's average). A line still holding two people (each
+   1 s or more, `split_at_speakers`) is cut between them and the parts are
+   transcribed again, only right after transcribing. The People picker
+   (`meeting_set_people`) fixes the cluster count and only relabels.
+
+Ignored tests replay a saved call: `SV_TEST_MEETING=<transcripts>/<id>` for
+`a_real_call_heard_through_laptop_speakers` and
+`unlabelled_lines_of_a_real_call_compared_to_each_voice` (add `SV_TEST_RECUT=1`
+to re-cut the track the way meetings cut it today).
