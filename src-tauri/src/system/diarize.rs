@@ -357,6 +357,11 @@ mod tests {
         let clip = |l: &crate::transcripts::Line| &samples[(l.start_ms as usize * 16).min(samples.len())..(l.end_ms as usize * 16).min(samples.len())];
         let prints = voiceprints(&dir, &lines.iter().map(clip).collect::<Vec<_>>()).unwrap();
         let who: Vec<Option<u32>> = lines.iter().map(|l| who_spoke(&turns, l.start_ms, l.end_ms)).collect();
+        if let Ok(path) = std::env::var("SV_TEST_PRINTS_OUT") {
+            // [start_ms, end_ms, who, print] per line, for analysis outside.
+            let rows: Vec<_> = lines.iter().zip(&who).zip(&prints).map(|((l, w), p)| serde_json::json!([l.start_ms, l.end_ms, w, p])).collect();
+            std::fs::write(path, serde_json::to_string(&rows).unwrap()).unwrap();
+        }
         for (i, l) in lines.iter().enumerate() {
             let sims: Vec<String> = (0..lines.len())
                 .filter(|&j| j != i && who[j].is_some())

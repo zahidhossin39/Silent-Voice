@@ -375,6 +375,13 @@ mod tests {
         let (mic, sys) = (read("you"), read("others"));
         let (out, stats) = run(&mic, &sys);
         println!("{stats:?}");
+        if let Ok(path) = std::env::var("SV_TEST_OUT") {
+            // The mic as the transcriber hears it, to listen to or transcribe.
+            let spec = hound::WavSpec { channels: 1, sample_rate: 16_000, bits_per_sample: 16, sample_format: hound::SampleFormat::Int };
+            let mut w = hound::WavWriter::create(path, spec).unwrap();
+            out.iter().for_each(|s| w.write_sample((s * 32767.0) as i16).unwrap());
+            w.finalize().unwrap();
+        }
         let speech = |x: &[f32]| {
             let mut c = crate::audio::longform::chunker(100).cut_at_pauses(32_000);
             let mut p = c.push(x);
