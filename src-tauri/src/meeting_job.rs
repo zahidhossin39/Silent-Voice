@@ -386,6 +386,7 @@ fn run<V: FnMut(&[f32]) -> Option<Vec<bool>>>(
 ) {
     let mut heard = [0u64; 2];
     let mut gate = echo::EchoGate::default();
+    let mut recent = Recent::default();
     let mut fails = 0;
     let mut chunkers = chunkers.map(Some);
     // True when a line was added.
@@ -441,25 +442,74 @@ fn run<V: FnMut(&[f32]) -> Option<Vec<bool>>>(
             Speaker::Others => {
                 let pieces = chunkers[i].as_mut().map(|c| c.push(&chunk)).unwrap_or_default();
                 added = add(t, speaker, pieces);
+                recent.push(&chunk);
                 gate.push_sys(&chunk)
             }
         };
         if !mic.is_empty() {
             let pieces = chunkers[0].as_mut().map(|c| c.push(&mic)).unwrap_or_default();
-            added |= add(t, Speaker::You, pieces);
+            added |= add(t, Speaker::You, only_yours(pieces, &recent, gate.delay()));
         }
         added |= mic_hint(t, &gate.stats);
         changed(t, added);
     }
+    let delay = gate.delay();
     let rest = gate.finish();
     let pieces = chunkers[0].as_mut().map(|c| c.push(&rest)).unwrap_or_default();
-    let added = add(t, Speaker::You, pieces);
+    let added = add(t, Speaker::You, only_yours(pieces, &recent, delay));
     changed(t, added);
     for (i, speaker) in [Speaker::You, Speaker::Others].into_iter().enumerate() {
-        let pieces = chunkers[i].take().map(|c| c.finish()).unwrap_or_default();
+        let mut pieces = chunkers[i].take().map(|c| c.finish()).unwrap_or_default();
+        if speaker == Speaker::You {
+            pieces = only_yours(pieces, &recent, delay);
+        }
         let added = add(t, speaker, pieces);
         changed(t, added);
     }
+}
+
+/// The computer's sound of the last minute, to check You pieces against.
+#[derive(Default)]
+struct Recent {
+    samples: Vec<f32>,
+    /// Track position of samples[0].
+    start: usize,
+}
+
+impl Recent {
+    const KEEP: usize = 60 * SR as usize;
+
+    fn push(&mut self, chunk: &[f32]) {
+        self.samples.extend_from_slice(chunk);
+        // Trimmed 10 s at a time, not every chunk.
+        if self.samples.len() > Self::KEEP + 10 * SR as usize {
+            let over = self.samples.len() - Self::KEEP;
+            self.samples.drain(..over);
+            self.start += over;
+        }
+    }
+
+    /// `a..b` of the track, or None when it isn't (or is no longer) all here.
+    fn get(&self, a: usize, b: usize) -> Option<&[f32]> {
+        self.samples.get(a.checked_sub(self.start)?..b.checked_sub(self.start)?)
+    }
+}
+
+/// You pieces minus the ones that are only the speakers' sound (with thumps
+/// the gate let through), which would otherwise be transcribed as you.
+/// `delay`: how far the mic hears the speakers behind the computer's sound.
+fn only_yours(pieces: Vec<longform::Segment>, recent: &Recent, delay: i64) -> Vec<longform::Segment> {
+    pieces
+        .into_iter()
+        .filter(|p| {
+            let a = (p.start as i64 - delay).max(0) as usize;
+            let keep = !p.speech || recent.get(a, a + p.samples.len()).is_none_or(|sys| echo::holds_your_voice(&p.samples, sys));
+            if !keep {
+                crate::logging::log_info("meeting", &format!("You piece at {} was only the speakers' sound; skipped", clock(p.start as u64 * 1000 / SR)));
+            }
+            keep
+        })
+        .collect()
 }
 
 const SILENT_MIC: &str = "Your mic is sending silence. It may be muted, or not the mic you talk into (Settings > Microphone).";

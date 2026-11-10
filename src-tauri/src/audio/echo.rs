@@ -125,6 +125,12 @@ impl EchoGate {
     }
 
     /// The rest of the mic audio, unchecked (less than a hop, or no speakers track).
+    /// How far (samples) the mic hears the speakers behind the computer's
+    /// sound, from the recent peaks that agree; 0 before any.
+    pub fn delay(&self) -> i64 {
+        median(&self.peaks.iter().filter(|(s, _)| *s >= SCORE).map(|(_, l)| *l).collect::<Vec<_>>())
+    }
+
     pub fn finish(mut self) -> Vec<f32> {
         let mut out = self.release();
         for h in std::mem::take(&mut self.pending) {
@@ -238,6 +244,49 @@ impl EchoGate {
 fn sounds_like_echo(ratios: &[f32], levels: &[f32], mic: f32, sys: f32) -> bool {
     // Echo gain: a low percentile, since you talking over them reads high.
     sys >= FLOOR && ratios.len() >= 3 && mic <= (3.0 * percentile(ratios, 0.3) * sys).max(3.0 * percentile(levels, 0.2))
+}
+
+/// Frame for the per-piece check: 128 ms, so a delay of tens of ms left after
+/// alignment still mostly overlaps.
+const FRAME: usize = 2_048;
+/// The speech band. Keyboard and desk thumps (~250 Hz) and fan hum sit below it.
+const BAND: std::ops::Range<usize> = (300 * FRAME / 16_000)..(3_400 * FRAME / 16_000);
+/// Speech-band level (RMS) a piece needs once the speakers' sound is taken out.
+/// Measured on two real calls: what echo left behind 0.0004-0.0025; the user's
+/// own voice over the same calls 0.0034-0.045, even dictating quietly.
+const YOUR_VOICE: f32 = 0.003;
+
+/// Whether a mic piece holds the user's own voice and not only the speakers'
+/// sound (plus thumps the gate let through). `sys` is the computer's sound for
+/// the same moment, already shifted by the mic's delay, as long as `mic`.
+/// Per frequency, the part of the mic the speakers' sound explains (the best
+/// linear filter over the piece) is removed; what's left in the speech band
+/// must be loud enough in at least 20% of the frames.
+pub fn holds_your_voice(mic: &[f32], sys: &[f32]) -> bool {
+    let n = mic.len().min(sys.len());
+    // Nothing playing: nothing to mistake for you.
+    if n < FRAME || rms(&sys[..n]) < FLOOR {
+        return true;
+    }
+    let fft = FftPlanner::new().plan_fft_forward(FRAME);
+    let win: Vec<f32> = (0..FRAME).map(|i| 0.5 - 0.5 * (2.0 * std::f32::consts::PI * i as f32 / (FRAME - 1) as f32).cos()).collect();
+    let band = |x: &[f32]| {
+        let mut b: Vec<Complex32> = x.iter().zip(&win).map(|(s, w)| Complex32::new(s * w, 0.0)).collect();
+        fft.process(&mut b);
+        b[BAND].to_vec()
+    };
+    let frames: Vec<(Vec<Complex32>, Vec<Complex32>)> = (0..=n - FRAME).step_by(FRAME / 2).map(|i| (band(&sys[i..i + FRAME]), band(&mic[i..i + FRAME]))).collect();
+    // The speakers-to-mic filter that explains the most, per frequency.
+    let h: Vec<Complex32> = (0..BAND.len())
+        .map(|k| {
+            let (sxy, sxx) = frames.iter().fold((Complex32::default(), 0.0), |(a, b), (x, y)| (a + y[k] * x[k].conj(), b + x[k].norm_sqr()));
+            sxy / (sxx + 1e-12)
+        })
+        .collect();
+    let scale = win.iter().map(|w| w * w).sum::<f32>() * FRAME as f32 / 2.0;
+    let mut left: Vec<f32> = frames.iter().map(|(x, y)| (y.iter().zip(x).zip(&h).map(|((y, x), h)| (y - h * x).norm_sqr()).sum::<f32>() / scale).sqrt()).collect();
+    left.sort_by(f32::total_cmp);
+    left[(left.len() - 1) * 4 / 5] >= YOUR_VOICE
 }
 
 fn trim(buf: &mut Vec<f32>, start: &mut usize, keep_from: usize) {
@@ -363,6 +412,92 @@ mod tests {
         assert!(out.len() >= mic.len() - WAIT - HOP * (LOOKBACK + 1), "the mic waited for a track that isn't there: {} of {}", out.len(), mic.len());
         out.extend(g.finish());
         assert_eq!(out, mic);
+    }
+
+    /// Low thumps like a keyboard or desk: a 20 ms swell of 200 Hz every 0.3 s.
+    fn thumps(len: usize) -> Vec<f32> {
+        (0..len)
+            .map(|i| {
+                let k = i % 4_800;
+                let env = if k < 320 { (std::f32::consts::PI * k as f32 / 320.0).sin().powi(2) } else { 0.0 };
+                0.2 * env * (i as f32 * 2.0 * std::f32::consts::PI * 200.0 / 16_000.0).sin()
+            })
+            .collect()
+    }
+
+    /// The mic hearing `sys` 30 ms late at 20% loudness over a quiet room, as
+    /// on the real calls (speech-band noise ~0.0004).
+    fn loud_echo_of(sys: &[f32]) -> Vec<f32> {
+        let noise = talk(99, sys.len() / 16_000 + 1, 0.001);
+        (0..sys.len()).map(|i| i.checked_sub(480).map_or(0.0, |j| 0.2 * sys[j]) + noise[i]).collect()
+    }
+
+    #[test]
+    fn a_piece_that_is_only_the_speakers_and_thumps_is_not_you() {
+        let sys = talk(7, 4, 0.2);
+        let mic: Vec<f32> = loud_echo_of(&sys).iter().zip(thumps(sys.len())).map(|(e, t)| e + t).collect();
+        let aligned = &sys[..sys.len() - 480];
+        assert!(!holds_your_voice(&mic[480..], aligned));
+    }
+
+    #[test]
+    fn your_voice_over_the_speakers_is_you() {
+        let sys = talk(7, 4, 0.2);
+        let you = talk(3, 4, 0.03);
+        let mic: Vec<f32> = loud_echo_of(&sys).iter().zip(&you).map(|(e, y)| e + y).collect();
+        assert!(holds_your_voice(&mic[480..], &sys[..sys.len() - 480]));
+    }
+
+    #[test]
+    #[ignore] // SV_TEST_MEETINGS = ';'-separated meeting paths (no extension), SV_TEST_CLIPS = a dir of the user's dictation WAVs
+    fn fake_you_lines_of_real_calls_are_dropped_and_your_voice_kept() {
+        let read = |p: &str| -> Vec<f32> { hound::WavReader::open(p).unwrap().samples::<i16>().map(|s| s.unwrap() as f32 / 32768.0).collect() };
+        // As a meeting runs it: the gate's delay at the piece's end, then the piece check.
+        let delays = |mic: &[f32], sys: &[f32]| {
+            let mut g = EchoGate::default();
+            mic.chunks(1_600).zip(sys.chunks(1_600)).map(|(m, s)| {
+                g.push_mic(m);
+                g.push_sys(s);
+                g.delay()
+            }).collect::<Vec<i64>>()
+        };
+        let check = |mic: &[f32], sys: &[f32], delay: &[i64], a: usize, b: usize| {
+            let d = delay[(b / 1_600).min(delay.len() - 1)];
+            let s0 = (a as i64 - d).max(0) as usize;
+            holds_your_voice(&mic[a..b], &sys[s0..(s0 + b - a).min(sys.len())])
+        };
+        let meetings = std::env::var("SV_TEST_MEETINGS").unwrap();
+        let mut voice = Vec::new();
+        let mut clips: Vec<_> = std::fs::read_dir(std::env::var("SV_TEST_CLIPS").unwrap()).unwrap().map(|e| e.unwrap().path()).collect();
+        clips.sort();
+        clips.iter().for_each(|c| voice.extend(read(c.to_str().unwrap())));
+        let (mut kept_fake, mut lost_you) = (Vec::new(), Vec::new());
+        for base in meetings.split(';') {
+            let (mic, sys) = (read(&format!("{base}-you.wav")), read(&format!("{base}-others.wav")));
+            let delay = delays(&mic, &sys);
+            let t: crate::transcripts::Transcript = serde_json::from_str(&std::fs::read_to_string(format!("{base}.json")).unwrap()).unwrap();
+            for l in t.lines.iter().filter(|l| l.speaker == Some(crate::transcripts::Speaker::You)) {
+                let keep = check(&mic, &sys, &delay, l.start_ms as usize * 16, l.end_ms as usize * 16);
+                println!("{base:.0} {:>6} {} {}", l.start_ms, if keep { "KEPT   " } else { "dropped" }, l.text);
+                if keep {
+                    kept_fake.push(l.start_ms);
+                }
+            }
+            // The user's own voice laid over the call, 3 s at a time.
+            // 3 s stretches of the dictation where the user is talking (30%+ of 32 ms frames voiced), not pauses.
+            let talking: Vec<&[f32]> = voice.chunks_exact(48_000).filter(|c| c.chunks_exact(512).filter(|f| rms(f) > 0.01).count() * 10 >= 93 * 3).collect();
+            for (k, at) in [20usize, 30, 50, 60, 100, 140, 210, 240, 265].into_iter().enumerate().filter(|(_, at)| (at + 3) * 16_000 < mic.len()) {
+                let (a, v) = (at * 16_000, talking[k]);
+                let mut m = mic.clone();
+                m[a..a + v.len()].iter_mut().zip(v).for_each(|(m, v)| *m += v);
+                if !check(&m, &sys, &delay, a, a + v.len()) {
+                    lost_you.push(at);
+                }
+            }
+        }
+        println!("fake lines kept: {kept_fake:?}; your voice lost at: {lost_you:?}");
+        assert!(lost_you.is_empty(), "your voice was dropped at {lost_you:?} s");
+        assert!(kept_fake.len() <= 3, "{} fake You lines kept", kept_fake.len());
     }
 
     #[test]
