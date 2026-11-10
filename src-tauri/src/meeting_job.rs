@@ -293,23 +293,39 @@ pub(crate) fn tell_speakers_apart(app: &AppHandle, id: i64) {
     if !crate::models::registry::diarize_installed() {
         return;
     }
+    use crate::system::diarize;
     let started = Instant::now();
-    let turns = (|| {
-        let people = transcripts::load(id)?.others;
+    let dir = crate::models::registry::diarize_dir();
+    let found = (|| {
+        let t = transcripts::load(id)?;
         let mut r = hound::WavReader::open(transcripts::audio_path(id, Speaker::Others)).map_err(|e| e.to_string())?;
         let samples: Vec<f32> = r.samples::<i16>().map_while(Result::ok).map(|s| s as f32 / 32768.0).collect();
-        crate::system::diarize::turns(&crate::models::registry::diarize_dir(), &samples, people)
+        let turns = diarize::turns(&dir, &samples, t.others)?;
+        let lines: Vec<(u64, u64)> = t.lines.iter().filter(|l| l.speaker == Some(Speaker::Others)).map(|l| (l.start_ms, l.end_ms)).collect();
+        let mut who: Vec<Option<u32>> = lines.iter().map(|&(a, b)| diarize::who_spoke(&turns, a, b)).collect();
+        // Lines no turn covered get the voice they sound like.
+        if who.contains(&None) {
+            let clip = |&(a, b): &(u64, u64)| &samples[(a as usize * 16).min(samples.len())..(b as usize * 16).min(samples.len())];
+            match diarize::voiceprints(&dir, &lines.iter().map(clip).collect::<Vec<_>>()) {
+                Ok(prints) => diarize::fill_in(&mut who, &prints),
+                Err(e) => crate::logging::log_error("meeting", &format!("unlabelled lines left as they are: {e}")),
+            }
+        }
+        Ok::<_, String>((turns, lines, who))
     })();
-    let turns = match turns {
-        Ok(t) => t,
+    let (turns, lines, who) = match found {
+        Ok(x) => x,
         Err(e) => return crate::logging::log_error("meeting", &format!("speakers not told apart: {e}")),
     };
     // Reloaded under the job lock: the user may have renamed it meanwhile, or
     // started Transcribe again (that run labels its own lines).
     let saved = transcribe_job::unless_running(id, "transcribing", || {
         let mut t = transcripts::load(id)?;
-        for l in t.lines.iter_mut().filter(|l| l.speaker == Some(Speaker::Others)) {
-            l.who = crate::system::diarize::who_spoke(&turns, l.start_ms, l.end_ms);
+        let mut others: Vec<&mut transcripts::Line> = t.lines.iter_mut().filter(|l| l.speaker == Some(Speaker::Others)).collect();
+        // The same lines as above (only renamed meanwhile): use the voice matches too.
+        let same = others.len() == lines.len() && others.iter().zip(&lines).all(|(l, &(a, b))| l.start_ms == a && l.end_ms == b);
+        for (i, l) in others.iter_mut().enumerate() {
+            l.who = if same { who[i] } else { diarize::who_spoke(&turns, l.start_ms, l.end_ms) };
         }
         transcripts::save(&t)?;
         Ok(t)
