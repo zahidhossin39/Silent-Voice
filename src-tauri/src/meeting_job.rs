@@ -289,15 +289,16 @@ fn work(app: AppHandle, mut t: Transcript, rx: impl IntoIterator<Item = Msg>, cf
 /// Label each Others line with who said it (Speaker 1, 2, ...) when the speaker
 /// models are downloaded. Runs after the meeting is saved: about 15 s per minute
 /// of audio, so the text is readable meanwhile and the labels arrive after.
-fn tell_speakers_apart(app: &AppHandle, id: i64) {
+pub(crate) fn tell_speakers_apart(app: &AppHandle, id: i64) {
     if !crate::models::registry::diarize_installed() {
         return;
     }
     let started = Instant::now();
     let turns = (|| {
+        let people = transcripts::load(id)?.others;
         let mut r = hound::WavReader::open(transcripts::audio_path(id, Speaker::Others)).map_err(|e| e.to_string())?;
         let samples: Vec<f32> = r.samples::<i16>().map_while(Result::ok).map(|s| s as f32 / 32768.0).collect();
-        crate::system::diarize::turns(&crate::models::registry::diarize_dir(), &samples)
+        crate::system::diarize::turns(&crate::models::registry::diarize_dir(), &samples, people)
     })();
     let turns = match turns {
         Ok(t) => t,

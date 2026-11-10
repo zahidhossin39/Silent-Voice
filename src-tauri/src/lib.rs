@@ -1029,6 +1029,22 @@ async fn meeting_retranscribe(app: AppHandle, id: i64, cloud: Option<transcribe_
     meeting_job::retranscribe(&app, id, cloud, language, speakers.unwrap_or(false))
 }
 
+/// Set how many Others were on a meeting (None = let the model guess) and
+/// label its lines again with that count. Labels arrive as a transcript update.
+#[tauri::command]
+fn meeting_set_people(app: AppHandle, id: i64, others: Option<u32>) -> Result<(), String> {
+    if !models::registry::diarize_installed() {
+        return Err("Download the speaker models first (Notetaker settings).".into());
+    }
+    transcribe_job::unless_running(id, "Wait for the meeting to finish first.", || {
+        let mut t = transcripts::load(id)?;
+        t.others = others;
+        transcripts::save(&t)
+    })?;
+    std::thread::spawn(move || meeting_job::tell_speakers_apart(&app, id));
+    Ok(())
+}
+
 /// Ids of the meetings that mention `query`, newest first.
 #[tauri::command]
 fn meetings_search(query: String) -> Vec<i64> {
@@ -1787,6 +1803,7 @@ pub fn run() {
             meeting_start,
             meeting_stop,
             meeting_retranscribe,
+            meeting_set_people,
             meetings_search,
             meeting_audio_clip,
             meeting_devices,

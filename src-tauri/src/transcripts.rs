@@ -66,6 +66,9 @@ pub struct Transcript {
     /// A saved meeting being transcribed again from its audio (not recording).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub redo: bool,
+    /// How many Others the user said were on the call; None = let the model guess.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub others: Option<u32>,
 }
 
 impl Transcript {
@@ -86,6 +89,7 @@ impl Transcript {
             lines: Vec::new(),
             summary: None,
             redo: false,
+            others: None,
         }
     }
 }
@@ -376,6 +380,7 @@ mod tests {
             ],
             summary: None,
             redo: false,
+            others: None,
         }
     }
 

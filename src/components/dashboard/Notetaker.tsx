@@ -17,6 +17,7 @@ import {
   meetingOpenCaptureSettings,
   type CaptureSupport,
   meetingRetranscribe,
+  meetingSetPeople,
   meetingsSearch,
   meetingStart,
   meetingStop,
@@ -836,6 +837,7 @@ function MeetingPanel({
           <>
             {dayLabel(t.created)} · {timeOf(t.created)}
             {!live && ` · ${clock(t.duration_ms ?? t.done_ms)}`}
+            {!live && !t.redo && (t.others != null || t.lines.some((l) => l.who)) && <PeopleCount t={t} />}
             {t.redo && (
               <>
                 {" · transcribing again… "}
@@ -1050,5 +1052,51 @@ function PlayerBar({ player, duration }: { player: ReturnType<typeof usePlayer>;
         ))}
       </select>
     </div>
+  );
+}
+
+/** "People besides you": fixes how many Others the speaker labels use, when the
+ *  model's own guess merged or split voices. Relabels in ~20 s, transcribes nothing. */
+function PeopleCount({ t }: { t: Transcript }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  // New labels arrive as a transcript update.
+  useEffect(() => setBusy(false), [t.lines]);
+  // None comes if the speaker step failed (it logs why): don't spin forever.
+  useEffect(() => {
+    if (!busy) return;
+    const timer = setTimeout(() => setBusy(false), 120_000);
+    return () => clearTimeout(timer);
+  }, [busy]);
+  return (
+    <>
+      {" · "}
+      <label className="inline-flex items-center gap-1">
+        People besides you
+        <select
+          value={t.others ?? ""}
+          disabled={busy}
+          onChange={(e) => {
+            setBusy(true);
+            setErr(null);
+            meetingSetPeople(t.id, e.target.value ? Number(e.target.value) : null).catch((x) => {
+              setBusy(false);
+              setErr(String(x));
+            });
+          }}
+          title="How many voices to tell apart on the Others side. Auto lets the model guess."
+          className="h-6 rounded-md border border-sv-border bg-sv-bg px-1 text-xs text-sv-muted outline-none focus:border-sv-accent disabled:opacity-60"
+        >
+          <option value="">Auto</option>
+          {[1, 2, 3, 4, 5, 6].map((n) => (
+            <option key={n} value={n}>
+              {n}
+            </option>
+          ))}
+        </select>
+      </label>
+      {busy && " · telling voices apart…"}
+      {err && <span className="text-sv-warn"> · {err}</span>}
+    </>
   );
 }

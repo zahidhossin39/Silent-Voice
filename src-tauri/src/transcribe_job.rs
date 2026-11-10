@@ -480,6 +480,7 @@ mod tests {
             lines: Vec::new(),
             summary: None,
             redo: false,
+            others: None,
         }
     }
 

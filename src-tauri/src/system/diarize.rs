@@ -58,8 +58,9 @@ pub struct Turn {
     pub who: u32,
 }
 
-/// Who spoke when in `samples` (16 kHz mono), sorted by start.
-pub fn turns(dir: &Path, samples: &[f32]) -> Result<Vec<Turn>, String> {
+/// Who spoke when in `samples` (16 kHz mono), sorted by start. `people` fixes
+/// how many voices there are; None lets the SAME_VOICE threshold decide.
+pub fn turns(dir: &Path, samples: &[f32], people: Option<u32>) -> Result<Vec<Turn>, String> {
     let lib = super::sherpa::lib()?;
     let c = |p: &Path| CString::new(p.to_string_lossy().into_owned()).map_err(|e| e.to_string());
     let seg = c(&dir.join("segmentation.int8.onnx"))?;
@@ -69,7 +70,7 @@ pub fn turns(dir: &Path, samples: &[f32]) -> Result<Vec<Turn>, String> {
     let cfg = DiarizationConfig {
         segmentation: SegmentationConfig { pyannote: PyannoteConfig { model: seg.as_ptr() }, num_threads: threads, debug: 0, provider: cpu.as_ptr() },
         embedding: EmbeddingConfig { model: emb.as_ptr(), num_threads: threads, debug: 0, provider: cpu.as_ptr() },
-        clustering: ClusteringConfig { num_clusters: -1, threshold: SAME_VOICE },
+        clustering: ClusteringConfig { num_clusters: people.map_or(-1, |n| n as c_int), threshold: SAME_VOICE },
         min_duration_on: 0.3,
         min_duration_off: 0.5,
     };
@@ -169,17 +170,22 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // needs the speaker models in SV_TEST_DIAR_DIR and a meeting's -others.wav in SV_TEST_WAV
+    #[ignore] // needs the speaker models in SV_TEST_DIAR_DIR, a meeting's -others.wav in SV_TEST_WAV; SV_TEST_PEOPLE fixes the count
     fn a_real_call_with_two_people_comes_out_as_two_speakers() {
         let dir = std::env::var("SV_TEST_DIAR_DIR").unwrap();
         let mut r = hound::WavReader::open(std::env::var("SV_TEST_WAV").unwrap()).unwrap();
         let samples: Vec<f32> = r.samples::<i16>().map(|s| s.unwrap() as f32 / 32768.0).collect();
         let t = std::time::Instant::now();
-        let turns = turns(Path::new(&dir), &samples).unwrap();
+        let fixed = std::env::var("SV_TEST_PEOPLE").ok().map(|n| n.parse::<u32>().unwrap());
+        let turns = turns(Path::new(&dir), &samples, fixed).unwrap();
         println!("{} turns in {:?}: {:?}", turns.len(), t.elapsed(), turns);
         let mut people: Vec<u32> = turns.iter().map(|t| t.who).collect();
         people.sort();
         people.dedup();
-        assert_eq!(people.len(), 2);
+        match fixed {
+            // A count above the real number of voices can't invent one.
+            Some(n) => assert!(people.len() <= n as usize, "{} voices, asked for {n}", people.len()),
+            None => assert_eq!(people.len(), 2),
+        }
     }
 }

@@ -854,6 +854,8 @@ export interface Transcript {
   redo?: boolean;
   /** A meeting's AI-written Overview (Markdown). */
   summary?: string | null;
+  /** How many Others the user said were on the call; missing = the model guessed. */
+  others?: number | null;
 }
 
 /** Paragraph size in lines (~1 min). Must match `PARAGRAPH` in src-tauri/src/transcripts.rs. */
@@ -960,6 +962,13 @@ export async function meetingStart(cloud?: { base_url: string; api_key: string; 
 export async function meetingRetranscribe(id: number, cloud?: { base_url: string; api_key: string; model: string }, language?: string, speakers = false): Promise<Transcript> {
   if (!isTauri()) throw new Error("Needs the desktop app");
   return invoke<Transcript>("meeting_retranscribe", { id, cloud: cloud ?? null, language: language ?? null, speakers });
+}
+
+/** Set how many people besides you were on a meeting (null = let the model guess).
+ *  Its lines are labelled again; the result arrives as a transcript://update. */
+export async function meetingSetPeople(id: number, others: number | null): Promise<void> {
+  if (!isTauri()) throw new Error("Needs the desktop app");
+  await invoke("meeting_set_people", { id, others });
 }
 
 /** Ids of the meetings whose name, Overview or words contain `query`. */
