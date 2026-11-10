@@ -95,6 +95,9 @@ pub(crate) struct Cfg {
     /// The languages a meeting may be in, when the user picked several; then
     /// `language` is "auto" and a piece in another script is redone in the first.
     pub(crate) languages: Vec<String>,
+    /// Set once a piece had to be redone: the rest of this job goes straight to
+    /// that language instead of paying for a wrong guess every time.
+    redo_first: std::sync::atomic::AtomicBool,
     /// Tell the Others apart after Stop (the Notetaker switch).
     pub(crate) speakers: bool,
 }
@@ -128,6 +131,7 @@ impl Cfg {
             mic: c.audio_device.clone(),
             cloud: None,
             languages: Vec::new(),
+            redo_first: Default::default(),
             speakers: false,
         })
     }
@@ -307,12 +311,17 @@ pub(crate) fn transcribe_piece(app: &AppHandle, samples: &[f32], cfg: &Cfg) -> R
             cfg.cloud.as_ref().map_or("", |c| c.model.as_str()),
         ))
     };
-    let mut text = decode(&cfg.language);
+    let redo = redo_language(&cfg.languages);
+    let mut text = match redo.filter(|_| cfg.redo_first.load(Ordering::Relaxed)) {
+        Some(lang) => decode(lang),
+        None => decode(&cfg.language),
+    };
     // Auto-detect guessed a language the user didn't pick (Hindi in a Bangla +
     // English call): redo it in their first language.
-    if let (Ok(t), Some(redo)) = (&text, redo_language(&cfg.languages)) {
-        if foreign_script(t, &cfg.languages) {
-            crate::logging::log_info("transcribe", &format!("piece came back in another script; redone in '{redo}'"));
+    if let (Ok(t), Some(redo)) = (&text, redo) {
+        if !cfg.redo_first.load(Ordering::Relaxed) && foreign_script(t, &cfg.languages) {
+            crate::logging::log_info("transcribe", &format!("piece came back in another script; redone in '{redo}', and so is the rest of this job"));
+            cfg.redo_first.store(true, Ordering::Relaxed);
             text = decode(redo);
         }
     }
