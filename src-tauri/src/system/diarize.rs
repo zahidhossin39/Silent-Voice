@@ -45,10 +45,20 @@ struct RawSegment {
     speaker: c_int,
 }
 
-/// Voices closer than this are one person. Measured on two real Bangla/English
-/// calls with titanet-small: 0.5 split two people into 13-16, 0.8 into 7,
-/// 1.2 merged them into 1; 1.0 matched who asked and who answered.
-const SAME_VOICE: f32 = 1.0;
+/// sherpa's own clustering is only used to cut the track into short
+/// one-voice stretches: this low threshold over-splits on purpose.
+const STRETCHES: f32 = 0.3;
+/// Voices (cosine of CAM++ voiceprints) at least this alike are one person.
+/// Tuned on two real calls against a reference (Gemini listening to the whole
+/// track): 0.55-0.65 gave the right count on both (5 and 2 people, ~88% of the
+/// speech labelled alike); sherpa's single threshold got one or the other wrong.
+const SAME_VOICE: f32 = 0.6;
+/// A "voice" with less speech than this (ms) is folded into the nearest one:
+/// one short line is not a new person.
+const MIN_VOICE_MS: f32 = 4_000.0;
+/// Stretches shorter than this (ms) are too short for a voiceprint to be
+/// trusted when forming voices; they're still labelled with the nearest one.
+const MIN_STRETCH_MS: u64 = 1_000;
 
 /// One stretch of speech by speaker `who` (0-based, in no particular order).
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -59,18 +69,93 @@ pub struct Turn {
 }
 
 /// Who spoke when in `samples` (16 kHz mono), sorted by start. `people` fixes
-/// how many voices there are; None lets the SAME_VOICE threshold decide.
+/// how many voices there are; None counts them.
 pub fn turns(dir: &Path, samples: &[f32], people: Option<u32>) -> Result<Vec<Turn>, String> {
+    let mut stretches = turns_with(dir, samples, -1, STRETCHES)?;
+    let clip = |t: &Turn| &samples[(t.start_ms as usize * 16).min(samples.len())..(t.end_ms as usize * 16).min(samples.len())];
+    let prints = voiceprints(dir, &stretches.iter().map(clip).collect::<Vec<_>>())?;
+    let spans: Vec<(u64, u64)> = stretches.iter().map(|t| (t.start_ms, t.end_ms)).collect();
+    for (t, who) in stretches.iter_mut().zip(voices(&spans, &prints, people)) {
+        t.who = who;
+    }
+    Ok(stretches)
+}
+
+/// Which voice each stretch (`spans[i]`, voiceprint `prints[i]`) is. Voices
+/// are found by merging the most alike stretches (average voiceprint, weighted
+/// by length) until none are SAME_VOICE alike, or until `people` are left;
+/// then voices with under MIN_VOICE_MS of speech fold into the nearest. A
+/// stretch without a voiceprint takes the voice of the nearest one with.
+pub fn voices(spans: &[(u64, u64)], prints: &[Option<Vec<f32>>], people: Option<u32>) -> Vec<u32> {
+    let ms = |i: usize| (spans[i].1 - spans[i].0) as f32;
+    let average = |members: &[usize]| {
+        let mut v = vec![0.0f32; prints.iter().flatten().next().map_or(0, Vec::len)];
+        for &i in members {
+            if let Some(p) = &prints[i] {
+                v.iter_mut().zip(p).for_each(|(a, b)| *a += b * ms(i));
+            }
+        }
+        let n = v.iter().map(|x| x * x).sum::<f32>().sqrt().max(f32::EPSILON);
+        v.iter_mut().for_each(|x| *x /= n);
+        v
+    };
+    let dot = |a: &[f32], b: &[f32]| a.iter().zip(b).map(|(x, y)| x * y).sum::<f32>();
+    let mut groups: Vec<Vec<usize>> = (0..spans.len()).filter(|&i| prints[i].is_some() && spans[i].1 - spans[i].0 >= MIN_STRETCH_MS).map(|i| vec![i]).collect();
+    if groups.is_empty() {
+        return vec![0; spans.len()];
+    }
+    loop {
+        let centres: Vec<Vec<f32>> = groups.iter().map(|g| average(g)).collect();
+        let mut best = (f32::MIN, 0, 0);
+        for a in 0..groups.len() {
+            for b in a + 1..groups.len() {
+                let like = dot(&centres[a], &centres[b]);
+                if like > best.0 {
+                    best = (like, a, b);
+                }
+            }
+        }
+        let enough = match people {
+            Some(n) => groups.len() <= n.max(1) as usize,
+            None => best.0 < SAME_VOICE,
+        };
+        if groups.len() < 2 || enough {
+            break;
+        }
+        let merged = groups.swap_remove(best.2);
+        groups[best.1].extend(merged);
+    }
+    // A fixed count is taken as given; otherwise a voice needs enough speech.
+    if people.is_none() {
+        let big: Vec<Vec<usize>> = groups.iter().filter(|g| g.iter().map(|&i| ms(i)).sum::<f32>() >= MIN_VOICE_MS).cloned().collect();
+        if !big.is_empty() {
+            groups = big;
+        }
+    }
+    let centres: Vec<Vec<f32>> = groups.iter().map(|g| average(g)).collect();
+    let nearest = |p: &[f32]| (0..centres.len()).max_by(|&a, &b| dot(&centres[a], p).total_cmp(&dot(&centres[b], p))).unwrap_or(0) as u32;
+    let who: Vec<Option<u32>> = prints.iter().map(|p| p.as_deref().map(nearest)).collect();
+    let mid = |i: usize| (spans[i].0 + spans[i].1) / 2;
+    (0..who.len())
+        .map(|i| who[i].or_else(|| (0..who.len()).filter(|&j| who[j].is_some()).min_by_key(|&j| mid(j).abs_diff(mid(i))).and_then(|j| who[j])).unwrap_or(0))
+        .collect()
+}
+
+/// The voice model file in the speakers folder.
+pub const VOICE_MODEL: &str = "voice.onnx";
+
+/// `clusters` -1 = let `threshold` decide.
+fn turns_with(dir: &Path, samples: &[f32], clusters: c_int, threshold: f32) -> Result<Vec<Turn>, String> {
     let lib = super::sherpa::lib()?;
     let c = |p: &Path| CString::new(p.to_string_lossy().into_owned()).map_err(|e| e.to_string());
     let seg = c(&dir.join("segmentation.int8.onnx"))?;
-    let emb = c(&dir.join("embedding.onnx"))?;
+    let emb = c(&dir.join(VOICE_MODEL))?;
     let cpu = CString::new("cpu").unwrap();
     let threads = std::thread::available_parallelism().map_or(2, |n| (n.get() / 2).max(1)) as c_int;
     let cfg = DiarizationConfig {
         segmentation: SegmentationConfig { pyannote: PyannoteConfig { model: seg.as_ptr() }, num_threads: threads, debug: 0, provider: cpu.as_ptr() },
         embedding: EmbeddingConfig { model: emb.as_ptr(), num_threads: threads, debug: 0, provider: cpu.as_ptr() },
-        clustering: ClusteringConfig { num_clusters: people.map_or(-1, |n| n as c_int), threshold: SAME_VOICE },
+        clustering: ClusteringConfig { num_clusters: clusters, threshold },
         min_duration_on: 0.3,
         min_duration_off: 0.5,
     };
@@ -120,7 +205,7 @@ pub fn turns(dir: &Path, samples: &[f32], people: Option<u32>) -> Result<Vec<Tur
 /// voice model diarization uses; None for a clip too short to tell.
 pub fn voiceprints(dir: &Path, clips: &[&[f32]]) -> Result<Vec<Option<Vec<f32>>>, String> {
     let lib = super::sherpa::lib()?;
-    let emb = CString::new(dir.join("embedding.onnx").to_string_lossy().into_owned()).map_err(|e| e.to_string())?;
+    let emb = CString::new(dir.join(VOICE_MODEL).to_string_lossy().into_owned()).map_err(|e| e.to_string())?;
     let cpu = CString::new("cpu").unwrap();
     let threads = std::thread::available_parallelism().map_or(2, |n| (n.get() / 2).max(1)) as c_int;
     let cfg = EmbeddingConfig { model: emb.as_ptr(), num_threads: threads, debug: 0, provider: cpu.as_ptr() };
@@ -338,10 +423,67 @@ mod tests {
         assert_eq!(who, vec![Some(1), Some(2), Some(1), Some(2), None, None], "like 2 / like nobody / too short");
     }
 
+    /// A voiceprint near axis `axis` of 8, nudged by `wobble` so no two are equal.
+    fn print_of(axis: usize, wobble: f32) -> Option<Vec<f32>> {
+        let mut v: Vec<f32> = (0..8).map(|k| if k == axis { 1.0 } else { wobble * ((k * 7 + axis) % 5) as f32 / 5.0 }).collect();
+        let n = v.iter().map(|x| x * x).sum::<f32>().sqrt();
+        v.iter_mut().for_each(|x| *x /= n);
+        Some(v)
+    }
+
+    #[test]
+    fn voices_are_counted_and_a_short_stray_voice_is_not_a_new_person() {
+        // Three people taking 3 s turns in rotation, then a 2 s stray voice and
+        // a stretch too short for a voiceprint.
+        let mut spans = Vec::new();
+        let mut prints = Vec::new();
+        for k in 0..12u64 {
+            spans.push((k * 3_000, k * 3_000 + 3_000));
+            prints.push(print_of(k as usize % 3, 0.1 + 0.02 * k as f32));
+        }
+        spans.push((36_000, 38_000));
+        prints.push(print_of(5, 0.1));
+        spans.push((38_000, 38_300));
+        prints.push(None);
+        let who = voices(&spans, &prints, None);
+        let mut people = who.clone();
+        people.sort();
+        people.dedup();
+        assert_eq!(people.len(), 3, "{who:?}");
+        assert!((0..12).all(|k| who[k] == who[k % 3]), "each person keeps one label: {who:?}");
+        assert_eq!(who[13], who[12], "no voiceprint: the voice of the stretch next to it");
+    }
+
+    #[test]
+    fn a_fixed_number_of_people_is_taken_as_given() {
+        let spans: Vec<(u64, u64)> = (0..12u64).map(|k| (k * 3_000, k * 3_000 + 3_000)).collect();
+        let prints: Vec<_> = (0..12).map(|k| print_of(k % 3, 0.1 + 0.02 * k as f32)).collect();
+        let mut two = voices(&spans, &prints, Some(2));
+        two.sort();
+        two.dedup();
+        assert_eq!(two.len(), 2);
+    }
+
+    #[test]
+    #[ignore] // speaker models in SV_TEST_DIAR_DIR, SV_TEST_MEETINGS ';'-separated meeting paths, SV_TEST_COUNTS the people in each (';'-separated)
+    fn real_calls_come_out_with_the_right_number_of_people() {
+        let dir = std::env::var("SV_TEST_DIAR_DIR").map_or_else(|_| crate::models::registry::diarize_dir(), std::path::PathBuf::from);
+        let counts = std::env::var("SV_TEST_COUNTS").unwrap();
+        for (base, want) in std::env::var("SV_TEST_MEETINGS").unwrap().split(';').zip(counts.split(';')) {
+            let samples: Vec<f32> = hound::WavReader::open(format!("{base}-others.wav")).unwrap().samples::<i16>().map(|s| s.unwrap() as f32 / 32768.0).collect();
+            let t = std::time::Instant::now();
+            let turns = turns(&dir, &samples, None).unwrap();
+            let mut speech = std::collections::BTreeMap::new();
+            turns.iter().for_each(|t| *speech.entry(t.who).or_insert(0) += t.end_ms - t.start_ms);
+            println!("{base}: {} people in {:?}, ms each {speech:?}", speech.len(), t.elapsed());
+            assert_eq!(speech.len(), want.parse::<usize>().unwrap(), "{base}");
+        }
+    }
+
     #[test]
     #[ignore] // speaker models + SV_TEST_MEETING (a meeting's path without ".json")
     fn unlabelled_lines_of_a_real_call_compared_to_each_voice() {
-        let dir = crate::models::registry::diarize_dir();
+        let dir = std::env::var("SV_TEST_DIAR_DIR").map_or_else(|_| crate::models::registry::diarize_dir(), std::path::PathBuf::from);
         let base = std::env::var("SV_TEST_MEETING").unwrap();
         let t: crate::transcripts::Transcript = serde_json::from_str(&std::fs::read_to_string(format!("{base}.json")).unwrap()).unwrap();
         let samples: Vec<f32> = hound::WavReader::open(format!("{base}-others.wav")).unwrap().samples::<i16>().map(|s| s.unwrap() as f32 / 32768.0).collect();
@@ -372,25 +514,5 @@ mod tests {
         let mut filled = who.clone();
         fill_in(&mut filled, &prints);
         println!("before {who:?}\nafter  {filled:?}");
-    }
-
-    #[test]
-    #[ignore] // needs the speaker models in SV_TEST_DIAR_DIR, a meeting's -others.wav in SV_TEST_WAV; SV_TEST_PEOPLE fixes the count
-    fn a_real_call_with_two_people_comes_out_as_two_speakers() {
-        let dir = std::env::var("SV_TEST_DIAR_DIR").unwrap();
-        let mut r = hound::WavReader::open(std::env::var("SV_TEST_WAV").unwrap()).unwrap();
-        let samples: Vec<f32> = r.samples::<i16>().map(|s| s.unwrap() as f32 / 32768.0).collect();
-        let t = std::time::Instant::now();
-        let fixed = std::env::var("SV_TEST_PEOPLE").ok().map(|n| n.parse::<u32>().unwrap());
-        let turns = turns(Path::new(&dir), &samples, fixed).unwrap();
-        println!("{} turns in {:?}: {:?}", turns.len(), t.elapsed(), turns);
-        let mut people: Vec<u32> = turns.iter().map(|t| t.who).collect();
-        people.sort();
-        people.dedup();
-        match fixed {
-            // A count above the real number of voices can't invent one.
-            Some(n) => assert!(people.len() <= n as usize, "{} voices, asked for {n}", people.len()),
-            None => assert_eq!(people.len(), 2),
-        }
     }
 }

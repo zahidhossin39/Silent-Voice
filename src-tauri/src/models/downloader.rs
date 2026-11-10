@@ -340,18 +340,20 @@ pub async fn download_vad_model(app: AppHandle, stop_flag: Option<&DownloadStopF
 }
 
 const SEGMENTATION_URL: &str = "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-segmentation-models/sherpa-onnx-pyannote-segmentation-3-0.tar.bz2";
-const EMBEDDING_URL: &str = "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/nemo_en_titanet_small.onnx";
+/// CAM++ (3D-Speaker, Apache-2.0): on two real calls it told voices apart
+/// better than titanet-small, at 28 MB instead of 40.
+const VOICE_URL: &str = "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx";
 
-/// The two speaker models (~47 MB download, 46 MB on disk).
+/// The two speaker models (~35 MB download, 30 MB on disk).
 pub async fn download_diarize_model(app: AppHandle, stop_flag: Option<&DownloadStopFlag>) -> Result<bool, String> {
     registry::ensure_dirs().map_err(|e| e.to_string())?;
     let dir = registry::diarize_dir();
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    if !dir.join("embedding.onnx").exists()
-        && !download_to(app.clone(), "speakers".into(), EMBEDDING_URL.into(), dir.join("embedding.onnx"), stop_flag).await?
-    {
+    let voice = dir.join(crate::system::diarize::VOICE_MODEL);
+    if !voice.exists() && !download_to(app.clone(), "speakers".into(), VOICE_URL.into(), voice, stop_flag).await? {
         return Ok(false);
     }
+    let _ = std::fs::remove_file(dir.join("embedding.onnx")); // titanet, used before CAM++
     if registry::diarize_installed() {
         return Ok(true);
     }
