@@ -998,17 +998,38 @@ step fixes a mistake measured on real calls:
    muted 231 of 253 echo hops and none of the user's speech; unrelated audio
    never locks. `mic_hint` puts "mic is hearing your speakers" or "mic is
    sending silence" in the transcript's `error`, and never over a real error.
-2. *Cut at turns*: both tracks end a piece at the first pause once it holds 2 s
+2. *Echo removal per You piece* (`echo::without_echo`, `only_yours`). The gate
+   leaves hops open when keyboard thumps make the mic louder than the echo, and
+   the echo under them became "You" words. Each You piece is lined up with the
+   last 60 s of Others (`Recent`, shifted by the gate's delay); per frequency the
+   best linear fit of Others is subtracted (fitted per ~4 s, since Windows' own
+   mic processing swings the echo's level up to 8x) and the rest rebuilt by
+   overlap-add. Echo drops ~14 dB and the user's voice is untouched. A piece
+   whose speech band (300-3400 Hz, above the thumps) is then too quiet in 80% of
+   its frames is dropped: 13 of 15 fake You lines on two calls, none of 18 real
+   ones. WebRTC AEC3 was tried and rejected: it cut the user's voice by 6.7 dB.
+3. *Cut at turns*: both tracks end a piece at the first pause once it holds 2 s
    (`cut_at_pauses(TURN)`), so a line is usually one person.
-3. *Labels* (`tell_speakers_apart`, after Stop). Diarization turns label each
-   Others line (`who_spoke`). pyannote misses some speech, so a line no turn
-   covers gets the voice it sounds like (`voiceprints` + `fill_in`, cosine 0.5 or
-   more against each speaker's average). A line still holding two people (each
-   1 s or more, `split_at_speakers`) is cut between them and the parts are
-   transcribed again, only right after transcribing. The People picker
-   (`meeting_set_people`) fixes the cluster count and only relabels.
+4. *Labels* (`tell_speakers_apart`, after Stop). `diarize::turns` uses sherpa's
+   pyannote run only to cut Others into short one-voice stretches (threshold
+   0.3, over-split on purpose), takes a CAM++ voiceprint of each (`voice.onnx`,
+   28 MB), and counts voices itself (`voices`): merge the most alike groups
+   (length-weighted average print) until none is 0.6 alike, then fold any voice
+   with under 4 s of speech into the nearest. Against a reference (Gemini
+   listening to whole tracks) this got 5 and 2 people right on two calls, ~88%
+   of speech labelled alike; sherpa's single threshold got one or the other
+   wrong, for any value. Each Others line goes to the voice that spoke most of
+   it (`who_spoke`); a line no turn covers gets the voice it sounds like
+   (`fill_in`, cosine 0.5+). A line still holding two people (each 1 s+,
+   `split_at_speakers`) is cut and both parts transcribed again, only right
+   after transcribing. The People picker (`meeting_set_people`) fixes the count
+   and only relabels.
 
-Ignored tests replay a saved call: `SV_TEST_MEETING=<transcripts>/<id>` for
+Ignored tests replay saved calls (`<transcripts>/<id>`, no extension):
+`SV_TEST_MEETINGS` (`;`-separated) + `SV_TEST_CLIPS` (dictation WAVs) for
+`fake_you_lines_of_real_calls_are_dropped_and_your_voice_kept`;
+`SV_TEST_MEETING` for `echo_removal_on_a_real_call_keeps_your_voice`,
 `a_real_call_heard_through_laptop_speakers` and
 `unlabelled_lines_of_a_real_call_compared_to_each_voice` (add `SV_TEST_RECUT=1`
-to re-cut the track the way meetings cut it today).
+to re-cut the track the way meetings cut it today); `SV_TEST_MEETINGS` +
+`SV_TEST_COUNTS` for `real_calls_come_out_with_the_right_number_of_people`.
