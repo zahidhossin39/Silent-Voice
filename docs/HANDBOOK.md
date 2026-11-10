@@ -1004,7 +1004,7 @@ step fixes a mistake measured on real calls:
    last 60 s of Others (`Recent`, shifted by the gate's delay); per frequency the
    best linear fit of Others is subtracted (fitted per ~4 s, since Windows' own
    mic processing swings the echo's level up to 8x) and the rest rebuilt by
-   overlap-add. Echo drops ~14 dB and the user's voice is untouched. A piece
+   overlap-add. On a real call the echo drops ~8 dB and the user's voice stays (r 0.99). A piece
    whose speech band (300-3400 Hz, above the thumps) is then too quiet in 80% of
    its frames is dropped: 13 of 15 fake You lines on two calls, none of 18 real
    ones. WebRTC AEC3 was tried and rejected: it cut the user's voice by 6.7 dB.
