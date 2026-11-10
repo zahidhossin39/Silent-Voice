@@ -31,6 +31,9 @@ pub fn chunker(sensitivity: u32) -> Chunker<impl FnMut(&[f32]) -> Option<Vec<boo
 pub struct Chunker<V: FnMut(&[f32]) -> Option<Vec<bool>>> {
     vad: V,
     max: usize,
+    /// Set for meetings: end a piece at the first pause once it holds this many
+    /// samples, so each line is one person's turn (speaker labels go per line).
+    min_turn: Option<usize>,
     buf: Vec<f32>,
     /// One speech flag per whole VAD frame of `buf`.
     mask: Vec<bool>,
@@ -40,7 +43,12 @@ pub struct Chunker<V: FnMut(&[f32]) -> Option<Vec<bool>>> {
 
 impl<V: FnMut(&[f32]) -> Option<Vec<bool>>> Chunker<V> {
     pub fn with_vad(max_samples: usize, vad: V) -> Self {
-        Self { vad, max: max_samples, buf: Vec::new(), mask: Vec::new(), offset: 0 }
+        Self { vad, max: max_samples, min_turn: None, buf: Vec::new(), mask: Vec::new(), offset: 0 }
+    }
+
+    pub fn cut_at_pauses(mut self, min_samples: usize) -> Self {
+        self.min_turn = Some(min_samples);
+        self
     }
 
     pub fn push(&mut self, samples: &[f32]) -> Vec<Segment> {
@@ -55,6 +63,11 @@ impl<V: FnMut(&[f32]) -> Option<Vec<bool>>> Chunker<V> {
             self.mask.extend(flags);
         }
         let mut out = Vec::new();
+        if let Some(min) = self.min_turn {
+            while let Some(cut) = silence_midpoints(&self.mask).into_iter().find(|&c| c >= min && c <= self.max) {
+                out.push(self.take(cut));
+            }
+        }
         while self.buf.len() > self.max {
             let cut = silence_midpoints(&self.mask)
                 .into_iter()
@@ -163,6 +176,30 @@ mod tests {
         let mut segs = c.push(&vec![0.0f32; 20 * 16_000]);
         segs.extend(c.finish());
         assert!(segs.iter().all(|s| s.speech), "with no VAD we must not skip anything");
+    }
+
+    #[test]
+    fn in_turn_mode_a_pause_after_two_seconds_ends_the_piece() {
+        let sr = 16_000;
+        let mut audio = vec![0.5f32; 3 * sr]; // one person, 3 s
+        audio.extend(vec![0.0f32; sr / 2]); // 0.5 s pause: the other one answers
+        audio.extend(vec![0.5f32; 3 * sr]);
+        let mut c = Chunker::with_vad(12 * sr, fake_vad).cut_at_pauses(2 * sr);
+        let first = c.push(&audio);
+        assert_eq!(first.len(), 1, "the reply was not split off");
+        let cut = first[0].samples.len();
+        assert!(cut > 3 * sr && cut < 3 * sr + sr / 2, "cut at {cut}, not in the pause");
+        assert_eq!(cut + c.finish()[0].samples.len(), audio.len(), "every sample kept once");
+    }
+
+    #[test]
+    fn in_turn_mode_a_short_yes_is_not_a_piece_on_its_own() {
+        let sr = 16_000;
+        let mut audio = vec![0.5f32; sr]; // "yes", 1 s
+        audio.extend(vec![0.0f32; sr / 2]);
+        audio.extend(vec![0.5f32; sr]);
+        let mut c = Chunker::with_vad(12 * sr, fake_vad).cut_at_pauses(2 * sr);
+        assert!(c.push(&audio).is_empty(), "cut before the piece held 2 s");
     }
 
     #[test]

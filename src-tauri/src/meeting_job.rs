@@ -21,6 +21,9 @@ use crate::transcripts::{self, paragraphs, Kind, Line, Speaker, Status, Transcri
 const SR: u64 = capture::WHISPER_SAMPLE_RATE as u64;
 /// A You line repeating Others lines this close in time is the mic hearing the speakers.
 const ECHO_WINDOW_MS: u64 = 3_000;
+/// A meeting line ends at the first pause after this much audio: people take
+/// turns in the pauses, and each line gets one speaker label.
+const TURN: usize = 2 * SR as usize;
 /// With no new text the page needs no update (its timer runs on its own), so
 /// progress is only saved now and then, for a crash to keep it.
 const PROGRESS_EVERY: Duration = Duration::from_secs(10);
@@ -237,7 +240,7 @@ fn work(app: AppHandle, mut t: Transcript, rx: impl IntoIterator<Item = Msg>, cf
     run(
         &mut t,
         rx,
-        [longform::chunker(cfg.sensitivity), longform::chunker(cfg.sensitivity)],
+        [longform::chunker(cfg.sensitivity).cut_at_pauses(TURN), longform::chunker(cfg.sensitivity).cut_at_pauses(TURN)],
         |samples| {
             // Cancelled: skip the pieces still queued; the old text comes back below.
             if undo.as_ref().is_some_and(|(c, _)| c.load(std::sync::atomic::Ordering::Relaxed)) {
