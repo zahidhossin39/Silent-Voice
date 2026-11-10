@@ -282,14 +282,16 @@ fn work(app: AppHandle, mut t: Transcript, rx: impl IntoIterator<Item = Msg>, cf
     if undo.is_some() {
         transcripts::drop_backup(t.id);
     }    if cfg.speakers {
-        tell_speakers_apart(&app, t.id);
+        tell_speakers_apart(&app, t.id, Some(&cfg));
     }
 }
 
 /// Label each Others line with who said it (Speaker 1, 2, ...) when the speaker
 /// models are downloaded. Runs after the meeting is saved: about 15 s per minute
 /// of audio, so the text is readable meanwhile and the labels arrive after.
-pub(crate) fn tell_speakers_apart(app: &AppHandle, id: i64) {
+/// `split`: the settings the meeting was just transcribed with; a line holding
+/// two people is then cut between them and its parts transcribed again.
+pub(crate) fn tell_speakers_apart(app: &AppHandle, id: i64, split: Option<&Cfg>) {
     if !crate::models::registry::diarize_installed() {
         return;
     }
@@ -303,36 +305,71 @@ pub(crate) fn tell_speakers_apart(app: &AppHandle, id: i64) {
         let turns = diarize::turns(&dir, &samples, t.others)?;
         let lines: Vec<(u64, u64)> = t.lines.iter().filter(|l| l.speaker == Some(Speaker::Others)).map(|l| (l.start_ms, l.end_ms)).collect();
         let mut who: Vec<Option<u32>> = lines.iter().map(|&(a, b)| diarize::who_spoke(&turns, a, b)).collect();
+        let clip = |&(a, b): &(u64, u64)| &samples[(a as usize * 16).min(samples.len())..(b as usize * 16).min(samples.len())];
         // Lines no turn covered get the voice they sound like.
         if who.contains(&None) {
-            let clip = |&(a, b): &(u64, u64)| &samples[(a as usize * 16).min(samples.len())..(b as usize * 16).min(samples.len())];
             match diarize::voiceprints(&dir, &lines.iter().map(clip).collect::<Vec<_>>()) {
                 Ok(prints) => diarize::fill_in(&mut who, &prints),
                 Err(e) => crate::logging::log_error("meeting", &format!("unlabelled lines left as they are: {e}")),
             }
         }
-        Ok::<_, String>((turns, lines, who))
+        let mut parts: Vec<Option<Vec<transcripts::Line>>> = vec![None; lines.len()];
+        for (i, &(a, b)) in lines.iter().enumerate() {
+            let Some(cfg) = split else { break };
+            let cuts = diarize::split_at_speakers(&turns, a, b);
+            if cuts.is_empty() {
+                continue;
+            }
+            let texts: Result<Vec<String>, String> = cuts.iter().map(|c| transcribe_job::transcribe_piece(app, clip(c), cfg)).collect();
+            // A part with no words, or a failed call: the line stays whole.
+            if let Some(texts) = texts.ok().filter(|t| t.iter().all(|t| !t.is_empty())) {
+                parts[i] = Some(
+                    cuts.iter()
+                        .zip(texts)
+                        .map(|(&(a, b), text)| transcripts::Line { start_ms: a, end_ms: b, text, speaker: Some(Speaker::Others), who: diarize::who_spoke(&turns, a, b) })
+                        .collect(),
+                );
+            }
+        }
+        Ok::<_, String>((turns, lines, who, parts))
     })();
-    let (turns, lines, who) = match found {
+    let (turns, lines, who, mut parts) = match found {
         Ok(x) => x,
         Err(e) => return crate::logging::log_error("meeting", &format!("speakers not told apart: {e}")),
     };
+    let split = parts.iter().filter(|p| p.is_some()).count();
     // Reloaded under the job lock: the user may have renamed it meanwhile, or
     // started Transcribe again (that run labels its own lines).
     let saved = transcribe_job::unless_running(id, "transcribing", || {
         let mut t = transcripts::load(id)?;
-        let mut others: Vec<&mut transcripts::Line> = t.lines.iter_mut().filter(|l| l.speaker == Some(Speaker::Others)).collect();
-        // The same lines as above (only renamed meanwhile): use the voice matches too.
-        let same = others.len() == lines.len() && others.iter().zip(&lines).all(|(l, &(a, b))| l.start_ms == a && l.end_ms == b);
-        for (i, l) in others.iter_mut().enumerate() {
-            l.who = if same { who[i] } else { diarize::who_spoke(&turns, l.start_ms, l.end_ms) };
+        let others = t.lines.iter().filter(|l| l.speaker == Some(Speaker::Others));
+        // The same lines as above (only renamed meanwhile): use the voice matches and splits too.
+        let same = others.clone().count() == lines.len() && others.zip(&lines).all(|(l, &(a, b))| l.start_ms == a && l.end_ms == b);
+        let mut i = 0;
+        let mut out = Vec::with_capacity(t.lines.len());
+        for mut l in std::mem::take(&mut t.lines) {
+            if l.speaker != Some(Speaker::Others) {
+                out.push(l);
+                continue;
+            }
+            if !same {
+                l.who = diarize::who_spoke(&turns, l.start_ms, l.end_ms);
+                out.push(l);
+                continue;
+            }
+            match parts[i].take() {
+                Some(p) => out.extend(p),
+                None => out.push(transcripts::Line { who: who[i], ..l }),
+            }
+            i += 1;
         }
+        t.lines = out;
         transcripts::save(&t)?;
         Ok(t)
     });
     if let Ok(t) = saved {
         let n = t.lines.iter().filter_map(|l| l.who).max().unwrap_or(0);
-        crate::logging::log_info("meeting", &format!("{n} other speakers told apart in {:.0} s", started.elapsed().as_secs_f32()));
+        crate::logging::log_info("meeting", &format!("{n} other speakers told apart in {:.0} s; {split} lines split between two of them", started.elapsed().as_secs_f32()));
         let _ = app.emit("transcript://update", &t);
     }
 }

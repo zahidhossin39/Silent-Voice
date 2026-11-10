@@ -212,6 +212,48 @@ pub fn fill_in(who: &mut [Option<u32>], prints: &[Option<Vec<f32>>]) {
     }
 }
 
+/// Speech a speaker needs inside a line for the line to be split at them.
+const MIN_PART_MS: u64 = 1_000;
+
+/// Where `start_ms..end_ms` should be cut so each part is one speaker: empty
+/// unless two or more speakers each say at least MIN_PART_MS in it. The cut
+/// sits in the gap between them (or where the next one starts, if they overlap).
+pub fn split_at_speakers(turns: &[Turn], start_ms: u64, end_ms: u64) -> Vec<(u64, u64)> {
+    // Runs of one speaker, clipped to the line: (who, from, to, ms of speech).
+    let mut runs: Vec<(u32, u64, u64, u64)> = Vec::new();
+    for t in turns.iter().filter(|t| t.end_ms > start_ms && t.start_ms < end_ms) {
+        let (a, b) = (t.start_ms.max(start_ms), t.end_ms.min(end_ms));
+        match runs.last_mut() {
+            Some(r) if r.0 == t.who => {
+                r.2 = r.2.max(b);
+                r.3 += b - a;
+            }
+            _ => runs.push((t.who, a, b, b - a)),
+        }
+    }
+    // A speaker saying too little to be worth a line stays with their neighbour.
+    runs.retain(|r| r.3 >= MIN_PART_MS);
+    runs.dedup_by(|b, a| {
+        let same = a.0 == b.0;
+        if same {
+            a.2 = b.2;
+        }
+        same
+    });
+    if runs.len() < 2 {
+        return Vec::new();
+    }
+    let mut parts = Vec::new();
+    let mut from = start_ms;
+    for w in runs.windows(2) {
+        let cut = if w[0].2 <= w[1].1 { (w[0].2 + w[1].1) / 2 } else { w[1].1 };
+        parts.push((from, cut));
+        from = cut;
+    }
+    parts.push((from, end_ms));
+    parts
+}
+
 /// The speaker heard most during `start_ms..end_ms`, numbered from 1 in order
 /// of first appearance; None when no turn overlaps it.
 pub fn who_spoke(turns: &[Turn], start_ms: u64, end_ms: u64) -> Option<u32> {
@@ -263,6 +305,25 @@ mod tests {
         assert_eq!(who_spoke(&turns, 0, 4_000), Some(1));
         assert_eq!(who_spoke(&turns, 4_000, 12_000), Some(2));
         assert_eq!(who_spoke(&turns, 30_000, 40_000), None);
+    }
+
+    #[test]
+    fn a_line_holding_two_speakers_is_cut_between_them() {
+        // A asks (0-3 s), a 0.4 s gap, B answers (3.4-6 s).
+        let turns = [turn(0, 3_000, 0), turn(3_400, 6_000, 1)];
+        assert_eq!(split_at_speakers(&turns, 0, 6_000), vec![(0, 3_200), (3_200, 6_000)]);
+        // Overlapping: cut where B starts.
+        assert_eq!(split_at_speakers(&[turn(0, 3_000, 0), turn(2_500, 6_000, 1)], 0, 6_000), vec![(0, 2_500), (2_500, 6_000)]);
+    }
+
+    #[test]
+    fn a_short_interjection_or_one_speaker_is_not_split() {
+        // B's 0.5 s "yeah" is too little for its own line; A's two runs stay one.
+        let turns = [turn(0, 3_000, 0), turn(3_000, 3_500, 1), turn(3_600, 6_000, 0)];
+        assert!(split_at_speakers(&turns, 0, 6_000).is_empty());
+        assert!(split_at_speakers(&[turn(0, 6_000, 0)], 0, 6_000).is_empty());
+        // B talks mostly outside this line: only 0.5 s of it falls inside.
+        assert!(split_at_speakers(&[turn(0, 4_000, 0), turn(3_500, 9_000, 1)], 0, 4_000).is_empty());
     }
 
     #[test]

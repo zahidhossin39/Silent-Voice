@@ -1041,7 +1041,7 @@ fn meeting_set_people(app: AppHandle, id: i64, others: Option<u32>) -> Result<()
         t.others = others;
         transcripts::save(&t)
     })?;
-    std::thread::spawn(move || meeting_job::tell_speakers_apart(&app, id));
+    std::thread::spawn(move || meeting_job::tell_speakers_apart(&app, id, None));
     Ok(())
 }
 
