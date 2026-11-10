@@ -479,6 +479,8 @@ All commands are registered in `src-tauri/src/lib.rs` → `tauri::generate_handl
 | `meeting_start` | Record the mic (You) and computer sound (Others) into a live meeting transcript; shares the one job slot with files |
 | `meeting_stop` | Stop recording; the job finishes the queued pieces, repairs punctuation, then marks it done |
 | `meeting_devices` | `[mic, speakers]` names a meeting would use (for the Bluetooth-mic warning) |
+| `meeting_capture_support` | `null` when Others can be recorded, else `{kind: "unsupported"|"permission"|"failed", reason?}`; the Notetaker shows "Not recorded" and a note |
+| `meeting_open_capture_settings` | macOS: opens System Settings at Screen Recording. No-op elsewhere |
 | `meeting_summarize(id, source, model, baseUrl, apiKey)` | Write the meeting's Overview (Markdown: Summary, Key points, Decisions, Action items) with the bundled llama-server (`source` "local") or an OpenAI-compatible provider ("api"); long meetings are noted in pieces (by estimated tokens) and combined. Saves `summary` on the transcript and returns it. Refused while recording or already summarizing |
 | `transcript_export(id)` | Rust shows the Save dialog, writes .txt/.md/.srt by the chosen extension, returns the path or null if cancelled |
 
@@ -941,3 +943,43 @@ All toggles live in Settings and are pushed to Rust via `set_behavior` /
     4. Push: `git push origin vX.Y.Z`.
     5. Review the draft release created by GitHub Actions. Ensure the label is "None", then click "Publish release".
   - *Caveat:* Pre-v0.1.4 instances lack update-checking code and must be manually reinstalled once from the v0.1.4 (or later) installer to receive future updates.
+
+---
+
+## 17. Meeting capture per OS and the sherpa-onnx pin
+
+The why lives in `docs/adr/0001` and `docs/adr/0002`; this is where things are.
+
+**Others (the computer's sound)** sits behind `audio/system_audio.rs`
+(`support()`, `open()`, `CaptureError::{Unsupported, PermissionDenied, Failed}`):
+
+| OS | Backend | Needs |
+| --- | --- | --- |
+| Windows | cpal WASAPI loopback (`live::start_stream`) | nothing |
+| Linux | PulseAudio `@DEFAULT_MONITOR@` via `libpulse-simple.so.0`, loaded at runtime (`system_audio_linux.rs`) | PulseAudio or PipeWire |
+| macOS | ScreenCaptureKit audio-only stream (`system_audio_macos.rs`), mixed to mono and resampled to 16 kHz | macOS 13+, Screen Recording permission |
+
+- If Others fails when a meeting starts, the meeting keeps going with You only and
+  the transcript's `error` says why. Never lose the user's side.
+- The ScreenCaptureKit bridge links `libswift_Concurrency`: `build.rs` adds an
+  rpath to `/usr/lib/swift`, and the app's macOS minimum is **12** (11 has no
+  such library and would fail at launch). macOS 12 runs the app; Others there is
+  "unsupported".
+- `SV_SELFTEST_CAPTURE=<secs>` (release builds too) records Others for that long
+  and logs one `selftest: capture:` line. CI's Linux job plays a 440 Hz tone into
+  a null sink and fails unless rms > 0.05.
+
+**sherpa-onnx is pinned** by `src-tauri/sidecars/sherpa/VERSION` (1.13.4):
+
+- `fetch-sidecars.sh` downloads that tag; `include/c-api.h` is that tag's header.
+- `sherpa::lib()` refuses any other version at load and logs either
+  `sherpa-onnx X loaded` or the error (load failures included). CI greps for it.
+- `sherpa_layout_tests.rs` compares every `#[repr(C)]` struct against
+  `include/layout.txt`, which `scripts/sherpa-layout.c` generates from the header;
+  `cross-platform.yml` regenerates it and diffs. Bumping sherpa = change VERSION,
+  replace the header, regenerate `layout.txt`, fix the structs until the test passes.
+
+**Bundled files on Linux** live in `/usr/lib/Silent Voice/` (the .deb, and the
+AppImage's `usr/` tree), not beside the binary. `paths::bundled_dir()` handles
+that; before 2026-11 installed Linux builds could not load sherpa, llama, piper
+or whisper-server.

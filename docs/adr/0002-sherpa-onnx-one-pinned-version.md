@@ -1,5 +1,5 @@
 ---
-status: accepted (2026-10-25; the pin is in place, the checks are not built yet, see tasks/plan.md)
+status: accepted (2026-10-25; pin, load-time check and layout tests built 2026-11, CI runs them on all three)
 ---
 
 # sherpa-onnx: one pinned version everywhere, checked at load and in CI

@@ -5,11 +5,16 @@ Status: **builds, installs, launches, and transcribes on macOS and Linux.**
 `.github/workflows/cross-platform-build.yml` is a gate, not a report. On every
 packaging change it installs the real `.deb` / `.app` on a GitHub runner,
 launches it (headless under xvfb on Linux), requires the app's own
-`Silent Voice starting` line, then runs the bundled whisper CLI against a known
+`Silent Voice starting` line and `sherpa-onnx <pinned> loaded`, runs the
+meeting-capture self-test (on Linux it must hear a tone played into a null
+sink), then runs the bundled whisper CLI against a known
 clip and requires the right words back. It also fails if no `.sig` is produced,
 so a release that could never be updated cannot pass.
 
 Things that looked like gates but were not, all found the hard way:
+
+- Under xvfb the Linux app takes ~35 s to reach setup. A fixed 30 s wait
+  looked like a hang; the smoke test now waits for the capture line instead.
 
 - `cargo check` did not catch the missing `libxdo`, because checking does not
   link. Only the packaging build proves the link step.
@@ -34,6 +39,7 @@ CI cannot press a key or hold a microphone, so none of this has been exercised:
 | Per-app profiles | needs real windows to focus |
 | Read-aloud (TTS) | needs an audio output device |
 | The updater | needs a published release to update from |
+| Notetaker Others on macOS | needs a real call; CI only proves it starts without crashing |
 
 **These are yours to check.** Everything in that table is reasoned from code.
 
@@ -113,6 +119,8 @@ first.**
 | `foreground.rs` | `GetForegroundWindow` | `osascript` | `xprop` | yes |
 | `hardware.rs` | DXGI | `system_profiler` | `lspci` | yes |
 | `sherpa.rs` | `.dll` | `.dylib` | `.so` | yes |
+| `system_audio*.rs` (meeting Others) | WASAPI loopback | ScreenCaptureKit (13+) | PulseAudio monitor | yes |
+| `paths.rs` bundled files | beside the exe | `Contents/Resources` | `usr/lib/Silent Voice` | yes |
 | `job.rs` | Job Objects kill sidecars | `pkill` at startup | `pkill` at startup | yes |
 | `clipboard_file.rs` | clipboard file formats | — | — | no |
 | `secure_field.rs` | UIA password detection | — | — | no |
@@ -141,13 +149,21 @@ macOS gates both halves of the core feature behind user consent:
   explains it yet. First-run onboarding should, and should link to
   `x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility`.
 
+- **Screen Recording** — ScreenCaptureKit needs it for the meeting's Others
+  track (`NSScreenCaptureUsageDescription` in `Info.plist`). Denied, the
+  Notetaker says so and offers "Open System Settings".
+
+The app's macOS minimum is 12 (`tauri.macos.conf.json`): the ScreenCaptureKit
+bridge needs `libswift_Concurrency`, which macOS 11 lacks.
+
 Linux needs `x11-utils` (for `xprop`) for per-app profiles; the `.deb` declares
 it. The AppImage does not, so per-app profiles silently degrade without it.
 
 ## Sidecars
 
 `scripts/fetch-sidecars.sh` populates `src-tauri/sidecars/` for the host
-platform. Pinned versions live at the top of that file.
+platform. Pinned versions live at the top of that file, except sherpa-onnx, which reads
+`src-tauri/sidecars/sherpa/VERSION` (the app checks it at load; ADR 0002).
 
 | | macOS | Linux |
 | --- | --- | --- |

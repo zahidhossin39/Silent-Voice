@@ -82,11 +82,15 @@ After `cargo build`, whisper DLLs must be copied from `sidecars/` into
   Untested there: hotkey/paste, TTS, per-app profiles, the updater. Inline
   proofreading now exists on all three: UIA on Windows, Accessibility on macOS,
   AT-SPI on Linux (`inline_unix.rs` over `ax.rs` / `atspi.rs`). See `PORTING.md`.
+- Notetaker Others (computer sound): WASAPI loopback / ScreenCaptureKit (macOS 13+) /
+  PulseAudio monitor, behind `audio/system_audio.rs` (ADR 0001, HANDBOOK §17).
+  macOS minimum is 12. sherpa-onnx is pinned by `sidecars/sherpa/VERSION` and
+  checked at load + by layout tests (ADR 0002).
 - Wayland (Hyprland/Sway only): compositor keybind runs `silent-voice --start/--stop`
   (forwarded via single-instance), paste via `wtype`. AUR `silent-voice-bin` is
   published by `aur.yml` on release; it drops `.package-managed` so the in-app updater stays off.
 
-**Current state:** v0.1.14 released (background transcription on by default with a 7 MB punctuation-repair model, paste verification, learn-from-edits underlines, on-screen problem card, start/stop sounds, Esc cancel, Alt+Shift+Z paste-last). v0.1.13 (Settings > System > Logs: save/copy/open; one log line per paste). v0.1.12: macOS signed with the project's self-signed cert (Accessibility survives updates; `scripts/macos-signing.sh`), Cmd+V/Cmd+C sent on the main thread (fixed the post-dictation crash), AppImage keeps libwayland as a host fallback.
+**Current state:** main is heading to v0.2.0 (Notetaker records Others on Mac and Linux; Linux bundled files now load from `usr/lib/Silent Voice`; Mac/Linux unit tests in CI); v0.1.15 is the pre-release test build. v0.1.14 released (background transcription on by default with a 7 MB punctuation-repair model, paste verification, learn-from-edits underlines, on-screen problem card, start/stop sounds, Esc cancel, Alt+Shift+Z paste-last). v0.1.13 (Settings > System > Logs: save/copy/open; one log line per paste). v0.1.12: macOS signed with the project's self-signed cert (Accessibility survives updates; `scripts/macos-signing.sh`), Cmd+V/Cmd+C sent on the main thread (fixed the post-dictation crash), AppImage keeps libwayland as a host fallback.
 Home gained a 12-week dictation strip in the Status panel (heatmap + days
 active / busiest day / words per dictation), the onboarding was rebuilt as a
 left-rail flow that downloads the model in the background, and spoken fillers

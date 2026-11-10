@@ -1,5 +1,5 @@
 ---
-status: accepted (2026-10-25; macOS and Linux not built yet, see tasks/plan.md)
+status: accepted (2026-10-25; built on all three 2026-11; Linux proven in CI, macOS waits on a real call)
 ---
 
 # Capturing the computer's sound: one interface, a native API per OS
