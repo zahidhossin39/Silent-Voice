@@ -68,3 +68,33 @@ others) connects to it and does the transcription, speaker labels and summary.
 
 **Next step:** grill the design (transport, tool shapes, how a saved
 transcript shows up on the Notetaker page), then test with agy / Gemini CLI.
+
+## Mobile app (Android / iOS)
+
+**Status (2026-11-12):** starting in a new session. Nothing built yet.
+
+**What carries over:** Tauri v2 builds for Android and iOS, so the React
+dashboard (`src/`), the Zustand stores, `services/catalog.ts`, the cloud
+providers (speech-to-text and summaries over HTTP), and the transcript /
+meeting data model (`transcripts.rs`) can be reused. `services/tauriBridge.ts`
+is the seam: every call into Rust goes through it.
+
+**What is desktop-only and needs a mobile answer:**
+- *Getting text into other apps.* Desktop pastes at the cursor after a global
+  hotkey (`system/hotkey.rs`, `system/paste.rs`) and shows the overlay pill
+  (`system/overlay.rs`). Phones have neither: the usual answer is a custom
+  keyboard (Android input method / iOS keyboard extension), which Tauri does
+  not build. This is the main product decision.
+- *Local engines run as sidecar programs.* whisper.cpp (`transcription/whisper.rs`)
+  and llama-server (`llm/`) are separate .exe files the app starts; iOS does not
+  allow that and Android makes it awkward. sherpa-onnx (Parakeet, Moonshine,
+  SenseVoice, TTS, speaker labels) is a library called over FFI
+  (`system/sherpa.rs`, `sherpa_stt.rs`) and has Android/iOS builds, so it is the
+  likely local engine. Its version is pinned (ADR 0002).
+- *Desktop integrations:* tray, inline proofreading (UIA / Accessibility /
+  AT-SPI), per-app profiles (`system/foreground.rs`), system-audio capture for
+  meetings (ADR 0001: WASAPI / ScreenCaptureKit / PulseAudio; phones generally
+  don't allow recording other apps' sound), the in-app updater (app stores
+  update instead).
+- *Paths:* data root is `%APPDATA%\SilentVoice\` on Windows (`system/paths.rs`);
+  mobile needs the app sandbox directories.

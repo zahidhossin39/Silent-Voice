@@ -7,6 +7,13 @@
       "runtimeArgs": ["run", "dev"],
       "port": 1420,
       "autoPort": false
+    },
+    {
+      "name": "tauri-dev",
+      "runtimeExecutable": "powershell",
+      "runtimeArgs": ["-NoProfile", "-Command", "$env:PATH += ';' + $env:USERPROFILE + '\\.cargo\\bin'; npm run tauri:dev"],
+      "port": 1420,
+      "autoPort": false
     }
   ]
 }
