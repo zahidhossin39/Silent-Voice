@@ -935,13 +935,13 @@ All toggles live in Settings and are pushed to Rust via `set_behavior` /
   - *Configuration:* `src-tauri/tauri.conf.json` defines `"plugins.updater"` with `endpoints` pointing to `https://github.com/zahidhossin39/Silent-Voice/releases/latest/download/latest.json`, `pubkey` (embedded public signing key), and `"bundle.createUpdaterArtifacts": true`.
   - *Key Generation:* The signing keypair was generated via `npx tauri signer generate` (private key stored locally at `%USERPROFILE%\.tauri\silent-voice.key`, gitignored).
   - *Release Pipeline:* Tag pushes matching `v*` trigger `.github/workflows/release.yml`. CI runs `tauri-apps/tauri-action@v0` to build, sign (using GitHub Secrets `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`), and publish a draft release (`releaseDraft: true`) containing `latest.json`, `.exe`, and `.sig` signatures.
-  - *Gotcha:* Published releases MUST have the release label set to "None" (NOT "Pre-release") on GitHub, otherwise the `/releases/latest/` endpoint does not list them and the updater fails to find updates.
+  - *Gotcha:* The updater reads `/releases/latest/`, which follows GitHub's "Latest" flag. Publish with the label "Latest" (never "Pre-release"). "None" is not enough: on v0.2.0 it left v0.1.14 as Latest, so the feed kept serving the old version until `gh release edit v0.2.0 --latest`.
   - *Release Steps:*
     1. Bump matching version in three files: `package.json`, `src-tauri/tauri.conf.json`, and `src-tauri/Cargo.toml`.
     2. Commit changes (e.g., `git commit -am "bump to vX.Y.Z"`).
     3. Tag the commit: `git tag vX.Y.Z`.
     4. Push: `git push origin vX.Y.Z`.
-    5. Review the draft release created by GitHub Actions. Ensure the label is "None", then click "Publish release".
+    5. Review the draft release created by GitHub Actions. Set the label to "Latest", then click "Publish release". Check that `releases/latest/download/latest.json` shows the new version.
   - *Caveat:* Pre-v0.1.4 instances lack update-checking code and must be manually reinstalled once from the v0.1.4 (or later) installer to receive future updates.
 
 ---
