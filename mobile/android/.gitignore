@@ -1,0 +1,9 @@
+.gradle/
+build/
+app/build/
+local.properties
+# Fetched by scripts/fetch-sherpa.ps1 (46 MB, version pinned by src-tauri/sidecars/sherpa/VERSION)
+app/libs/*.aar
+*.iml
+.idea/
+.kotlin/
