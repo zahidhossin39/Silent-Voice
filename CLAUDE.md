@@ -8,7 +8,9 @@ bundled llama.cpp for local LLM, Piper + sherpa-onnx for TTS.
 **Deep reference:** `docs/HANDBOOK.md` holds the full architecture, subsystem
 histories, and the WHY behind every rule below. Decisions that are hard to
 reverse are recorded in `docs/adr/` (0001 system-audio capture per OS, 0002
-the pinned, checked sherpa-onnx version): read them before changing those areas. **Read the matching handbook
+the pinned, checked sherpa-onnx version): read them before changing those areas.
+Per-feature docs (feature lists, commands, settings, bridge map, mobile
+portability; newer than the handbook where they disagree) are in `docs/features/`. **Read the matching handbook
 section before touching:** overlay/pill, hotkey pipeline, inline proofreading
 (squiggles/UIA), TTS engines, model catalogs, the updater, or release steps.
 
