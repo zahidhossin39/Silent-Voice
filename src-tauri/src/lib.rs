@@ -1596,6 +1596,8 @@ pub fn run() {
         })
         .setup(|app| {
             let _ = registry::ensure_dirs();
+            // The pre-release speaker model (titanet, 40 MB), replaced by CAM++ `voice.onnx`.
+            let _ = std::fs::remove_file(registry::diarize_dir().join("embedding.onnx"));
             // Neither needs a window, so they run before anything that could
             // block on the desktop (tray, overlay).
             // Load sherpa-onnx now, off the UI thread, so its version check

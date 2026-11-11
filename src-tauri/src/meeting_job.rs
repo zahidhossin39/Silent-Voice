@@ -281,7 +281,8 @@ fn work(app: AppHandle, mut t: Transcript, rx: impl IntoIterator<Item = Msg>, cf
     transcribe_job::finish(&app, &t);
     if undo.is_some() {
         transcripts::drop_backup(t.id);
-    }    if cfg.speakers {
+    }
+    if cfg.speakers {
         tell_speakers_apart(&app, t.id, Some(&cfg));
     }
 }
