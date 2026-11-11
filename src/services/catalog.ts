@@ -740,6 +740,32 @@ export const TTS_SAMPLE_TEXT: Record<string, string> = {
 // language in parentheses in their label (e.g. "… (Chinese)"); OpenAI base
 // models are either "(English)"/"(Multilingual)" or the plain large models
 // (multilingual). Distil models are English.
+/**
+ * The voice model for `id`: its catalog entry or, for a downloaded model that
+ * left the catalog (the v0.2.0 cut), a plain stand-in. Such a model still runs
+ * (Rust finds the file by its id), so the user can keep picking or delete it.
+ */
+export function findSttModel(id: string, downloaded: Set<string>): SttModel | undefined {
+  return STT_MODELS.find((m) => m.id === id) ?? (downloaded.has(id) ? retiredSttModel(id) : undefined);
+}
+
+/** Downloaded voice models that are no longer in the catalog, as stand-ins. */
+export function retiredSttModels(downloaded: Set<string>): SttModel[] {
+  return [...downloaded].filter((id) => !STT_MODELS.some((m) => m.id === id)).map(retiredSttModel);
+}
+
+function retiredSttModel(id: string): SttModel {
+  // Every model the cut removed is Whisper. No parentheses in the label: sttLanguage reads a language from them.
+  return { id, file: `ggml-${id}.bin`, family: "", provider: /^(tiny|base|small|medium|large|distil)/.test(id) ? "OpenAI" : "", label: `${id} · no longer in the store`, size_mb: 0, ram_mb: 0, speed_label: "", wer: "", multilingual: !id.endsWith(".en"), preset: "balanced", best_for: "" };
+}
+
+/** Downloaded AI models in neither the catalog nor `custom` (Hugging Face picks): ones the v0.2.0 cut removed. They still run, so they stay listed. */
+export function retiredLlmModels(downloaded: Set<string>, custom: LlmModel[]): LlmModel[] {
+  return [...downloaded]
+    .filter((id) => !LLM_MODELS.some((m) => m.id === id) && !custom.some((m) => m.id === id))
+    .map((id) => ({ id, name: `${id} · no longer in the store`, provider: "", url: "", params: "", size_mb: 0, ram_gb: 0, tier: "medium", speed_label: "", languages: "", license: "", best_for: "" }));
+}
+
 export function sttLanguage(m: SttModel): string {
   const paren = m.label.match(/\(([^)]+)\)/);
   if (paren) {

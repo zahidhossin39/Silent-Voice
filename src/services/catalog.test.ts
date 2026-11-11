@@ -1,5 +1,31 @@
 import { describe, it, expect } from "vitest";
-import { STT_MODELS, LLM_MODELS, isSherpaEngine, localLanguages, sttLanguage } from "./catalog";
+import { STT_MODELS, LLM_MODELS, retiredLlmModels, findSttModel, honorsLanguage, isSherpaEngine, localLanguages, retiredSttModels, sttLanguage } from "./catalog";
+
+describe("voice models that left the store", () => {
+  // A user who downloaded Whisper medium.en before the v0.2.0 catalog cut still dictates with it.
+  const downloaded = new Set([STT_MODELS[0].id, "medium.en", "large-v3"]);
+
+  it("stay listed, pickable and deletable when downloaded", () => {
+    expect(retiredSttModels(downloaded).map((m) => m.id)).toEqual(["medium.en", "large-v3"]);
+    expect(findSttModel("medium.en", downloaded)?.label).toBe("medium.en · no longer in the store");
+    expect(findSttModel("medium.en", new Set())).toBeUndefined();
+    expect(findSttModel(STT_MODELS[0].id, downloaded)).toBe(STT_MODELS[0]);
+  });
+
+  it("don't show a language picker the model would ignore, or a fake language group", () => {
+    const [medium, large] = retiredSttModels(downloaded);
+    expect(honorsLanguage(medium)).toBe(false);
+    expect(honorsLanguage(large)).toBe(true);
+    expect(sttLanguage(medium)).toBe("English");
+    expect(sttLanguage(large)).toBe("Multilingual");
+  });
+
+  it("AI models too, but not the user's own Hugging Face picks", () => {
+    const hf = { ...LLM_MODELS[0], id: "my-hf-pick" };
+    const ids = retiredLlmModels(new Set([LLM_MODELS[0].id, "qwen2.5-3b-instruct-q4", "my-hf-pick"]), [hf]).map((m) => m.id);
+    expect(ids).toEqual(["qwen2.5-3b-instruct-q4"]);
+  });
+});
 
 describe("STT_MODELS", () => {
   // Every other test here loops over the catalogue, so they would all pass

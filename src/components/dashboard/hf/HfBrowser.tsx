@@ -4,7 +4,7 @@ import ProviderLogo from "../../shared/ProviderLogo";
 import ConfirmDialog from "../../shared/ConfirmDialog";
 import Select from "../../shared/Select";
 import { useHardwareInfo } from "../../../hooks/useHardwareInfo";
-import { LLM_MODELS } from "../../../services/catalog";
+import { LLM_MODELS, retiredLlmModels } from "../../../services/catalog";
 import { fastGpu, llmCompatibility } from "../../../services/recommend";
 import { FIT_ORDER, FitCheckDialog, FitGroupHeading, fitForRamGb, formatGb, memoryWhy, usableRamGb, type Fit, type FitCheck } from "./fit";
 import { hfSearchModels, hfModelDetails } from "../../../services/tauriBridge";
@@ -13,7 +13,7 @@ import { useSettingsStore } from "../../../stores/settingsStore";
 import type { HfSearchItem, HfModelDetails, LlmModel, HardwareInfo, HfFile, SttModel, SttPreset } from "../../../types";
 import { formatMB, formatGB } from "../../../services/format";
 import SimpleMarkdown from "./SimpleMarkdown";
-import { STT_MODELS, localLanguages, sttLanguage } from "../../../services/catalog";
+import { STT_MODELS, localLanguages, retiredSttModels, sttLanguage } from "../../../services/catalog";
 import { accuracyScore, speedScore, llmQualityScore, llmSpeedScore, llmSpeedLabel, accuracyCaption, speedCaption } from "../../../services/modelMetrics";
 
 const CATEGORIES: { id: SttPreset | "all"; label: string }[] = [
@@ -324,7 +324,7 @@ export default function HfBrowser({ track }: { track: "llm" | "stt" }) {
     return getScore(b) - getScore(a);
   };
 
-  const staffPicksRaw = track === "stt" ? STT_MODELS.filter(m => {
+  const staffPicksRaw = track === "stt" ? [...STT_MODELS, ...retiredSttModels(downloadedStt)].filter(m => {
     if (category && category !== "all" && m.preset !== category) return false;
     if (language && language !== "all" && sttLanguage(m) !== language) return false;
     return true;
@@ -335,6 +335,7 @@ export default function HfBrowser({ track }: { track: "llm" | "stt" }) {
     // downloaded) sort to the top.
     ...LLM_MODELS,
     ...customLlm.filter((c) => !LLM_MODELS.some((m) => m.id === c.id)),
+    ...retiredLlmModels(downloadedLlm, customLlm),
   ];
   
   // Other languages' own models wait in "More languages" unless a language is picked in the filter.
@@ -659,9 +660,9 @@ function SttRow({
               <span className="shrink-0 rounded bg-sv-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-sv-accent">In use</span>
             ) : recommended ? (
               <span className="shrink-0 rounded bg-sv-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-sv-accent">Recommended</span>
-            ) : (
+            ) : model.size_mb > 0 ? (
               <span className="shrink-0 rounded bg-sv-surface-2 px-1.5 py-0.5 text-[10px] text-sv-muted">Staff Pick</span>
-            )}
+            ) : null}
           </div>
           <div className="truncate text-[11px] text-sv-muted">{model.provider}</div>
           {progress?.status === "error" && <div className="truncate text-[11px] text-sv-bad">{progress.error}</div>}
@@ -676,7 +677,7 @@ function SttRow({
         {/* Size / RAM — its own right-aligned column so it lines up down the list. */}
         <div className="hidden sm:block w-[86px] shrink-0 text-right tabular-nums">
           <div className="text-[12.5px] font-semibold text-sv-text">{formatMB(model.size_mb)}</div>
-          <div className="text-[10.5px] text-sv-muted">{model.ram_mb} MB RAM</div>
+          {model.ram_mb > 0 && <div className="text-[10.5px] text-sv-muted">{model.ram_mb} MB RAM</div>}
         </div>
 
         <div className="ml-auto flex w-[190px] shrink-0 items-center justify-end gap-2">
@@ -859,9 +860,9 @@ function LlmRow({
             <span className="truncate text-[13px] font-semibold text-sv-text">{model.name}</span>
             {inUse ? (
               <span className="shrink-0 rounded bg-sv-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-sv-accent">In use</span>
-            ) : (
+            ) : model.size_mb > 0 ? (
               <span className="shrink-0 rounded bg-sv-surface-2 px-1.5 py-0.5 text-[10px] text-sv-muted">Staff Pick</span>
-            )}
+            ) : null}
           </div>
           <div className="truncate text-[11px] text-sv-muted">{model.provider}</div>
           {progress?.status === "error" && <div className="truncate text-[11px] text-sv-bad">{progress.error}</div>}
@@ -874,7 +875,7 @@ function LlmRow({
 
         <div className="hidden sm:block w-[86px] shrink-0 text-right tabular-nums">
           <div className="text-[12.5px] font-semibold text-sv-text">{model.params}</div>
-          <div className="text-[10.5px] text-sv-muted">{formatGB(model.ram_gb)} RAM</div>
+          {model.ram_gb > 0 && <div className="text-[10.5px] text-sv-muted">{formatGB(model.ram_gb)} RAM</div>}
         </div>
 
         <div className="ml-auto flex w-[190px] shrink-0 items-center justify-end gap-2">

@@ -202,6 +202,8 @@ function textOn(hex: string): string {
 
 function initials(s: string): string {
   const words = s.replace(/[().]/g, "").split(/\s+/).filter(Boolean);
+  // No name (a model that left the catalog has no provider): a neutral mark, not a crash.
+  if (words.length === 0) return "?";
   if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
   return (words[0][0] + words[1][0]).toUpperCase();
 }

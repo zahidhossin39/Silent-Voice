@@ -7,7 +7,7 @@ import Select from "../shared/Select";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useModelStore } from "../../stores/modelStore";
 import { localLlmGenerate, apiGenerate } from "../../services/tauriBridge";
-import { LLM_MODELS } from "../../services/catalog";
+import { LLM_MODELS, retiredLlmModels } from "../../services/catalog";
 import { formatGB } from "../../services/format";
 import { SAMPLE_INPUT } from "../../services/modes";
 import { ModelPicker as CloudModelPicker, isChatModel, useProviders } from "./providers/shared";
@@ -300,6 +300,7 @@ function Editor({
   const localModels = [
     ...LLM_MODELS.filter((m) => downloadedLlm.has(m.id)),
     ...customLlm.filter((m) => downloadedLlm.has(m.id)),
+    ...retiredLlmModels(downloadedLlm, customLlm),
   ];
   const localReady =
     mode.model_source === "local" && downloadedLlm.has(mode.model_id);

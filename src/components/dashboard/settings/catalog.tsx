@@ -8,7 +8,7 @@ import HotkeyRecorder from "../../shared/HotkeyRecorder";
 import Select from "../../shared/Select";
 import { useSettingsStore } from "../../../stores/settingsStore";
 import { useModelStore } from "../../../stores/modelStore";
-import { LANGUAGES, STT_MODELS, TTS_MODELS, TTS_SAMPLE_TEXT, honorsLanguage } from "../../../services/catalog";
+import { LANGUAGES, TTS_MODELS, findSttModel, TTS_SAMPLE_TEXT, honorsLanguage } from "../../../services/catalog";
 import { copyDiagnostics, copyToClipboard, exportLogs, openLogsFolder, previewDictationSound, ttsSpeakText } from "../../../services/tauriBridge";
 import { checkForUpdatesManual } from "../../../services/updater";
 import type { Settings } from "../../../types";
@@ -55,7 +55,7 @@ const UNDERLINES = "Underline mistakes as I type";
 const READ_ALOUD = "Read selected text aloud";
 
 export const SETTINGS: SettingDef[] = [
-  // â”€â”€ Dictation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Dictation ────────────────────────────────────────────────────────────
   {
     id: "hotkey",
     topic: "dictation",
@@ -208,7 +208,7 @@ export const SETTINGS: SettingDef[] = [
     render: (c) => <CloudSourceSelect c={c} />,
   },
 
-  // â”€â”€ Writing help â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Writing help ─────────────────────────────────────────────────────────
   {
     id: "proofread",
     topic: "writing",
@@ -332,7 +332,7 @@ export const SETTINGS: SettingDef[] = [
     render: () => <ProfilesEditor />,
   },
 
-  // â”€â”€ Read aloud â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Read aloud ───────────────────────────────────────────────────────────
   {
     id: "tts",
     topic: "readaloud",
@@ -379,7 +379,7 @@ export const SETTINGS: SettingDef[] = [
     render: (c) => <PlaySample c={c} />,
   },
 
-  // â”€â”€ Words â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Words ────────────────────────────────────────────────────────────────
   {
     id: "vocab",
     topic: "words",
@@ -449,7 +449,7 @@ export const SETTINGS: SettingDef[] = [
     ),
   },
 
-  // â”€â”€ System â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── System ───────────────────────────────────────────────────────────────
   {
     id: "startup",
     topic: "system",
@@ -509,11 +509,11 @@ export const SETTINGS: SettingDef[] = [
   },
 ];
 
-// â”€â”€â”€ Controls with their own state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Controls with their own state ─────────────────────────────────────────
 
 function LanguageControl({ c }: { c: Ctx }) {
-  const model = STT_MODELS.find((m) => m.id === c.s.active_stt_model);
-  // A model that ignores the language setting must not show a live picker â€”
+  const model = findSttModel(c.s.active_stt_model, useModelStore((s) => s.downloaded));
+  // A model that ignores the language setting must not show a live picker —
   // that silent mismatch is what made Bangla come back as English.
   if (!honorsLanguage(model))
     return (
@@ -536,9 +536,9 @@ function VoiceModelLink({ c }: { c: Ctx }) {
   const downloaded = useModelStore((s) => s.downloaded);
   const providers = useSettingsStore((s) => s.providers);
   const cloud = providers.find((p) => p.id === c.s.stt_cloud_provider_id);
-  const model = STT_MODELS.find((m) => m.id === c.s.active_stt_model);
+  const model = findSttModel(c.s.active_stt_model, downloaded);
   const ready = !!model && downloaded.has(model.id);
-  const name = cloud ? `Cloud Â· ${cloud.name}` : model ? model.label : "None chosen";
+  const name = cloud ? `Cloud · ${cloud.name}` : model ? model.label : "None chosen";
   return (
     <span className="inline-flex items-center gap-3 text-[13px]">
       <span className={cloud || ready ? "text-sv-text" : "text-sv-muted"}>{name}</span>
@@ -589,7 +589,7 @@ function VoicePicker({ c }: { c: Ctx }) {
         v.voices
           ? v.voices.map((vo) => (
               <option key={`${v.id}#${vo.sid}`} value={`${v.id}#${vo.sid}`}>
-                {v.label} Â· {vo.label}
+                {v.label} · {vo.label}
               </option>
             ))
           : [
@@ -712,9 +712,9 @@ function UpdateCheck() {
         </span>
       )}
       <GhostButton
-        disabled={msg === "Checkingâ€¦"}
+        disabled={msg === "Checking…"}
         onClick={async () => {
-          setMsg("Checkingâ€¦");
+          setMsg("Checking…");
           const r = await checkForUpdatesManual();
           setMsg(
             r.status === "none"
@@ -725,7 +725,7 @@ function UpdateCheck() {
               ? "Updates need the desktop app"
               : r.status === "managed"
               ? "Update with your package manager (yay -Syu)"
-              : "Installing the updateâ€¦"
+              : "Installing the update…"
           );
         }}
       >
