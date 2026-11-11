@@ -38,3 +38,33 @@ never knows anyone's name.
 
 **Suggested order:** the Discord probe first. If the speaking signal exists,
 build 1 for Discord, plus 3 as the fallback. Then add 2, then Zoom and Meet.
+
+## Notetaker: record-only meetings + an MCP server for any agent
+
+**Idea (2026-11-11):** a "Record only" meeting mode. Silent Voice records the
+two tracks (You, Others) and transcribes nothing: no STT API, no local model.
+The app runs an MCP server, and any agent with MCP support (Claude, Gemini,
+others) connects to it and does the transcription, speaker labels and summary.
+
+**Decided:**
+- The app's own transcription stays as an option. Record-only is a choice,
+  not a replacement.
+- Any MCP-capable agent can connect, not one vendor.
+- The rejected alternative: a built-in "Refine with Gemini" step.
+
+**What we know:**
+- Tools for a first version: `list_meetings`, `get_meeting_audio` (gives the
+  WAV paths, not the bytes), `save_transcript` (lines with time, You/Others,
+  speaker).
+- Audio is big: an hour is 50-100 MB of WAV. MCP messages are JSON/base64, so
+  hand the agent a file path and let it upload the file itself (for example
+  Gemini's Files API with the agent's own key).
+- Not every agent can listen. Gemini takes audio directly; it was our
+  reference for speaker labels (~88% agreement with our clustering). Claude
+  models take no audio input, so a Claude agent needs a transcriber of its own
+  (an STT tool or API). Document that per agent.
+- Transport: stdio (`silent-voice --mcp`, forwarded via single-instance like
+  `--start/--stop`) or streamable HTTP on localhost. Decide when building.
+
+**Next step:** grill the design (transport, tool shapes, how a saved
+transcript shows up on the Notetaker page), then test with agy / Gemini CLI.
