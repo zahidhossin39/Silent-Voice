@@ -71,7 +71,9 @@ transcript shows up on the Notetaker page), then test with agy / Gemini CLI.
 
 ## Mobile app (Android / iOS)
 
-**Status (2026-11-12):** starting in a new session. Nothing built yet.
+**Status (2026-11-12):** planned, on branch `mobile`. Decisions and build order
+are in `docs/mobile/PLAN.md` (native Kotlin, floating bubble, shared Rust crate;
+not Tauri). Nothing built yet. The notes below predate that plan.
 
 **What carries over:** Tauri v2 builds for Android and iOS, so the React
 dashboard (`src/`), the Zustand stores, `services/catalog.ts`, the cloud
