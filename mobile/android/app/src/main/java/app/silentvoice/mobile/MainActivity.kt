@@ -6,8 +6,17 @@ import android.content.pm.PackageManager
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
+import android.content.Intent
 import android.os.Bundle
+import android.provider.Settings
+import android.text.InputType
+import android.widget.EditText
+import androidx.compose.ui.viewinterop.AndroidView
 import android.util.Log
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -183,6 +192,41 @@ private fun SpikeScreen(bench: String?) {
             OutlinedButton(enabled = !busy, onClick = { guarded { runSample(selected) } }) { Text("Run sample clip") }
         }
         Text(log, style = MaterialTheme.typography.bodySmall)
+
+        // Bubble spike (plan step 2): turn the service on, then try it in these
+        // two fields or in any other app.
+        val bubbleOn = Settings.Secure.getString(ctx.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
+            .orEmpty().contains(ctx.packageName)
+        Text("Bubble", style = MaterialTheme.typography.titleMedium)
+        Text(if (bubbleOn) "Bubble service is on." else "Bubble service is off. Turn on \"Silent Voice bubble\" in Accessibility.")
+        OutlinedButton(onClick = { ctx.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }) {
+            Text("Open Accessibility settings")
+        }
+        var plain by remember { mutableStateOf("") }
+        var secret by remember { mutableStateOf("") }
+        // Native fields: what most apps (WhatsApp, Gmail) use.
+        AndroidView(
+            factory = { EditText(it).apply { hint = "Native test field" } },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        AndroidView(
+            factory = {
+                EditText(it).apply {
+                    hint = "Native password field"
+                    inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        // Compose fields: the newer toolkit some apps use.
+        OutlinedTextField(plain, { plain = it }, label = { Text("Test field") }, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(
+            secret, { secret = it },
+            label = { Text("Password test field") },
+            visualTransformation = PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }
 

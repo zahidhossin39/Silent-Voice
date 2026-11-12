@@ -67,6 +67,16 @@ Each step ends with something that runs on the phone. Commit at each.
 2. **Bubble spike.** Accessibility Service + overlay bubble that appears with the
    keyboard and inserts a fixed test string into WhatsApp, Gmail and Chrome.
    Includes the password skip and the clipboard fallback.
+   **Built 2026-11-13, checked on the emulator only.** The bubble shows above
+   the keyboard and hides with it. In native fields it inserts at the cursor and
+   skips password fields. Not yet tried on the phone or in WhatsApp, Gmail, Chrome.
+   Open problem: in a Jetpack Compose field, text set through accessibility was
+   lost when the next key was typed (seen in our own test field; unknown in real
+   apps). If real apps show it, insert by paste instead, which costs the user's
+   clipboard contents. Three bugs found and fixed on the way: touching the bubble
+   made it the "active window" so the field was not found; the focused node can
+   be a wrapper, not the field; and "first editable field" typed into the wrong
+   field when a password field had focus (now: only the field that has focus).
 3. **Shared crate.** `crates/sv-core` with the copied text logic and its tests,
    built for Android and called from Kotlin through UniFFI.
 4. **Pipeline.** Record, trim silence, transcribe, clean up, optional cloud AI

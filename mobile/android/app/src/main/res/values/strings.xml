@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="bubble_label">Silent Voice bubble</string>
+    <string name="bubble_desc">Shows a microphone bubble while the keyboard is open and types what you dictate into the field you are in. It only touches the field you are typing in, and never password fields.</string>
+</resources>
