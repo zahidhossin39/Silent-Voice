@@ -59,6 +59,11 @@ Each step ends with something that runs on the phone. Commit at each.
 1. **Engine spike.** Bare Kotlin app: record, run a small English model, show the
    text and the time taken. Try Moonshine tiny, Moonshine base and Parakeet 110M;
    pick the default from the measured speed and accuracy on the test phone.
+   **Done 2026-11-12.** Default is Parakeet 110M: a 16.7 s clip takes 0.8 s on
+   the test phone when rested and 1.2-1.3 s when busy (Moonshine Tiny 1.4 s,
+   Moonshine Base 3.7 s). Numbers in `mobile/android/README.md`. The 1 s target
+   is borderline, not safely met, so transcribe-while-speaking stays next in
+   line after the first version.
 2. **Bubble spike.** Accessibility Service + overlay bubble that appears with the
    keyboard and inserts a fixed test string into WhatsApp, Gmail and Chrome.
    Includes the password skip and the clipboard fallback.
