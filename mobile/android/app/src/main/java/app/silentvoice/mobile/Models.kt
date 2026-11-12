@@ -39,10 +39,15 @@ object ModelStore {
         conn.connect()
         check(conn.responseCode == 200) { "Download failed: HTTP ${conn.responseCode}" }
         val total = conn.contentLengthLong
-        val counting = CountingStream(BufferedInputStream(conn.inputStream)) { read ->
-            if (total > 0) onProgress(read.toFloat() / total)
+        // Counting sits UNDER the buffer so it sees 64 KB blocks, not single bytes
+        // (the bzip2 reader asks for one byte at a time), and it reports only on
+        // each whole percent: a callback per byte made the download crawl.
+        var lastPercent = -1
+        val counting = CountingStream(conn.inputStream) { read ->
+            val percent = if (total > 0) (read * 100 / total).toInt() else -1
+            if (percent != lastPercent) { lastPercent = percent; onProgress(percent / 100f) }
         }
-        TarArchiveInputStream(BZip2CompressorInputStream(counting)).use { tar ->
+        TarArchiveInputStream(BZip2CompressorInputStream(BufferedInputStream(counting, 1 shl 16))).use { tar ->
             while (true) {
                 val entry = tar.nextEntry ?: break
                 // Drop the archive's top folder ("./name/" or "name/").
