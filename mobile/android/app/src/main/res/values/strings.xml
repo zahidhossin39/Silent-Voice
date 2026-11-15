@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="app_name">Silent Voice</string>
     <string name="bubble_label">Silent Voice bubble</string>
-    <string name="bubble_desc">Shows a microphone bubble while the keyboard is open and types what you dictate into the field you are in. It only touches the field you are typing in, and never password fields.</string>
+    <string name="bubble_desc">Shows a microphone bubble while your keyboard is open and types what you say into the field you are in. It only touches that one field, and never password fields. Nothing you type is read, stored or sent anywhere.</string>
 </resources>

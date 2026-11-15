@@ -1,0 +1,22 @@
+[package]
+name = "sv-core"
+version = "0.1.0"
+edition = "2021"
+description = "Silent Voice text logic shared with the mobile apps (called from Kotlin and Swift through UniFFI)"
+license = "MIT"
+
+[lib]
+crate-type = ["lib", "cdylib", "staticlib"]
+name = "sv_core"
+
+[dependencies]
+uniffi = { version = "0.28", features = ["cli"] }
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "uniffi-bindgen.rs"
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true

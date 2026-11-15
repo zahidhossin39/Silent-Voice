@@ -3,45 +3,62 @@ package app.silentvoice.mobile
 import android.accessibilityservice.AccessibilityService
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
+import android.graphics.Canvas
+import android.graphics.Paint
 import android.graphics.PixelFormat
 import android.graphics.Rect
-import android.graphics.drawable.GradientDrawable
+import android.graphics.RectF
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import android.view.Gravity
+import android.view.HapticFeedbackConstants
 import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
-import android.widget.ImageView
 import android.widget.Toast
+import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 
 private const val TAG = "SVBubble"
 
 /**
- * Bubble spike (docs/mobile/PLAN.md step 2). Shows a mic bubble just above the
- * keyboard whenever the keyboard is open, and on tap inserts a fixed test string
- * into the focused field. Real dictation replaces the test string in step 4.
+ * The mic bubble. It sits just above the keyboard whenever the keyboard is open;
+ * tap to start talking, tap again to finish, and the text is typed at the cursor
+ * of the focused field.
  *
  * An accessibility service may draw its own overlay (TYPE_ACCESSIBILITY_OVERLAY),
  * so no separate "draw over other apps" permission is needed.
  *
- * What it reads: the list of windows (to find the keyboard) and, at the moment of
- * a tap, the focused field's text and cursor position (needed to insert at the
- * cursor). Nothing is stored or logged; password fields are never read or written.
+ * What it reads: the list of windows (to find the keyboard) and, at the moment
+ * text is inserted, the focused field's text and cursor position (needed to
+ * insert at the cursor). Nothing is stored or logged; password fields are never
+ * read or written.
  */
 class BubbleService : AccessibilityService() {
 
     private val handler = Handler(Looper.getMainLooper())
     private val refresh = Runnable { update() }
-    private var bubble: View? = null
+    private val scope = MainScope()
+    private var bubble: BubbleView? = null
     private var shownAtY = Int.MIN_VALUE
 
     override fun onServiceConnected() {
         Log.i(TAG, "connected")
+        scope.launch {
+            Dictation.phase.collect {
+                bubble?.phase = it
+                update() // a finished dictation may now let the bubble hide
+            }
+        }
+        scope.launch { Dictation.level.collect { bubble?.level = it } }
         update()
     }
 
@@ -55,6 +72,7 @@ class BubbleService : AccessibilityService() {
 
     override fun onDestroy() {
         handler.removeCallbacks(refresh)
+        scope.cancel()
         hide()
         super.onDestroy()
     }
@@ -69,14 +87,19 @@ class BubbleService : AccessibilityService() {
 
     private fun update() {
         val top = keyboardTop()
-        if (top == null) hide() else show(top)
+        when {
+            top != null -> show(top)
+            // Keyboard closed mid-dictation: stay put so the user can still finish.
+            Dictation.phase.value != Dictation.Phase.Idle -> {}
+            else -> hide()
+        }
     }
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
     private fun show(keyboardTop: Int) {
-        val size = dp(52)
-        val y = keyboardTop - size - dp(10)
+        val size = dp(68)
+        val y = keyboardTop - size - dp(4)
         if (bubble != null && y == shownAtY) return
         val wm = getSystemService(WindowManager::class.java)
         val params = WindowManager.LayoutParams(
@@ -88,7 +111,7 @@ class BubbleService : AccessibilityService() {
             PixelFormat.TRANSLUCENT,
         ).apply {
             gravity = Gravity.TOP or Gravity.END
-            x = dp(12)
+            x = dp(6)
             this.y = y
             layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         }
@@ -96,18 +119,13 @@ class BubbleService : AccessibilityService() {
         if (existing != null) {
             wm.updateViewLayout(existing, params)
         } else {
-            val view = ImageView(this).apply {
-                setImageResource(R.drawable.ic_mic)
-                setPadding(dp(13), dp(13), dp(13), dp(13))
-                background = GradientDrawable().apply {
-                    shape = GradientDrawable.OVAL
-                    setColor(0xFFF97316.toInt()) // Silent Voice orange
-                }
-                contentDescription = "Dictate with Silent Voice"
-                setOnClickListener { insert(TEST_TEXT) }
+            val view = BubbleView(this).apply {
+                phase = Dictation.phase.value
+                setOnClickListener { onTap(this) }
             }
             wm.addView(view, params)
             bubble = view
+            Dictation.warm(this) // keyboard is up: a dictation is likely
             Log.i(TAG, "bubble shown")
         }
         shownAtY = y
@@ -121,6 +139,24 @@ class BubbleService : AccessibilityService() {
         Log.i(TAG, "bubble hidden")
     }
 
+    private fun onTap(view: View) {
+        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+        Dictation.toggle(this) { outcome ->
+            when (outcome) {
+                is Dictation.Outcome.Text -> {
+                    insert(outcome.text + " ")
+                    outcome.notice?.let { toast(it) }
+                }
+                is Dictation.Outcome.Problem -> {
+                    toast(outcome.message)
+                    if (outcome.needsSetup) {
+                        startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    }
+                }
+            }
+        }
+    }
+
     /**
      * Puts [text] at the cursor of the focused field. Order of attempts:
      * 1. set the field's text directly, 2. paste from the clipboard,
@@ -129,14 +165,13 @@ class BubbleService : AccessibilityService() {
     private fun insert(text: String) {
         val node = focusedField()
         if (node == null || !node.isEditable) {
-            Log.i(TAG, "no field: node=${node != null} editable=${node?.isEditable} class=${node?.className} windows=" +
-                windows.joinToString { "${it.type}/${it.isFocused}/${it.isActive}/root=${it.root != null}" })
             copy(text)
-            done("no-field", "No text field found. Copied, paste it yourself.")
+            done("no-field", "Copied. Tap a text field and paste.")
             return
         }
         if (node.isPassword) {
-            done("password-skip", "Password field: nothing was typed.")
+            copy(text)
+            done("password-skip", "That's a password field, so nothing was typed. Your words are copied.")
             return
         }
         // An empty field reports its grey hint as its text; treat that as empty.
@@ -168,7 +203,7 @@ class BubbleService : AccessibilityService() {
         }
         copy(text)
         if (node.performAction(AccessibilityNodeInfo.ACTION_PASTE)) done("paste", null)
-        else done("clipboard-only", "This app blocked typing. Copied, paste it yourself.")
+        else done("clipboard-only", "This app blocked typing. Your words are copied, so just paste.")
     }
 
     /**
@@ -208,16 +243,84 @@ class BubbleService : AccessibilityService() {
     }
 
     private fun copy(text: String) {
-        getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Silent Voice", text))
+        getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Silent Voice", text.trim()))
     }
+
+    private fun toast(message: String) = Toast.makeText(this, message, Toast.LENGTH_LONG).show()
 
     /** Logs only HOW the insert went, never the text. */
     private fun done(how: String, notice: String?) {
         Log.i(TAG, "insert: $how")
-        if (notice != null) Toast.makeText(this, notice, Toast.LENGTH_SHORT).show()
+        if (notice != null) toast(notice)
+    }
+}
+
+/**
+ * The bubble itself, drawn by hand so each state reads at a glance:
+ * idle = mic, listening = a halo that swells with your voice around a stop
+ * square, working = a turning arc.
+ */
+class BubbleView(context: Context) : View(context) {
+    var phase = Dictation.Phase.Idle
+        set(value) {
+            field = value
+            contentDescription = when (value) {
+                Dictation.Phase.Idle -> "Start dictating with Silent Voice"
+                Dictation.Phase.Recording -> "Finish dictating"
+                Dictation.Phase.Working -> "Silent Voice is writing"
+            }
+            invalidate()
+        }
+    var level = 0f
+
+    private val orange = 0xFFF97316.toInt()
+    private val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = orange }
+    private val halo = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = orange; alpha = 70 }
+    private val white = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFFFFFFF.toInt() }
+    private val arc = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0xFFFFFFFF.toInt()
+        style = Paint.Style.STROKE
+        strokeCap = Paint.Cap.ROUND
+    }
+    private val mic = context.getDrawable(R.drawable.ic_mic)!!
+    private val box = RectF()
+    private var shownLevel = 0f
+
+    init {
+        contentDescription = "Start dictating with Silent Voice"
     }
 
-    companion object {
-        const val TEST_TEXT = "Silent Voice test. "
+    override fun onDraw(c: Canvas) {
+        val cx = width / 2f
+        val cy = height / 2f
+        val outer = minOf(cx, cy)
+        val core = outer * 0.76f
+        when (phase) {
+            Dictation.Phase.Idle -> {
+                c.drawCircle(cx, cy, core, fill)
+                val h = (core * 0.56f).toInt()
+                mic.setBounds((cx - h).toInt(), (cy - h).toInt(), (cx + h).toInt(), (cy + h).toInt())
+                mic.draw(c)
+            }
+            Dictation.Phase.Recording -> {
+                // Ease toward the live level so the halo swells instead of flickering.
+                shownLevel += (level - shownLevel) * 0.25f
+                c.drawCircle(cx, cy, core + (outer - core) * (0.25f + 0.75f * shownLevel), halo)
+                c.drawCircle(cx, cy, core, fill)
+                val s = core * 0.34f
+                box.set(cx - s, cy - s, cx + s, cy + s)
+                c.drawRoundRect(box, s * 0.3f, s * 0.3f, white)
+                postInvalidateOnAnimation()
+            }
+            Dictation.Phase.Working -> {
+                c.drawCircle(cx, cy, core, fill)
+                val r = core * 0.5f
+                arc.strokeWidth = core * 0.13f
+                box.set(cx - r, cy - r, cx + r, cy + r)
+                val angle = (SystemClock.uptimeMillis() % 900L) / 900f * 360f
+                c.drawArc(box, angle, 270f, false, arc)
+                postInvalidateOnAnimation()
+            }
+        }
     }
 }

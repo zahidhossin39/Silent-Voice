@@ -15,7 +15,10 @@ data class SttModel(val id: String, val label: String, val engine: Engine, val a
     val url get() = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/$archive.tar.bz2"
 }
 
-/** The three candidates for the phone default (docs/mobile/PLAN.md, step 1). */
+/** Measured fastest on the test phone (mobile/android/README.md). */
+const val DEFAULT_MODEL_ID = "parakeet-110m-en"
+
+/** The three candidates that were measured; only the default is downloaded. */
 val MODELS = listOf(
     SttModel("moonshine-tiny-en", "Moonshine Tiny", Engine.MOONSHINE, "sherpa-onnx-moonshine-tiny-en-int8"),
     SttModel("moonshine-base-en", "Moonshine Base", Engine.MOONSHINE, "sherpa-onnx-moonshine-base-en-int8"),
@@ -65,6 +68,11 @@ object ModelStore {
         }
         val dest = dir(ctx, m).apply { deleteRecursively() }
         check(tmp.renameTo(dest)) { "Could not move model into place" }
+    }
+
+    /** Frees space taken by models that were only downloaded for the speed test. */
+    fun removeUnused(ctx: Context) {
+        root(ctx).listFiles()?.forEach { if (it.name != DEFAULT_MODEL_ID) it.deleteRecursively() }
     }
 
     /** The longest test clip shipped with any installed model: the shared benchmark clip. */
