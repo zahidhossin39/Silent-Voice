@@ -1,8 +1,30 @@
 # Silent Voice for Android
 
-Native Kotlin app. Plan and decisions: `docs/mobile/PLAN.md`. Right now this is
-the step 1 engine spike: it downloads a small English model, records or uses a
-sample clip, and shows the text and how long it took.
+Native Kotlin app (Jetpack Compose, Material 3). Plan and decisions:
+`docs/mobile/PLAN.md`. Download: the newest `android-v*` pre-release on GitHub.
+
+What it does: an orange mic bubble appears above the keyboard in any app. Tap,
+talk, tap again, and the cleaned text is typed at the cursor. Speech is
+transcribed on the phone (sherpa-onnx, Parakeet 110M). Clean-up (fillers,
+repeats, numbers, "new line") is the desktop code, shared through the Rust crate
+`crates/sv-core` (UniFFI). Writing modes send the text to the user's own AI
+provider and fall back to the plain words on any failure.
+
+Layout: `app/src/main/java/app/silentvoice/mobile/` holds `BubbleService`
+(bubble + typing into the focused field), `Dictation` (the pipeline), `Stt` and
+`Models` (engine, download), `Ai`, `History`, `Prefs`, and `ui/` (theme,
+onboarding, screens). `uniffi/sv_core/` is generated; do not edit it.
+
+After changing `crates/sv-core`, run `scriptsuild-core.ps1`.
+
+Check a build without speaking (prints `SELFTEST ok` to logcat tag `SVDictation`):
+
+```powershell
+& $adb shell am start -n app.silentvoice.mobile/.MainActivity --ez selftest true
+```
+
+Releases are signed with this PC's debug key (`%USERPROFILE%\.android\debug.keystore`).
+A build signed elsewhere will not install over it; keep that file, or uninstall first.
 
 ## Build and run (PowerShell)
 
@@ -19,20 +41,6 @@ $env:JAVA_TOOL_OPTIONS = "-Djdk.net.unixdomain.tmpdir=D:/svtmp"
 ```
 
 `local.properties` (not committed) must hold `sdk.dir=` pointing at the Android SDK.
-
-## Measure the three models
-
-With a phone connected over USB (USB debugging on), or the `sv_test` emulator running:
-
-```powershell
-$adb = "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe"
-& $adb logcat -c
-& $adb shell am start -n app.silentvoice.mobile/.MainActivity --es bench all
-& $adb logcat -s SVBench:*      # ends with "BENCH DONE"
-```
-
-Each model runs the same 16.7 s sample clip twice (cold, then warm). The first
-run downloads about 440 MB of models inside the app.
 
 ## Results on the test phone
 

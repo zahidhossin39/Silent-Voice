@@ -77,6 +77,17 @@ Each step ends with something that runs on the phone. Commit at each.
    made it the "active window" so the field was not found; the focused node can
    be a wrapper, not the field; and "first editable field" typed into the wrong
    field when a password field had focus (now: only the field that has focus).
+**Steps 3 to 6 done 2026-11-16, released as `android-v0.1.0` (pre-release).**
+   Done: `crates/sv-core` (desktop textfmt copy, UniFFI), the pipeline, Material 3
+   screens (onboarding, home, history, settings, writing modes), APK on GitHub.
+   Checked: self-test on the phone (7.4 s clip in 0.45 s, clean-up through Rust),
+   every screen and the bubble's states on the emulator.
+   Not checked: speaking through the bubble on the phone, writing modes against a
+   real provider, the Compose-field text loss noted in step 2.
+   Left out of 0.1.0: vocabulary and replacements screens (the crate has
+   `apply_replacements`, nothing calls it yet), cloud speech, the APK built in
+   GitHub Actions (it is built on the dev PC), cloud calls living in the Rust crate
+   (they are in Kotlin, `Ai.kt`).
 3. **Shared crate.** `crates/sv-core` with the copied text logic and its tests,
    built for Android and called from Kotlin through UniFFI.
 4. **Pipeline.** Record, trim silence, transcribe, clean up, optional cloud AI

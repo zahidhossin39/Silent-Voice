@@ -16,6 +16,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        if (intent.getBooleanExtra("selftest", false)) Dictation.selfTest(this)
         setContent {
             SilentVoiceTheme {
                 var onboarded by remember { mutableStateOf(Prefs.onboarded) }

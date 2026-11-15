@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
@@ -347,9 +348,14 @@ private fun BubbleStep(tick: Int, next: () -> Unit) {
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Spacer(Modifier.height(8.dp))
-            TextButton(onClick = { openAppInfo(ctx) }, contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) {
-                Text("Switch greyed out? Open App info, tap ⋮, Allow restricted settings")
+            Spacer(Modifier.height(16.dp))
+            Text(
+                "Switch greyed out? Open App info, tap the ⋮ menu, then Allow restricted settings.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            TextButton(onClick = { openAppInfo(ctx) }, modifier = Modifier.offset(x = (-12).dp)) {
+                Text("Open App info")
             }
         }
     }

@@ -157,6 +157,28 @@ object Dictation {
         return Outcome.Text(text, notice)
     }
 
+    /**
+     * Runs the model's bundled sample clip through transcription and clean-up and
+     * logs the result. Lets a build be checked from a PC without anyone speaking:
+     *   adb shell am start -n app.silentvoice.mobile/.MainActivity --ez selftest true
+     */
+    fun selfTest(ctx: Context) {
+        val app = ctx.applicationContext
+        scope.launch {
+            try {
+                val wav = ModelStore.sampleWav(app) ?: error("no sample clip (model not downloaded)")
+                val (samples, rate) = readWav(wav)
+                val r = engine(app).transcribe(samples, rate)
+                val opts = CleanOptions(true, true, true, true, true)
+                val text = cleanAfterAi(cleanBeforeAi(r.text, opts), opts).trim()
+                val probe = cleanAfterAi(cleanBeforeAi("Um, we need need twenty five.", opts), opts)
+                Log.i(TAG, "SELFTEST ok: ${"%.1f".format(r.audioSec)} s audio in ${r.decodeMs} ms; clean-up probe=[$probe]; text=[$text]")
+            } catch (e: Throwable) {
+                Log.e(TAG, "SELFTEST failed: $e", e)
+            }
+        }
+    }
+
     /** Records 16 kHz mono until [stop] is set or the time cap is reached. */
     @SuppressLint("MissingPermission") // start() checks RECORD_AUDIO first
     private fun record(): FloatArray {
