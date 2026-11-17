@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Themed-icon version: the same five bars in one colour (the system tints it). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="1024" android:viewportHeight="1024">
+    <group android:pivotX="512" android:pivotY="512" android:scaleX="0.6667" android:scaleY="0.6667">
+        <path android:fillColor="#FFFFFFFF" android:pathData="M272,432h0a40,40 0,0 1,40 40v80a40,40 0,0 1,-80 0v-80a40,40 0,0 1,40 -40z" />
+        <path android:fillColor="#FFFFFFFF" android:pathData="M400,352h0a40,40 0,0 1,40 40v240a40,40 0,0 1,-80 0v-240a40,40 0,0 1,40 -40z" />
+        <path android:fillColor="#FFFFFFFF" android:pathData="M528,252h0a40,40 0,0 1,40 40v440a40,40 0,0 1,-80 0v-440a40,40 0,0 1,40 -40z" />
+        <path android:fillColor="#FFFFFFFF" android:pathData="M656,352h0a40,40 0,0 1,40 40v240a40,40 0,0 1,-80 0v-240a40,40 0,0 1,40 -40z" />
+        <path android:fillColor="#FFFFFFFF" android:pathData="M784,432h0a40,40 0,0 1,40 40v80a40,40 0,0 1,-80 0v-80a40,40 0,0 1,40 -40z" />
+    </group>
+</vector>

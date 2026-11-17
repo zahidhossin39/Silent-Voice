@@ -15,6 +15,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -45,8 +47,12 @@ object Dictation {
     }
 
     val phase = MutableStateFlow(Phase.Idle)
-    /** Loudness right now, 0..1, for the bubble's pulse. */
-    val level = MutableStateFlow(0f)
+    /**
+     * Loudness of every 50 ms of audio, 0..1, mapped like the desktop pill (see
+     * [Pill.norm]). A SharedFlow, not a StateFlow: silence is exactly 0 again and
+     * again, and a StateFlow would drop the repeats, freezing the bars.
+     */
+    val level = MutableSharedFlow<Float>(extraBufferCapacity = 8, onBufferOverflow = BufferOverflow.DROP_OLDEST)
 
     val model get() = MODELS.first { it.id == DEFAULT_MODEL_ID }
 
@@ -115,7 +121,6 @@ object Dictation {
                 Log.e(TAG, "dictation failed", e)
                 Outcome.Problem("Something went wrong. Nothing was typed.")
             }
-            level.value = 0f
             phase.value = Phase.Idle
             withContext(Dispatchers.Main) { onDone(outcome) }
         }
@@ -198,8 +203,7 @@ object Dictation {
                 if (got <= 0) continue
                 if (n + got > out.size) out = out.copyOf(out.size * 2)
                 for (i in 0 until got) out[n + i] = chunk[i] / 32768f
-                // Speech sits around 0.02-0.2 RMS; scale that to a 0..1 pulse.
-                level.value = (rms(out, n, n + got) * 9f).coerceIn(0f, 1f)
+                level.tryEmit(Pill.norm(rms(out, n, n + got)))
                 n += got
             }
         } finally {

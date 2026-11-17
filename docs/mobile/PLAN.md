@@ -88,6 +88,14 @@ Each step ends with something that runs on the phone. Commit at each.
    `apply_replacements`, nothing calls it yet), cloud speech, the APK built in
    GitHub Actions (it is built on the dev PC), cloud calls living in the Rust crate
    (they are in Kotlin, `Ai.kt`).
+**0.1.1 (2026-11-17).** The bubble stopped appearing after days unused: Xiaomi
+   kills the app on a swipe in Recents and Android leaves the accessibility
+   service marked crashed (switch still on). The app now detects this (On /
+   Stopped / Off), shows how to recover, and asks for Autostart and the battery
+   exemption; `scripts/check-bubble.ps1` checks it. Design now follows desktop:
+   round bubble with the desktop pill's animation inside, desktop logo as the
+   launcher icon, desktop colour tokens. Not checked: a real swipe-away on the
+   phone after granting Autostart.
 3. **Shared crate.** `crates/sv-core` with the copied text logic and its tests,
    built for Android and called from Kotlin through UniFFI.
 4. **Pipeline.** Record, trim silence, transcribe, clean up, optional cloud AI

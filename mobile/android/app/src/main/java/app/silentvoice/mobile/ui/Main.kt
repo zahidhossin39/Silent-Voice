@@ -9,7 +9,6 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -88,6 +87,7 @@ import app.silentvoice.mobile.Ai
 import app.silentvoice.mobile.Dictation
 import app.silentvoice.mobile.Entry
 import app.silentvoice.mobile.History
+import app.silentvoice.mobile.Keepalive
 import app.silentvoice.mobile.ModelDownload
 import app.silentvoice.mobile.Prefs
 import app.silentvoice.mobile.R
@@ -145,10 +145,12 @@ fun MainScreen() {
 // ---------------------------------------------------------------- shared bits
 
 @Composable
-private fun ScreenTitle(eyebrow: String, title: String) {
-    Column(Modifier.padding(top = 28.dp, bottom = 20.dp)) {
-        Text(eyebrow.uppercase(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-        Spacer(Modifier.height(6.dp))
+private fun ScreenTitle(eyebrow: String?, title: String) {
+    Column(Modifier.padding(top = if (eyebrow == null) 20.dp else 28.dp, bottom = 20.dp)) {
+        if (eyebrow != null) {
+            Text(eyebrow.uppercase(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.height(6.dp))
+        }
         Text(
             title,
             style = MaterialTheme.typography.displaySmall,
@@ -223,18 +225,19 @@ private fun copyText(ctx: Context, text: String) {
 }
 
 /**
- * A mic button that dictates inside the app, without the bubble. Lets someone
- * try Silent Voice before they have turned the bubble on.
+ * The bubble as a big button that dictates inside the app, without the
+ * floating bubble. Lets someone try Silent Voice before that is on.
  */
 @Composable
 fun InAppMic(onText: (String) -> Unit) {
     val ctx = LocalContext.current
     val phase by Dictation.phase.collectAsState()
-    val level by Dictation.level.collectAsState()
+    var doneKey by remember { mutableIntStateOf(0) }
     val go = {
         Dictation.toggle(ctx) { outcome ->
             when (outcome) {
                 is Dictation.Outcome.Text -> {
+                    doneKey++
                     onText(outcome.text)
                     outcome.notice?.let { Toast.makeText(ctx, it, Toast.LENGTH_LONG).show() }
                 }
@@ -243,34 +246,25 @@ fun InAppMic(onText: (String) -> Unit) {
         }
     }
     val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok -> if (ok) go() }
-    val halo by animateFloatAsState(if (phase == Dictation.Phase.Recording) 0.3f + 0.7f * level else 0f, tween(120), label = "halo")
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(Modifier.size(96.dp), contentAlignment = Alignment.Center) {
-            Box(Modifier.size((64 + 32 * halo).dp).clip(CircleShape).background(Brand.copy(alpha = 0.25f)))
-            Box(
-                Modifier.size(64.dp).clip(CircleShape).background(Brand)
-                    .clickable(
-                        enabled = phase != Dictation.Phase.Working,
-                        role = Role.Button,
-                        onClick = {
-                            if (Dictation.micGranted(ctx)) go() else ask.launch(Manifest.permission.RECORD_AUDIO)
-                        },
-                    )
-                    .semantics {
-                        contentDescription = if (phase == Dictation.Phase.Recording) "Finish dictating" else "Start dictating"
+        Box(
+            Modifier.size(80.dp).clip(CircleShape)
+                .clickable(
+                    enabled = phase != Dictation.Phase.Working,
+                    role = Role.Button,
+                    onClick = {
+                        if (Dictation.micGranted(ctx)) go() else ask.launch(Manifest.permission.RECORD_AUDIO)
                     },
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    painterResource(if (phase == Dictation.Phase.Recording) R.drawable.ic_stop else R.drawable.ic_mic),
-                    null, tint = Color.White, modifier = Modifier.size(28.dp),
                 )
-            }
-        }
+                .semantics {
+                    contentDescription = if (phase == Dictation.Phase.Recording) "Finish dictating" else "Start dictating"
+                },
+        ) { PillView(phase, Modifier.fillMaxSize(), doneKey) }
+        Spacer(Modifier.height(12.dp))
         Text(
             when (phase) {
-                Dictation.Phase.Idle -> "Tap to talk"
-                Dictation.Phase.Recording -> "Listening. Tap when you're done"
+                Dictation.Phase.Idle -> "Tap the bubble to talk"
+                Dictation.Phase.Recording -> "Listening. Tap again when you're done"
                 Dictation.Phase.Working -> "Writing it down…"
             },
             style = MaterialTheme.typography.labelLarge,
@@ -286,17 +280,19 @@ private fun HomeScreen(version: Int, onModes: () -> Unit, onSetup: () -> Unit) {
     val ctx = LocalContext.current
     val tick = rememberTick()
     val items by History.items.collectAsState()
-    val bubble = tick.let { bubbleEnabled(ctx) }
+    val bubble = tick.let { Keepalive.bubble(ctx) }
+    val safe = tick.let { Keepalive.protected(ctx) }
     val model = tick.let { Dictation.modelReady(ctx) }
     val mic = tick.let { Dictation.micGranted(ctx) }
     var scratch by rememberSaveable { mutableStateOf("") }
     val aiOn = version.let { Prefs.aiOn && Ai.configured() }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
-        ScreenTitle("Silent Voice", if (items.isEmpty()) "Ready when\nyou are." else greeting())
+        Wordmark(Modifier.padding(top = 20.dp))
+        ScreenTitle(null, if (items.isEmpty()) "Ready when\nyou are." else greeting())
 
         // One card, one message: either you're set, or here is the single next step.
-        val ready = bubble && model && mic
+        val ready = bubble == Keepalive.Bubble.On && model && mic
         Surface(
             color = if (ready) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer,
             shape = MaterialTheme.shapes.extraLarge,
@@ -305,29 +301,52 @@ private fun HomeScreen(version: Int, onModes: () -> Unit, onSetup: () -> Unit) {
             val on = if (ready) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onErrorContainer
             Column(Modifier.padding(24.dp)) {
                 if (ready) {
+                    Text("The bubble is on", style = MaterialTheme.typography.titleLarge, color = on)
+                    Text("Works in every app, even offline.", style = MaterialTheme.typography.bodyMedium, color = on)
+                    Spacer(Modifier.height(18.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        MicHero(size = 64, breathing = false)
-                        Column(Modifier.padding(start = 12.dp)) {
-                            Text("The bubble is on", style = MaterialTheme.typography.titleLarge, color = on)
-                            Text("Works in every app, even offline.", style = MaterialTheme.typography.bodyMedium, color = on)
-                        }
+                        PillView(Dictation.Phase.Idle, Modifier.size(40.dp))
+                        Text(
+                            "Look for this bubble above your keyboard. Tap it, talk, tap again.",
+                            style = MaterialTheme.typography.bodyMedium, color = on,
+                            modifier = Modifier.padding(start = 14.dp),
+                        )
                     }
-                    Spacer(Modifier.height(16.dp))
-                    Text(
-                        "Tap a text box anywhere. When your keyboard opens, tap the orange bubble and start talking.",
-                        style = MaterialTheme.typography.bodyLarge, color = on,
-                    )
                 } else {
                     val (title, body, label) = when {
                         !mic -> Triple("Microphone is off", "Silent Voice can't hear you until the microphone is allowed.", "Fix in Settings")
                         !model -> Triple("Voice model missing", "Download the 100 MB voice model to start dictating.", "Go to Settings")
-                        else -> Triple("One step left", "Turn on the bubble to dictate in any app. Until then, the mic below works inside this app.", "Turn on the bubble")
+                        bubble == Keepalive.Bubble.Stopped -> Triple(
+                            "Your phone stopped the bubble",
+                            "It closed Silent Voice in the background. In Accessibility, switch Silent Voice off, then on again.",
+                            "Open Accessibility",
+                        )
+                        else -> Triple("One step left", "Turn on the bubble to dictate in any app. Until then, the bubble below works inside this app.", "Turn on the bubble")
                     }
                     Text(title, style = MaterialTheme.typography.titleLarge, color = on)
                     Spacer(Modifier.height(6.dp))
                     Text(body, style = MaterialTheme.typography.bodyLarge, color = on)
                     Spacer(Modifier.height(16.dp))
                     Button(onClick = { if (mic && model) openAccessibility(ctx) else onSetup() }) { Text(label) }
+                }
+            }
+        }
+
+        if (bubble != Keepalive.Bubble.Off && mic && model && !safe) {
+            Spacer(Modifier.height(12.dp))
+            Surface(color = MaterialTheme.colorScheme.surfaceContainerLow, shape = MaterialTheme.shapes.extraLarge) {
+                Column(Modifier.padding(vertical = 12.dp)) {
+                    Text(
+                        "Keep it running",
+                        style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp),
+                    )
+                    Text(
+                        "Your phone closes apps it thinks you're done with, and that switches the bubble off. Allow these so it stays.",
+                        style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 20.dp),
+                    )
+                    KeepAliveRows(tick)
                 }
             }
         }
@@ -484,7 +503,7 @@ private fun dayLabel(time: Long): String {
 private fun SettingsScreen(version: Int, onChanged: () -> Unit, onModes: () -> Unit) {
     val ctx = LocalContext.current
     val tick = rememberTick()
-    val bubble = tick.let { bubbleEnabled(ctx) }
+    val bubble = tick.let { Keepalive.bubble(ctx) }
     val mic = tick.let { Dictation.micGranted(ctx) }
     val model = tick.let { Dictation.modelReady(ctx) }
     val progress by ModelDownload.progress.collectAsState()
@@ -503,8 +522,21 @@ private fun SettingsScreen(version: Int, onChanged: () -> Unit, onModes: () -> U
 
         SectionLabel("Setup")
         Group {
-            Row2("Bubble", if (bubble) "On. It appears above your keyboard." else "Off. Turn it on to dictate in any app.",
-                onClick = { openAccessibility(ctx) }) { StatusDot(bubble) }
+            Row2(
+                "Bubble",
+                when (bubble) {
+                    Keepalive.Bubble.On -> "On. It appears above your keyboard."
+                    Keepalive.Bubble.Stopped -> "Stopped by your phone. Switch it off and on again in Accessibility."
+                    Keepalive.Bubble.Off -> "Off. Turn it on to dictate in any app."
+                },
+                onClick = { openAccessibility(ctx) },
+            ) {
+                when (bubble) {
+                    Keepalive.Bubble.On -> StatusDot(true)
+                    Keepalive.Bubble.Stopped -> StatusDot(false, "Stopped")
+                    Keepalive.Bubble.Off -> StatusDot(false)
+                }
+            }
             Row2("Microphone", if (mic) "Allowed" else "Not allowed yet",
                 onClick = { if (!mic) askMic.launch(Manifest.permission.RECORD_AUDIO) else openAppInfo(ctx) }) { StatusDot(mic) }
             val p = progress
@@ -525,6 +557,9 @@ private fun SettingsScreen(version: Int, onChanged: () -> Unit, onModes: () -> U
                 )
             }
         }
+
+        SectionLabel("Keep it running")
+        Group { KeepAliveRows(tick) }
 
         SectionLabel("Clean-up")
         Group {
@@ -553,7 +588,7 @@ private fun SettingsScreen(version: Int, onChanged: () -> Unit, onModes: () -> U
 
         Spacer(Modifier.height(28.dp))
         Text(
-            "Silent Voice 0.1.0 for Android\nFree and open source. No account, no ads, no tracking.",
+            "Silent Voice ${remember { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }} for Android\nFree and open source. No account, no ads, no tracking.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(start = 4.dp, bottom = 32.dp),
@@ -573,7 +608,7 @@ private fun SettingsScreen(version: Int, onChanged: () -> Unit, onModes: () -> U
 
 /** State shown with an icon and a label, never colour alone. */
 @Composable
-private fun StatusDot(ok: Boolean) {
+private fun StatusDot(ok: Boolean, problem: String = "Set up") {
     val bg = if (ok) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.errorContainer
     val fg = if (ok) MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.onErrorContainer
     Row(
@@ -584,8 +619,38 @@ private fun StatusDot(ok: Boolean) {
             Icon(Icons.Rounded.Check, null, tint = fg, modifier = Modifier.size(14.dp))
             Spacer(Modifier.width(4.dp))
         }
-        Text(if (ok) "Ready" else "Set up", style = MaterialTheme.typography.labelMedium, color = fg)
+        Text(if (ok) "Ready" else problem, style = MaterialTheme.typography.labelMedium, color = fg)
     }
+}
+
+/**
+ * What stops the phone from closing Silent Voice in the background: battery
+ * saver everywhere, plus Autostart on Xiaomi. Shared by Home, Settings and onboarding.
+ */
+@Composable
+fun KeepAliveRows(tick: Int) {
+    val ctx = LocalContext.current
+    val battery = tick.let { Keepalive.batteryFree(ctx) }
+    if (Keepalive.isXiaomi) {
+        val auto = tick.let { Keepalive.autostart(ctx) }
+        Row2(
+            "Autostart",
+            when (auto) {
+                true -> "Allowed. The bubble comes back on its own."
+                false -> "Off, so clearing Recents kills the bubble. Find Silent Voice and switch it on."
+                null -> "Find Silent Voice in the list and switch it on."
+            },
+            onClick = { Keepalive.openAutostart(ctx) },
+        ) {
+            if (auto != null) StatusDot(auto, "Allow")
+        }
+    }
+    Row2(
+        "Battery",
+        if (battery) "Unrestricted. Battery saver leaves the bubble alone."
+        else "Battery saver may stop the bubble. Tap and choose Allow.",
+        onClick = if (battery) null else ({ Keepalive.askBattery(ctx) }),
+    ) { StatusDot(battery, "Allow") }
 }
 
 // ------------------------------------------------------------- Writing modes

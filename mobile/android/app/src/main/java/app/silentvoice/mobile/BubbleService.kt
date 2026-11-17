@@ -6,10 +6,8 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.Canvas
-import android.graphics.Paint
 import android.graphics.PixelFormat
 import android.graphics.Rect
-import android.graphics.RectF
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -50,7 +48,15 @@ class BubbleService : AccessibilityService() {
     private var bubble: BubbleView? = null
     private var shownAtY = Int.MIN_VALUE
 
+    companion object {
+        /** True while the system has this service bound (see [Keepalive.bubble]). */
+        @Volatile
+        var running = false
+            private set
+    }
+
     override fun onServiceConnected() {
+        running = true
         Log.i(TAG, "connected")
         scope.launch {
             Dictation.phase.collect {
@@ -58,7 +64,7 @@ class BubbleService : AccessibilityService() {
                 update() // a finished dictation may now let the bubble hide
             }
         }
-        scope.launch { Dictation.level.collect { bubble?.level = it } }
+        scope.launch { Dictation.level.collect { bubble?.push(it) } }
         update()
     }
 
@@ -70,7 +76,13 @@ class BubbleService : AccessibilityService() {
 
     override fun onInterrupt() {}
 
+    override fun onUnbind(intent: Intent?): Boolean {
+        running = false
+        return super.onUnbind(intent)
+    }
+
     override fun onDestroy() {
+        running = false
         handler.removeCallbacks(refresh)
         scope.cancel()
         hide()
@@ -98,12 +110,14 @@ class BubbleService : AccessibilityService() {
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
     private fun show(keyboardTop: Int) {
-        val size = dp(68)
-        val y = keyboardTop - size - dp(4)
+        // A 56 dp circle, plus room for its shadow.
+        val w = dp(56) + BubbleView.pad(this) * 2
+        val h = w
+        val y = keyboardTop - h - dp(2)
         if (bubble != null && y == shownAtY) return
         val wm = getSystemService(WindowManager::class.java)
         val params = WindowManager.LayoutParams(
-            size, size,
+            w, h,
             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
             // NOT_FOCUSABLE: tapping the bubble must not take focus (or the
             // keyboard) away from the field being typed in.
@@ -111,7 +125,7 @@ class BubbleService : AccessibilityService() {
             PixelFormat.TRANSLUCENT,
         ).apply {
             gravity = Gravity.TOP or Gravity.END
-            x = dp(6)
+            x = dp(4)
             this.y = y
             layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         }
@@ -144,6 +158,7 @@ class BubbleService : AccessibilityService() {
         Dictation.toggle(this) { outcome ->
             when (outcome) {
                 is Dictation.Outcome.Text -> {
+                    bubble?.done()
                     insert(outcome.text + " ")
                     outcome.notice?.let { toast(it) }
                 }
@@ -256,14 +271,16 @@ class BubbleService : AccessibilityService() {
 }
 
 /**
- * The bubble itself, drawn by hand so each state reads at a glance:
- * idle = mic, listening = a halo that swells with your voice around a stop
- * square, working = a turning arc.
+ * The floating bubble above the keyboard: a circle with the desktop pill's
+ * animation inside ([Pill]), and a soft shadow so it reads on any background.
  */
 class BubbleView(context: Context) : View(context) {
+    private val pill = Pill(resources.displayMetrics.density)
+
     var phase = Dictation.Phase.Idle
         set(value) {
             field = value
+            pill.phase = value
             contentDescription = when (value) {
                 Dictation.Phase.Idle -> "Start dictating with Silent Voice"
                 Dictation.Phase.Recording -> "Finish dictating"
@@ -271,56 +288,28 @@ class BubbleView(context: Context) : View(context) {
             }
             invalidate()
         }
-    var level = 0f
-
-    private val orange = 0xFFF97316.toInt()
-    private val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = orange }
-    private val halo = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = orange; alpha = 70 }
-    private val white = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFFFFFFF.toInt() }
-    private val arc = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0xFFFFFFFF.toInt()
-        style = Paint.Style.STROKE
-        strokeCap = Paint.Cap.ROUND
-    }
-    private val mic = context.getDrawable(R.drawable.ic_mic)!!
-    private val box = RectF()
-    private var shownLevel = 0f
 
     init {
         contentDescription = "Start dictating with Silent Voice"
     }
 
+    fun push(level: Float) {
+        pill.push(level)
+        invalidate()
+    }
+
+    fun done() {
+        pill.done()
+        invalidate()
+    }
+
     override fun onDraw(c: Canvas) {
-        val cx = width / 2f
-        val cy = height / 2f
-        val outer = minOf(cx, cy)
-        val core = outer * 0.76f
-        when (phase) {
-            Dictation.Phase.Idle -> {
-                c.drawCircle(cx, cy, core, fill)
-                val h = (core * 0.56f).toInt()
-                mic.setBounds((cx - h).toInt(), (cy - h).toInt(), (cx + h).toInt(), (cy + h).toInt())
-                mic.draw(c)
-            }
-            Dictation.Phase.Recording -> {
-                // Ease toward the live level so the halo swells instead of flickering.
-                shownLevel += (level - shownLevel) * 0.25f
-                c.drawCircle(cx, cy, core + (outer - core) * (0.25f + 0.75f * shownLevel), halo)
-                c.drawCircle(cx, cy, core, fill)
-                val s = core * 0.34f
-                box.set(cx - s, cy - s, cx + s, cy + s)
-                c.drawRoundRect(box, s * 0.3f, s * 0.3f, white)
-                postInvalidateOnAnimation()
-            }
-            Dictation.Phase.Working -> {
-                c.drawCircle(cx, cy, core, fill)
-                val r = core * 0.5f
-                arc.strokeWidth = core * 0.13f
-                box.set(cx - r, cy - r, cx + r, cy + r)
-                val angle = (SystemClock.uptimeMillis() % 900L) / 900f * 360f
-                c.drawArc(box, angle, 270f, false, arc)
-                postInvalidateOnAnimation()
-            }
-        }
+        pill.draw(c, width.toFloat(), height.toFloat(), SystemClock.uptimeMillis(), pad(context).toFloat(), shadow = true)
+        if (pill.animating) postInvalidateOnAnimation()
+    }
+
+    companion object {
+        /** Space around the capsule for its shadow. */
+        fun pad(ctx: Context) = (6 * ctx.resources.displayMetrics.density).toInt()
     }
 }

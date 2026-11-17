@@ -9,18 +9,13 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -60,18 +55,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import app.silentvoice.mobile.Dictation
+import app.silentvoice.mobile.Keepalive
 import app.silentvoice.mobile.ModelDownload
-import app.silentvoice.mobile.R
 import kotlinx.coroutines.delay
-
-fun bubbleEnabled(ctx: Context): Boolean =
-    Settings.Secure.getString(ctx.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
-        .orEmpty().contains(ctx.packageName)
 
 fun openAccessibility(ctx: Context) =
     ctx.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
@@ -97,9 +87,9 @@ fun rememberTick(): Int {
     return tick
 }
 
-private const val STEPS = 5
+private const val STEPS = 6
 
-/** Five short steps: welcome, microphone, voice model, bubble, try it. */
+/** Six short steps: welcome, microphone, voice model, bubble, keep it running, try it. */
 @Composable
 fun Onboarding(onDone: () -> Unit) {
     val ctx = LocalContext.current
@@ -125,6 +115,7 @@ fun Onboarding(onDone: () -> Unit) {
                     1 -> MicStep(tick) { step = 2 }
                     2 -> ModelStep(tick) { step = 3 }
                     3 -> BubbleStep(tick) { step = 4 }
+                    4 -> KeepStep(tick) { step = 5 }
                     else -> TryStep(onDone)
                 }
             }
@@ -185,31 +176,6 @@ private fun Page(
     }
 }
 
-/** The brand mark with slow breathing rings: the bubble, before the user has met it. */
-@Composable
-fun MicHero(size: Int = 132, breathing: Boolean = true) {
-    val pulse = if (breathing) {
-        rememberInfiniteTransition(label = "hero")
-            .animateFloat(0f, 1f, infiniteRepeatable(tween(2400), RepeatMode.Restart), label = "pulse").value
-    } else 0f
-    Box(Modifier.size(size.dp).clearAndSetSemantics { }, contentAlignment = Alignment.Center) {
-        Canvas(Modifier.fillMaxSize()) {
-            val core = this.size.minDimension * 0.30f
-            val max = this.size.minDimension * 0.5f
-            for (k in 0..1) {
-                val t = (pulse + k * 0.5f) % 1f
-                drawCircle(Brand.copy(alpha = 0.22f * (1f - t)), radius = core + (max - core) * t)
-            }
-            drawCircle(Brand, radius = core)
-        }
-        Icon(
-            painterResource(R.drawable.ic_mic), null,
-            tint = androidx.compose.ui.graphics.Color.White,
-            modifier = Modifier.size((size * 0.3f).dp),
-        )
-    }
-}
-
 @Composable
 private fun Welcome(next: () -> Unit) {
     Page(
@@ -218,8 +184,12 @@ private fun Welcome(next: () -> Unit) {
         action = "Get started",
         onAction = next,
         hero = {
-            MicHero()
-            Spacer(Modifier.height(20.dp))
+            Logo(40.dp)
+            Spacer(Modifier.height(36.dp))
+            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                PillDemo(Modifier.size(120.dp))
+            }
+            Spacer(Modifier.height(36.dp))
         },
     ) {
         Promise("Runs on your phone", "Your voice becomes text right here. No server listening in.")
@@ -327,18 +297,24 @@ private fun ModelStep(tick: Int, next: () -> Unit) {
 @Composable
 private fun BubbleStep(tick: Int, next: () -> Unit) {
     val ctx = LocalContext.current
-    val on = tick.let { bubbleEnabled(ctx) }
+    val state = tick.let { Keepalive.bubble(ctx) }
+    val on = state == Keepalive.Bubble.On
     Page(
         title = "Meet\nthe bubble.",
-        body = "Switch on Silent Voice in Accessibility and an orange mic appears above your keyboard, in every app.",
+        body = "Switch on Silent Voice in Accessibility and this bubble floats above your keyboard, in every app.",
         action = if (on) "Continue" else "Open Accessibility",
         onAction = { if (on) next() else openAccessibility(ctx) },
         secondary = if (!on) {
             { TextButton(onClick = next) { Text("Skip for now") } }
         } else null,
     ) {
+        PillView(Dictation.Phase.Idle, Modifier.size(56.dp))
+        Spacer(Modifier.height(20.dp))
         if (on) {
             DoneRow("The bubble is on")
+        } else if (state == Keepalive.Bubble.Stopped) {
+            Hint("1", "Tap Open Accessibility, then Downloaded apps.")
+            Hint("2", "Switch Silent Voice bubble off, then on again.")
         } else {
             Hint("1", "Tap Open Accessibility, then Downloaded apps.")
             Hint("2", "Choose Silent Voice bubble and switch it on.")
@@ -380,14 +356,38 @@ private fun Hint(n: String, text: String) {
 }
 
 @Composable
+private fun KeepStep(tick: Int, next: () -> Unit) {
+    val ctx = LocalContext.current
+    val safe = tick.let { Keepalive.protected(ctx) }
+    Page(
+        title = "Keep it\nrunning.",
+        body = "Phones close apps they think you're finished with, and that takes the bubble away. " +
+            if (Keepalive.isXiaomi) "Two switches stop that." else "One switch stops that.",
+        action = "Continue",
+        onAction = next,
+        secondary = if (!safe) {
+            { TextButton(onClick = next) { Text("Skip for now") } }
+        } else null,
+    ) {
+        Surface(color = MaterialTheme.colorScheme.surfaceContainerLow, shape = MaterialTheme.shapes.large) {
+            Column(Modifier.padding(vertical = 4.dp)) { KeepAliveRows(tick) }
+        }
+        if (safe) {
+            Spacer(Modifier.height(16.dp))
+            DoneRow("Your phone will leave it alone")
+        }
+    }
+}
+
+@Composable
 private fun TryStep(done: () -> Unit) {
     val ctx = LocalContext.current
     var text by rememberSaveable { mutableStateOf("") }
-    val bubble = bubbleEnabled(ctx)
+    val bubble = Keepalive.bubble(ctx) == Keepalive.Bubble.On
     Page(
         title = "Go on,\nsay something.",
-        body = if (bubble) "Tap the box, then tap the orange bubble. Tap it again when you've finished talking."
-        else "Tap the mic, talk, then tap it again. Turn the bubble on later in Settings to do this in any app.",
+        body = if (bubble) "Tap the box, then tap the bubble above your keyboard. Tap it again when you've finished talking."
+        else "Tap the bubble, talk, then tap it again. Turn the bubble on later in Settings to do this in any app.",
         action = "Start using Silent Voice",
         onAction = done,
     ) {

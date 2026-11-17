@@ -3,8 +3,11 @@
 Native Kotlin app (Jetpack Compose, Material 3). Plan and decisions:
 `docs/mobile/PLAN.md`. Download: the newest `android-v*` pre-release on GitHub.
 
-What it does: an orange mic bubble appears above the keyboard in any app. Tap,
-talk, tap again, and the cleaned text is typed at the cursor. Speech is
+What it does: a round bubble appears above the keyboard in any app. Inside it
+runs the desktop pill's animation (`Pill.kt`, ported from
+`src/components/overlay/RecordingOverlay.tsx`). Tap, talk, tap again, and the
+cleaned text is typed at the cursor. Colours, icon and logo follow the desktop
+app (`src/styles.css`, `app-icon.svg`). Speech is
 transcribed on the phone (sherpa-onnx, Parakeet 110M). Clean-up (fillers,
 repeats, numbers, "new line") is the desktop code, shared through the Rust crate
 `crates/sv-core` (UniFFI). Writing modes send the text to the user's own AI
@@ -15,13 +18,31 @@ Layout: `app/src/main/java/app/silentvoice/mobile/` holds `BubbleService`
 `Models` (engine, download), `Ai`, `History`, `Prefs`, and `ui/` (theme,
 onboarding, screens). `uniffi/sv_core/` is generated; do not edit it.
 
-After changing `crates/sv-core`, run `scriptsuild-core.ps1`.
+After changing `crates/sv-core`, run `scripts\build-core.ps1`.
 
-Check a build without speaking (prints `SELFTEST ok` to logcat tag `SVDictation`):
+Check a build without speaking (prints `SELFTEST ok` to logcat tag `SVDictation`,
+and the bubble's health to `SVKeepalive`). `-f 0x20000000` makes an already-open
+app receive it; without it Android only brings the app to the front:
 
 ```powershell
-& $adb shell am start -n app.silentvoice.mobile/.MainActivity --ez selftest true
+& $adb shell am start -f 0x20000000 -n app.silentvoice.mobile/.MainActivity --ez selftest true
 ```
+
+`scripts\check-bubble.ps1` kills the app the way Xiaomi does and checks the app
+still knows whether the bubble is running (`$env:ANDROID_SERIAL` picks the device).
+
+## Why the bubble can disappear
+
+Xiaomi (MIUI / HyperOS) kills the app when it is swiped away in Recents
+("SwipeUpClean" in `adb shell dumpsys activity exit-info app.silentvoice.mobile`).
+Android then marks the accessibility service crashed and, without Xiaomi's
+Autostart permission, does not start it again; the Accessibility switch still
+shows on, and updating the app does not clear it. The app tells On / Stopped /
+Off apart (`Keepalive.kt`), says how to recover (switch it off and on), and asks
+for Autostart and the battery-saver exemption. Stock Android restarts the
+service by itself.
+
+## Signing
 
 Releases are signed with this PC's debug key (`%USERPROFILE%\.android\debug.keystore`).
 A build signed elsewhere will not install over it; keep that file, or uninstall first.
