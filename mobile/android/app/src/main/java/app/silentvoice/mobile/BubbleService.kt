@@ -15,7 +15,10 @@ import android.os.SystemClock
 import android.util.Log
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
+import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
+import android.view.WindowInsets
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -24,13 +27,16 @@ import android.widget.Toast
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlin.math.hypot
+import kotlin.math.roundToInt
 
 private const val TAG = "SVBubble"
 
 /**
- * The mic bubble. It sits just above the keyboard whenever the keyboard is open;
- * tap to start talking, tap again to finish, and the text is typed at the cursor
- * of the focused field.
+ * The mic bubble. It shows whenever the keyboard is open, by the keyboard's
+ * right edge until the user drags it somewhere else (remembered, and always kept
+ * above the keyboard). Tap to start talking, tap again to finish, and the text
+ * is typed at the cursor of the focused field.
  *
  * An accessibility service may draw its own overlay (TYPE_ACCESSIBILITY_OVERLAY),
  * so no separate "draw over other apps" permission is needed.
@@ -46,7 +52,11 @@ class BubbleService : AccessibilityService() {
     private val refresh = Runnable { update() }
     private val scope = MainScope()
     private var bubble: BubbleView? = null
-    private var shownAtY = Int.MIN_VALUE
+    private var params: WindowManager.LayoutParams? = null
+    private var shownAt = Int.MIN_VALUE to Int.MIN_VALUE
+    private var lastKeyboardTop = 0
+    private var dragging = false
+    private var dragFrom = 0 to 0
 
     companion object {
         /** True while the system has this service bound (see [Keepalive.bubble]). */
@@ -109,49 +119,109 @@ class BubbleService : AccessibilityService() {
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
-    private fun show(keyboardTop: Int) {
-        // A 56 dp circle, plus room for its shadow and the listening ring.
-        // The circle itself sits 10 dp from the edge and 8 dp above the keyboard.
-        val pad = BubbleView.pad(this)
-        val w = dp(56) + pad * 2
-        val h = w
-        val y = keyboardTop - h - (dp(8) - pad)
-        if (bubble != null && y == shownAtY) return
+    /** The window's side: a 56 dp circle plus room for its shadow and the listening ring. */
+    private fun size() = dp(56) + BubbleView.pad(this) * 2
+
+    /**
+     * Where the bubble's window may go: anywhere on screen below the status bar
+     * and above the keyboard (never over the keys). The circle may reach the
+     * screen edge; only its transparent padding goes past it.
+     */
+    private fun bounds(keyboardTop: Int): Rect {
         val wm = getSystemService(WindowManager::class.java)
+        val metrics = wm.currentWindowMetrics
+        val screen = metrics.bounds
+        val top = metrics.windowInsets.getInsetsIgnoringVisibility(WindowInsets.Type.statusBars()).top
+        val pad = BubbleView.pad(this)
+        val size = size()
+        val maxY = keyboardTop - size - (dp(8) - pad)
+        val minY = minOf(top - pad, maxY)
+        return Rect(-pad, minY, screen.width() - size + pad, maxY)
+    }
+
+    /** The bubble's spot: where the user dragged it, else 10 dp from the right edge, 8 dp above the keyboard. */
+    private fun place(keyboardTop: Int): Pair<Int, Int> {
+        val b = bounds(keyboardTop)
+        val size = size()
+        val screen = getSystemService(WindowManager::class.java).currentWindowMetrics.bounds
+        val saved = Prefs.bubbleAt
+        // b.right puts the circle's edge on the screen's edge.
+        val x = if (saved == null) b.right - dp(10)
+        else (saved.first * screen.width() - size / 2f).roundToInt()
+        val y = if (saved == null) b.bottom else (saved.second * screen.height() - size / 2f).roundToInt()
+        return x.coerceIn(b.left, b.right) to y.coerceIn(b.top, b.bottom)
+    }
+
+    private fun show(keyboardTop: Int) {
+        lastKeyboardTop = keyboardTop
+        if (dragging) return // the finger owns the position until it lifts
+        val (x, y) = place(keyboardTop)
+        val existing = bubble
+        if (existing != null && x == shownAt.first && y == shownAt.second) return
+        val wm = getSystemService(WindowManager::class.java)
+        val size = size()
         val params = WindowManager.LayoutParams(
-            w, h,
+            size, size,
             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
             // NOT_FOCUSABLE: tapping the bubble must not take focus (or the
             // keyboard) away from the field being typed in.
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT,
         ).apply {
-            gravity = Gravity.TOP or Gravity.END
-            x = dp(10) - pad
+            gravity = Gravity.TOP or Gravity.START
+            this.x = x
             this.y = y
             layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         }
-        val existing = bubble
         if (existing != null) {
             wm.updateViewLayout(existing, params)
         } else {
             val view = BubbleView(this).apply {
                 phase = Dictation.phase.value
                 setOnClickListener { onTap(this) }
+                // The model loads on touch, not when the keyboard opens: opening
+                // a keyboard is common, dictating is not, and each load is a
+                // couple of seconds of CPU. It finishes while the user talks.
+                onDown = { Dictation.warm(context) }
+                onDrag = ::drag
             }
             wm.addView(view, params)
             bubble = view
-            Dictation.warm(this) // keyboard is up: a dictation is likely
             Log.i(TAG, "bubble shown")
         }
-        shownAtY = y
+        this.params = params
+        shownAt = x to y
+    }
+
+    /** Follows the finger; [end] saves the spot. Offsets are from where the finger went down. */
+    private fun drag(dx: Float, dy: Float, end: Boolean) {
+        val view = bubble ?: return
+        val p = params ?: return
+        val b = bounds(lastKeyboardTop)
+        if (!dragging) {
+            dragging = true
+            dragFrom = p.x to p.y
+        }
+        p.x = (dragFrom.first + dx).roundToInt().coerceIn(b.left, b.right)
+        p.y = (dragFrom.second + dy).roundToInt().coerceIn(b.top, b.bottom)
+        getSystemService(WindowManager::class.java).updateViewLayout(view, p)
+        shownAt = p.x to p.y
+        if (end) {
+            dragging = false
+            val screen = getSystemService(WindowManager::class.java).currentWindowMetrics.bounds
+            val half = size() / 2f
+            Prefs.bubbleAt = (p.x + half) / screen.width() to (p.y + half) / screen.height()
+            Log.i(TAG, "bubble moved")
+        }
     }
 
     private fun hide() {
         val view = bubble ?: return
         getSystemService(WindowManager::class.java).removeView(view)
         bubble = null
-        shownAtY = Int.MIN_VALUE
+        params = null
+        dragging = false
+        shownAt = Int.MIN_VALUE to Int.MIN_VALUE
         Log.i(TAG, "bubble hidden")
     }
 
@@ -292,8 +362,51 @@ class BubbleView(context: Context) : View(context) {
             invalidate()
         }
 
+    /** Finger down: a tap or a drag is coming. */
+    var onDown: (() -> Unit)? = null
+
+    /** Finger moved past the touch slop: offsets in pixels since it went down; `end` on lift. */
+    var onDrag: ((dx: Float, dy: Float, end: Boolean) -> Unit)? = null
+
+    private val slop = ViewConfiguration.get(context).scaledTouchSlop
+    private var downX = 0f
+    private var downY = 0f
+    private var dragging = false
+
     init {
         contentDescription = "Start dictating with Silent Voice"
+    }
+
+    // Raw (screen) coordinates: the window moves under the finger, so
+    // view-relative ones would shake.
+    @android.annotation.SuppressLint("ClickableViewAccessibility") // a tap still goes through performClick
+    override fun onTouchEvent(e: MotionEvent): Boolean {
+        when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                downX = e.rawX
+                downY = e.rawY
+                dragging = false
+                onDown?.invoke()
+            }
+            MotionEvent.ACTION_MOVE -> {
+                val dx = e.rawX - downX
+                val dy = e.rawY - downY
+                if (!dragging && hypot(dx, dy) > slop) {
+                    dragging = true
+                    performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                }
+                if (dragging) onDrag?.invoke(dx, dy, false)
+            }
+            MotionEvent.ACTION_UP -> {
+                if (dragging) onDrag?.invoke(e.rawX - downX, e.rawY - downY, true) else performClick()
+                dragging = false
+            }
+            MotionEvent.ACTION_CANCEL -> {
+                if (dragging) onDrag?.invoke(e.rawX - downX, e.rawY - downY, true)
+                dragging = false
+            }
+        }
+        return true
     }
 
     fun push(level: Float) {

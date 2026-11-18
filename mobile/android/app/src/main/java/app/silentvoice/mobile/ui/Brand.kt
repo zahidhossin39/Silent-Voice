@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import app.silentvoice.mobile.Dictation
 import app.silentvoice.mobile.Pill
 import kotlinx.coroutines.channels.Channel
+import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -89,20 +90,25 @@ fun PillDemo(modifier: Modifier = Modifier) {
     var phase by remember { androidx.compose.runtime.mutableStateOf(Dictation.Phase.Idle) }
     var done by remember { androidx.compose.runtime.mutableIntStateOf(0) }
     val talk = remember { MutableSharedFlow<Float>(extraBufferCapacity = 8) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            phase = Dictation.Phase.Idle; delay(1400)
-            phase = Dictation.Phase.Recording; delay(1100)
-            val start = System.currentTimeMillis()
-            while (System.currentTimeMillis() - start < 2600) {
-                val t = (System.currentTimeMillis() - start) / 1000f
-                // Syllable-like bursts: two sines beating, with short gaps.
-                val v = (0.55f + 0.45f * sin(t * 11f)) * (0.5f + 0.5f * sin(t * 3.1f + 1f))
-                talk.emit(if (sin(t * 1.7f) > -0.85f) v.coerceIn(0f, 1f) else 0f)
-                delay(50)
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    // Plays only while on screen (a plain loop ran on after the app was left);
+    // restarts from the top on return.
+    LaunchedEffect(lifecycle) {
+        lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+            while (true) {
+                phase = Dictation.Phase.Idle; delay(1400)
+                phase = Dictation.Phase.Recording; delay(1100)
+                val start = System.currentTimeMillis()
+                while (System.currentTimeMillis() - start < 2600) {
+                    val t = (System.currentTimeMillis() - start) / 1000f
+                    // Syllable-like bursts: two sines beating, with short gaps.
+                    val v = (0.55f + 0.45f * sin(t * 11f)) * (0.5f + 0.5f * sin(t * 3.1f + 1f))
+                    talk.emit(if (sin(t * 1.7f) > -0.85f) v.coerceIn(0f, 1f) else 0f)
+                    delay(50)
+                }
+                phase = Dictation.Phase.Working; delay(1300)
+                phase = Dictation.Phase.Idle; done++; delay(900)
             }
-            phase = Dictation.Phase.Working; delay(1300)
-            phase = Dictation.Phase.Idle; done++; delay(900)
         }
     }
     PillView(phase, modifier, doneKey = done, levels = talk)

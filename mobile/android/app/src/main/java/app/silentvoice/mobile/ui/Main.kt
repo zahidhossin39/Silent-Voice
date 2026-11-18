@@ -515,6 +515,7 @@ private fun SettingsScreen(version: Int, onChanged: () -> Unit, onModes: () -> U
     val downloadError by ModelDownload.error.collectAsState()
     val historyCount = History.items.collectAsState().value.size
     var confirmClear by remember { mutableStateOf(false) }
+    var resets by remember { mutableIntStateOf(0) }
     val askMic = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok -> if (!ok) openAppInfo(ctx) }
     // Read through `version` so toggles redraw.
     val fillers = version.let { Prefs.fillers }
@@ -530,7 +531,7 @@ private fun SettingsScreen(version: Int, onChanged: () -> Unit, onModes: () -> U
             Row2(
                 "Bubble",
                 when (bubble) {
-                    Keepalive.Bubble.On -> "On. It appears above your keyboard."
+                    Keepalive.Bubble.On -> "On. It appears with your keyboard. Drag it to move it."
                     Keepalive.Bubble.Stopped -> "Stopped by your phone. Switch it off and on again in Accessibility."
                     Keepalive.Bubble.Off -> "Off. Turn it on to dictate in any app."
                 },
@@ -541,6 +542,12 @@ private fun SettingsScreen(version: Int, onChanged: () -> Unit, onModes: () -> U
                     Keepalive.Bubble.Stopped -> StatusDot(false, "Stopped")
                     Keepalive.Bubble.Off -> StatusDot(false)
                 }
+            }
+            if ((tick + resets).let { Prefs.bubbleAt } != null) {
+                Row2("Bubble position", "Moved by you. Tap to put it back by the keyboard.", onClick = {
+                    Prefs.bubbleAt = null
+                    resets++
+                })
             }
             Row2("Microphone", if (mic) "Allowed" else "Not allowed yet",
                 onClick = { if (!mic) askMic.launch(Manifest.permission.RECORD_AUDIO) else openAppInfo(ctx) }) { StatusDot(mic) }

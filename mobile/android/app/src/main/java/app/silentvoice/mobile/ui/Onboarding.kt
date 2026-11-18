@@ -61,6 +61,7 @@ import androidx.compose.ui.unit.dp
 import app.silentvoice.mobile.Dictation
 import app.silentvoice.mobile.Keepalive
 import app.silentvoice.mobile.ModelDownload
+import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.delay
 
 fun openAccessibility(ctx: Context) =
@@ -78,10 +79,16 @@ fun openAppInfo(ctx: Context) = ctx.startActivity(
  */
 @Composable
 fun rememberTick(): Int {
-    val tick by produceState(0) {
-        while (true) {
-            delay(600)
-            value++
+    // Only while the app is on screen: a plain loop kept waking the phone every
+    // 600 ms after the user had left the app. Ticks at once on return, so a
+    // switch flipped in Settings shows straight away.
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    val tick by produceState(0, lifecycle) {
+        lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
+            while (true) {
+                value++
+                delay(600)
+            }
         }
     }
     return tick

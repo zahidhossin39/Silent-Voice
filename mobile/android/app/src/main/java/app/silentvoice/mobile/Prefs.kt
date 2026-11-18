@@ -34,6 +34,19 @@ object Prefs {
     private fun str(key: String, default: String) = sp.getString(key, default) ?: default
     private fun put(key: String, v: String) = sp.edit().putString(key, v).apply()
 
+    /**
+     * Where the user dragged the bubble: its centre as a share of the screen's
+     * width and height (so it survives rotation), or null for the default spot
+     * by the keyboard's right edge.
+     */
+    var bubbleAt: Pair<Float, Float>?
+        get() {
+            val x = sp.getFloat("bubble_x", -1f)
+            val y = sp.getFloat("bubble_y", -1f)
+            return if (x < 0f || y < 0f) null else x to y
+        }
+        set(v) = sp.edit().putFloat("bubble_x", v?.first ?: -1f).putFloat("bubble_y", v?.second ?: -1f).apply()
+
     var onboarded: Boolean
         get() = bool("onboarded", false)
         set(v) = put("onboarded", v)
