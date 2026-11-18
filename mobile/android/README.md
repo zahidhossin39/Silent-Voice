@@ -8,12 +8,24 @@ While listening it shows the desktop pill's bars (`Pill.kt`, ported from
 `src/components/overlay/RecordingOverlay.tsx`) and an orange ring that swells
 with your voice. The look was picked from a prototype kept on the branch
 `prototype/bubble` (`mobile/android/prototype/bubble-prototype.html`). Tap, talk, tap again, and the
-cleaned text is typed at the cursor. Colours, icon and logo follow the desktop
+cleaned text is typed at the cursor. Drag it anywhere; the spot is remembered
+(as a share of the screen, so it survives rotation) and is always kept above
+the keyboard. Settings can put it back. The bars appear only once the mic is
+really delivering audio (about 200 ms after the tap), so the first syllable is
+not lost. Colours, icon and logo follow the desktop
 app (`src/styles.css`, `app-icon.svg`). Speech is
-transcribed on the phone (sherpa-onnx, Parakeet 110M). Clean-up (fillers,
+transcribed on the phone (sherpa-onnx, Parakeet 110M with its TDT decoder; the
+CTC decoder of the same model turned first words into sound-alike junk). The
+model loads when the bubble is touched, not when a keyboard opens, and unloads
+after 5 idle minutes. Clean-up (fillers,
 repeats, numbers, "new line") is the desktop code, shared through the Rust crate
 `crates/sv-core` (UniFFI). Writing modes send the text to the user's own AI
 provider and fall back to the plain words on any failure.
+
+Typing into apps: the field's text is rewritten only when it is known to be
+real (`Insert.kt`, tested in `InsertTest`). An empty WhatsApp field reports its
+placeholder "Message" as text with no cursor, so in that case the words are
+pasted instead (they also stay on the clipboard).
 
 Layout: `app/src/main/java/app/silentvoice/mobile/` holds `BubbleService`
 (bubble + typing into the focused field), `Dictation` (the pipeline), `Stt` and

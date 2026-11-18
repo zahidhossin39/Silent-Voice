@@ -100,6 +100,11 @@ Each step ends with something that runs on the phone. Commit at each.
    `prototype/bubble`): a still mic while waiting (the grey line meant nothing to
    a new user), and while listening the desktop bars plus an orange ring outside
    the bubble that swells with the voice and ripples while quiet.
+   0.1.2 (2026-11-19): the bubble can be dragged anywhere; the model loads on
+   touch instead of on every keyboard open (battery: idle bubble measured at 0
+   frames and 0 CPU); the default model became Parakeet 110M TDT after real
+   phone recordings showed the CTC head mangling first words; empty WhatsApp
+   fields no longer get "Message" typed in front of the words.
 3. **Shared crate.** `crates/sv-core` with the copied text logic and its tests,
    built for Android and called from Kotlin through UniFFI.
 4. **Pipeline.** Record, trim silence, transcribe, clean up, optional cloud AI
