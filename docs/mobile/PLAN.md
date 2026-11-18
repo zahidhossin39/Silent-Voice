@@ -105,6 +105,11 @@ Each step ends with something that runs on the phone. Commit at each.
    frames and 0 CPU); the default model became Parakeet 110M TDT after real
    phone recordings showed the CTC head mangling first words; empty WhatsApp
    fields no longer get "Message" typed in front of the words.
+   Also 2026-11-19: the "vocabulary and replacements" screens left out of 0.1.0
+   are built as Settings > Your words: hotwords for names and odd words (Parakeet
+   beam search, `bpe.vocab` pulled from NVIDIA's `.nemo`) and say/type Shortcuts
+   through `apply_replacements`. Strength 1.5 fixed names on PC test clips; 2.5
+   started inserting the words into normal speech. Details in the README.
 3. **Shared crate.** `crates/sv-core` with the copied text logic and its tests,
    built for Android and called from Kotlin through UniFFI.
 4. **Pipeline.** Record, trim silence, transcribe, clean up, optional cloud AI

@@ -55,6 +55,6 @@ class MainActivity : ComponentActivity() {
                     "xiaomi=${Keepalive.isXiaomi} autostart=${Keepalive.autostart(this)}",
             )
         }, 5000)
-        Dictation.selfTest(this)
+        Dictation.selfTest(this, intent.getStringExtra("clip"))
     }
 }

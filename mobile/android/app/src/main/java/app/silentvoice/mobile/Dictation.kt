@@ -23,6 +23,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import uniffi.sv_core.CleanOptions
+import uniffi.sv_core.Replacement
+import uniffi.sv_core.applyReplacements
 import uniffi.sv_core.cleanAfterAi
 import uniffi.sv_core.cleanBeforeAi
 import java.util.concurrent.atomic.AtomicBoolean
@@ -85,11 +87,12 @@ object Dictation {
 
     private suspend fun engine(app: Context): Stt = loadLock.withLock {
         val want = model(app)
-        // A finished upgrade download swaps the model at the next dictation.
-        stt?.takeIf { it.model != want }?.let { it.release(); stt = null }
-        val loaded = stt ?: Stt.load(app, want, threads).also {
+        val hot = hotwords(app, want)
+        // A finished upgrade download, or a changed word list, rebuilds the engine.
+        stt?.takeIf { it.model != want || it.hotwordsKey != (hot?.key ?: "") }?.let { it.release(); stt = null }
+        val loaded = stt ?: Stt.load(app, want, threads, hot).also {
             stt = it
-            Log.i(TAG, "model ${want.id} loaded in ${it.loadMs} ms")
+            Log.i(TAG, "model ${want.id} loaded in ${it.loadMs} ms" + if (hot != null) " (favouring your words)" else "")
         }
         // The model holds a few hundred MB; let it go after a quiet spell.
         idleJob?.cancel()
@@ -104,6 +107,38 @@ object Dictation {
             }
         }
         loaded
+    }
+
+    /**
+     * The user's words to favour, or null when there are none worth boosting or
+     * the model can't be biased (only the TDT model can, and it needs its
+     * tokenizer, shipped in the app's assets). Any problem means no boost,
+     * never a failed dictation.
+     */
+    private fun hotwords(app: Context, m: SttModel): Hotwords? {
+        if (m.engine != Engine.NEMO_TDT) return null
+        val words = Words.boosted(Prefs.vocabulary)
+        if (words.isEmpty()) return null
+        return runCatching {
+            val dir = ModelStore.dir(app, m)
+            val vocab = java.io.File(dir, "bpe.vocab")
+            // Written whole (temp file + rename) and replaced when it differs from the
+            // app's copy: a file cut short by a kill would otherwise be trusted forever.
+            val bytes = app.assets.open("${m.id}.bpe.vocab").use { it.readBytes() }
+            if (vocab.length() != bytes.size.toLong()) {
+                val tmp = java.io.File(dir, "bpe.vocab.tmp").apply { writeBytes(bytes) }
+                check(tmp.renameTo(vocab)) { "could not place bpe.vocab" }
+            }
+            val list = words.joinToString("\n")
+            val file = java.io.File(dir, "hotwords.txt").apply { writeText(list + "\n") }
+            Hotwords(vocab, file, list)
+        }.onFailure { Log.w(TAG, "word list not used: $it") }.getOrNull()
+    }
+
+    /** The user's "say this, type that" shortcuts (sv-core, same rules as desktop). */
+    private fun shortcuts(text: String): String {
+        val rules = Prefs.shortcuts.map { Replacement(it.say, it.type) }
+        return if (rules.isEmpty()) text else applyReplacements(text, rules)
     }
 
     /** First call starts listening, second call finishes. [onDone] runs on the main thread. */
@@ -166,7 +201,9 @@ object Dictation {
                     notice = "${chosen.name} mode didn't answer, so here are your exact words."
                 }
         }
-        text = cleanAfterAi(text, opts).trim()
+        // Shortcuts after any AI rewrite but before numbers become digits, the
+        // desktop's order: a shortcut for "n eight n" must see "eight", not "8".
+        text = cleanAfterAi(shortcuts(text), opts).trim()
         if (text.isEmpty()) return Outcome.Problem("I didn't catch any words.")
         val took = SystemClock.elapsedRealtime() - t0
         Log.i(TAG, "done in $took ms" + if (mode != null) " (with writing mode)" else "")
@@ -178,16 +215,19 @@ object Dictation {
      * Runs the model's bundled sample clip through transcription and clean-up and
      * logs the result. Lets a build be checked from a PC without anyone speaking:
      *   adb shell am start -n app.silentvoice.mobile/.MainActivity --ez selftest true
+     * [clip] names a WAV in the app's files/selftest folder instead (16 kHz mono),
+     * so the user's word list and shortcuts can be checked with known speech.
      */
-    fun selfTest(ctx: Context) {
+    fun selfTest(ctx: Context, clip: String? = null) {
         val app = ctx.applicationContext
         scope.launch {
             try {
-                val wav = ModelStore.sampleWav(app) ?: error("no sample clip (model not downloaded)")
+                val wav = if (clip != null) java.io.File(app.filesDir, "selftest/$clip").takeIf { it.isFile } ?: error("no clip $clip")
+                else ModelStore.sampleWav(app) ?: error("no sample clip (model not downloaded)")
                 val (samples, rate) = readWav(wav)
                 val r = engine(app).transcribe(samples, rate)
                 val opts = CleanOptions(true, true, true, true, true)
-                val text = cleanAfterAi(cleanBeforeAi(r.text, opts), opts).trim()
+                val text = cleanAfterAi(shortcuts(cleanBeforeAi(r.text, opts)), opts).trim()
                 val probe = cleanAfterAi(cleanBeforeAi("Um, we need need twenty five.", opts), opts)
                 Log.i(TAG, "SELFTEST ok: ${"%.1f".format(r.audioSec)} s audio in ${r.decodeMs} ms; clean-up probe=[$probe]; text=[$text]")
             } catch (e: Throwable) {

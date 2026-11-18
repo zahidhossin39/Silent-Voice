@@ -45,6 +45,38 @@ app receive it; without it Android only brings the app to the front:
 `scripts\check-bubble.ps1` kills the app the way Xiaomi does and checks the app
 still knows whether the bubble is running (`$env:ANDROID_SERIAL` picks the device).
 
+## Your words (Settings)
+
+**Words it should recognize** (`Prefs.vocabulary`, comma or line separated) are
+boosted as hotwords in Parakeet (sherpa-onnx `modified_beam_search`, score 1.5).
+Only names, capitalised words, words with digits and phrases are boosted
+(`Words.boosted`, tested in `WordsTest`). Plain lowercase words are not: the model
+then inserts them into normal speech ("could you call me" became "Claude you call
+me" at 2.5). With no boostable words, decoding stays greedy and fast. Measured on
+the PC with spoken clips: "Kubirnets" became "Kubernetes", normal sentences were
+unchanged at 1.5 and 2.0, cost about 0.1-0.2 s per dictation. In the app on the
+emulator (self-test clips below) "Zeid ... Hasan" became "Zaid ... Hossain".
+
+Hotwords need the model's SentencePiece `bpe.vocab`, which k2-fsa's archive lacks.
+`python -I scripts/fetch_nemo_bpe_vocab.py <nemo url> <out dir>` reads only the
+tokenizer out of NVIDIA's `parakeet-tdt_ctc-110m.nemo` with HTTP range requests
+(about 260 KB of 460 MB; needs `pip install sentencepiece`). The result ships as
+`app/src/main/assets/parakeet-tdt-110m-en.bpe.vocab`, is copied into the model
+folder on first use, and matches the model's `tokens.txt` line for line. The
+desktop's 0.6B `bpe.vocab` is a different tokenizer and cannot be reused.
+
+**Shortcuts** (`Prefs.shortcuts`) are say/type pairs applied by `apply_replacements`
+from `crates/sv-core` (whole words, any case). As on desktop they run after the AI
+rewrite and before numbers become digits, so "n eight n" to "n8n" still sees
+"eight". They fix spelled-out words that hotwords cannot.
+
+Self-test a recording with your words and shortcuts: put a 16 kHz mono WAV in the
+app's `files/selftest/` folder and add `--es clip <name>`:
+
+```powershell
+& $adb shell am start -f 0x20000000 -n app.silentvoice.mobile/.MainActivity --ez selftest true --es clip c2.wav
+```
+
 ## Why the bubble can disappear
 
 Xiaomi (MIUI / HyperOS) kills the app when it is swiped away in Recents

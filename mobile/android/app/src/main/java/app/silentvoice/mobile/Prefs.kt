@@ -47,6 +47,16 @@ object Prefs {
         }
         set(v) = sp.edit().putFloat("bubble_x", v?.first ?: -1f).putFloat("bubble_y", v?.second ?: -1f).apply()
 
+    /** Words the voice model should favour, comma- or line-separated (see [Words.boosted]). */
+    var vocabulary: String
+        get() = str("vocabulary", "")
+        set(v) = put("vocabulary", v)
+
+    /** "Say this, type that" shortcuts, applied last. */
+    var shortcuts: List<Words.Shortcut>
+        get() = Words.decode(str("shortcuts", ""))
+        set(v) = put("shortcuts", Words.encode(v))
+
     var onboarded: Boolean
         get() = bool("onboarded", false)
         set(v) = put("onboarded", v)

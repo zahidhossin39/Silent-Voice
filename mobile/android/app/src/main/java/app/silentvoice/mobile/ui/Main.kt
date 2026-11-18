@@ -88,6 +88,8 @@ import app.silentvoice.mobile.Dictation
 import app.silentvoice.mobile.Entry
 import app.silentvoice.mobile.History
 import app.silentvoice.mobile.Keepalive
+import app.silentvoice.mobile.Engine
+import app.silentvoice.mobile.Words
 import app.silentvoice.mobile.ModelDownload
 import app.silentvoice.mobile.Prefs
 import app.silentvoice.mobile.R
@@ -518,6 +520,9 @@ private fun SettingsScreen(version: Int, onChanged: () -> Unit, onModes: () -> U
     val historyCount = History.items.collectAsState().value.size
     var confirmClear by remember { mutableStateOf(false) }
     var resets by remember { mutableIntStateOf(0) }
+    var wordsSheet by rememberSaveable { mutableStateOf(false) }
+    var shortcutsSheet by rememberSaveable { mutableStateOf(false) }
+    var words by remember { mutableIntStateOf(0) } // bumped when either sheet saves
     val askMic = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok -> if (!ok) openAppInfo(ctx) }
     // Read through `version` so toggles redraw.
     val fillers = version.let { Prefs.fillers }
@@ -583,6 +588,27 @@ private fun SettingsScreen(version: Int, onChanged: () -> Unit, onModes: () -> U
             SwitchRow("Numbers as digits", "\"Twenty five\" becomes \"25\".", numbers) { Prefs.numbers = it; onChanged() }
         }
 
+        SectionLabel("Your words")
+        Group {
+            val vocab = (version + words).let { Words.entries(Prefs.vocabulary) }
+            Row2(
+                "Words it should recognize",
+                if (vocab.isEmpty()) "Names and jargon it keeps getting wrong."
+                else vocab.take(3).joinToString(", ") + if (vocab.size > 3) " and ${vocab.size - 3} more" else "",
+                onClick = { wordsSheet = true },
+            ) { Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+            val shortcutCount = (version + words).let { Prefs.shortcuts.size }
+            Row2(
+                "Shortcuts",
+                when (shortcutCount) {
+                    0 -> "Say a short phrase, get the full text."
+                    1 -> "1 shortcut."
+                    else -> "$shortcutCount shortcuts."
+                },
+                onClick = { shortcutsSheet = true },
+            ) { Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+        }
+
         SectionLabel("Writing mode")
         Group {
             Row2(
@@ -609,6 +635,9 @@ private fun SettingsScreen(version: Int, onChanged: () -> Unit, onModes: () -> U
             modifier = Modifier.padding(start = 4.dp, bottom = 32.dp),
         )
     }
+
+    if (wordsSheet) WordsSheet(onClose = { wordsSheet = false; words++ })
+    if (shortcutsSheet) ShortcutsSheet(onClose = { shortcutsSheet = false; words++ })
 
     if (confirmClear) {
         AlertDialog(
@@ -758,6 +787,143 @@ private fun ModeRow(title: String, blurb: String, selected: Boolean, enabled: Bo
         Column(Modifier.padding(start = 12.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha))
             Text(blurb, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = alpha))
+        }
+    }
+}
+
+// ---------------------------------------------------------------- Your words
+
+/** The list of words the voice model should favour (see [Words.boosted]). */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun WordsSheet(onClose: () -> Unit) {
+    val ctx = LocalContext.current
+    var text by rememberSaveable { mutableStateOf(Prefs.vocabulary) }
+    val entries = Words.entries(text)
+    val boosted = Words.boosted(text)
+    val skipped = entries.filter { e -> boosted.none { it.equals(e, ignoreCase = true) } }
+        .distinctBy { it.lowercase() }
+    val canBias = remember { Dictation.model(ctx).engine == Engine.NEMO_TDT }
+    fun save() { Prefs.vocabulary = text.trim() }
+
+    ModalBottomSheet(onDismissRequest = { save(); onClose() }, containerColor = MaterialTheme.colorScheme.surfaceContainerLow) {
+        Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).padding(bottom = 32.dp)) {
+            Text("Words it should recognize", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onSurface)
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "Names and jargon the voice model keeps getting wrong. Write them the way they should be spelled, separated by commas.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedTextField(
+                text, { text = it },
+                label = { Text("Your words") },
+                placeholder = { Text("Zaid, Kubernetes, Claude Code") },
+                minLines = 3,
+                // Names aren't dictionary words: autocorrect would "fix" Zaid to Said.
+                keyboardOptions = KeyboardOptions(autoCorrectEnabled = false),
+                modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+                supportingText = {
+                    Text(
+                        when {
+                            !canBias -> "Starts working once the voice model update is installed (Settings > Voice model)."
+                            skipped.isNotEmpty() -> "Not favoured: ${skipped.joinToString(", ")}. Favouring plain lowercase words makes them pop up in normal speech, so capitalise names."
+                            boosted.isNotEmpty() -> "Favouring ${boosted.size} ${if (boosted.size == 1) "word" else "words"}. Dictation takes a moment longer while this list has words."
+                            else -> "Everything stays on this phone."
+                        },
+                    )
+                },
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Spelled-out words like \u201cn eight n\u201d are a job for Shortcuts.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(16.dp))
+            FilledTonalButton(onClick = { save(); onClose() }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
+                Text("Done")
+            }
+        }
+    }
+}
+
+/** "Say this, type that" pairs, applied to every dictation. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ShortcutsSheet(onClose: () -> Unit) {
+    var list by remember { mutableStateOf(Prefs.shortcuts) }
+    var say by rememberSaveable { mutableStateOf("") }
+    var type by rememberSaveable { mutableStateOf("") }
+    fun store(new: List<Words.Shortcut>) { list = new; Prefs.shortcuts = new }
+    val clash = list.any { it.say.equals(say.trim(), ignoreCase = true) }
+    // Closing with a filled-in shortcut keeps it rather than dropping it silently.
+    fun close() {
+        if (say.isNotBlank() && !clash) store(list + Words.Shortcut(say.trim(), type))
+        onClose()
+    }
+
+    ModalBottomSheet(onDismissRequest = ::close, containerColor = MaterialTheme.colorScheme.surfaceContainerLow) {
+        Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).padding(bottom = 32.dp)) {
+            Text("Shortcuts", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onSurface)
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "Say a short phrase and the full text is typed instead. Whole words only, not case-sensitive.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(12.dp))
+            list.forEach { sc ->
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("\u201c${sc.say}\u201d", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+                        Text(
+                            sc.type.ifEmpty { "(removed)" },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                        )
+                    }
+                    IconButton(onClick = { store(list - sc) }) {
+                        Icon(Icons.Rounded.Delete, "Delete shortcut ${sc.say}", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+            if (list.isEmpty()) {
+                Text(
+                    "None yet. For example: \u201cmy email\u201d types your address.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Spacer(Modifier.height(16.dp))
+            Text("Add one", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+            OutlinedTextField(
+                say, { say = it }, label = { Text("When I say") }, placeholder = { Text("my email") },
+                singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                keyboardOptions = KeyboardOptions(autoCorrectEnabled = false),
+                isError = clash,
+                supportingText = if (clash) ({ Text("You already have this one. Delete it first to change it.") }) else null,
+            )
+            OutlinedTextField(
+                type, { type = it }, label = { Text("Type") }, placeholder = { Text("name@example.com") },
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                keyboardOptions = KeyboardOptions(autoCorrectEnabled = false),
+            )
+            Spacer(Modifier.height(16.dp))
+            FilledTonalButton(
+                onClick = {
+                    store(list + Words.Shortcut(say.trim(), type))
+                    say = ""
+                    type = ""
+                },
+                enabled = say.isNotBlank() && !clash,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
+            ) { Text("Add shortcut") }
+            TextButton(onClick = ::close, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Done") }
         }
     }
 }

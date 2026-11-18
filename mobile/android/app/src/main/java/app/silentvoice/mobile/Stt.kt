@@ -19,7 +19,20 @@ data class SttResult(val text: String, val audioSec: Float, val decodeMs: Long) 
 }
 
 /** One loaded model. Loading is the slow part, so keep it and reuse it. */
-class Stt private constructor(val model: SttModel, val loadMs: Long, private val rec: OfflineRecognizer) {
+/**
+ * Words to favour while decoding (sherpa "hotwords"). Needs a transducer model
+ * and its SentencePiece [bpeVocab]; [key] tells a loaded engine whether the
+ * list changed (the boost is fixed when the engine is built).
+ */
+class Hotwords(val bpeVocab: File, val file: File, val key: String)
+
+class Stt private constructor(
+    val model: SttModel,
+    val loadMs: Long,
+    private val rec: OfflineRecognizer,
+    /** The word list this engine was built with ("" for none). */
+    val hotwordsKey: String,
+) {
 
     fun transcribe(samples: FloatArray, sampleRate: Int): SttResult {
         val t0 = SystemClock.elapsedRealtime()
@@ -34,7 +47,7 @@ class Stt private constructor(val model: SttModel, val loadMs: Long, private val
     fun release() = rec.release()
 
     companion object {
-        fun load(ctx: Context, m: SttModel, threads: Int): Stt {
+        fun load(ctx: Context, m: SttModel, threads: Int, hot: Hotwords? = null): Stt {
             val d = ModelStore.dir(ctx, m)
             fun f(name: String) = File(d, name).absolutePath
             val modelConfig = when (m.engine) {
@@ -67,11 +80,24 @@ class Stt private constructor(val model: SttModel, val loadMs: Long, private val
             val config = OfflineRecognizerConfig(
                 featConfig = FeatureConfig(sampleRate = 16000, featureDim = 80),
                 modelConfig = modelConfig,
-            )
+            ).apply {
+                // Greedy search has no alternatives to boost; beam search costs
+                // ~0.1-0.2 s, so it's used only when there are words to favour.
+                if (hot != null && m.engine == Engine.NEMO_TDT) {
+                    // sherpa reads bpe.vocab only with modeling unit "bpe" and has no
+                    // null check for it: set both together, only with a real file.
+                    modelConfig.modelingUnit = "bpe"
+                    modelConfig.bpeVocab = hot.bpeVocab.absolutePath
+                    decodingMethod = "modified_beam_search"
+                    hotwordsFile = hot.file.absolutePath
+                    hotwordsScore = Words.HOTWORDS_SCORE
+                }
+            }
             val t0 = SystemClock.elapsedRealtime()
             // null asset manager = read model files from disk paths, not from the APK.
             val rec = OfflineRecognizer(null, config)
-            return Stt(m, SystemClock.elapsedRealtime() - t0, rec)
+            val key = if (hot != null && m.engine == Engine.NEMO_TDT) hot.key else ""
+            return Stt(m, SystemClock.elapsedRealtime() - t0, rec, key)
         }
     }
 }
