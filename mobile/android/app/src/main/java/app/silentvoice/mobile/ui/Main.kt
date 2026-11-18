@@ -247,20 +247,25 @@ fun InAppMic(onText: (String) -> Unit) {
     }
     val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok -> if (ok) go() }
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(
-            Modifier.size(80.dp).clip(CircleShape)
-                .clickable(
-                    enabled = phase != Dictation.Phase.Working,
-                    role = Role.Button,
-                    onClick = {
-                        if (Dictation.micGranted(ctx)) go() else ask.launch(Manifest.permission.RECORD_AUDIO)
+        // An 80 dp bubble with 10 dp round it for the listening ring (80 x Pill.RING_ROOM = 9.6 dp);
+        // only the circle itself takes taps.
+        Box(Modifier.size(100.dp), contentAlignment = Alignment.Center) {
+            PillView(phase, Modifier.fillMaxSize(), doneKey, inset = 10.dp)
+            Box(
+                Modifier.size(80.dp).clip(CircleShape)
+                    .clickable(
+                        enabled = phase != Dictation.Phase.Working,
+                        role = Role.Button,
+                        onClick = {
+                            if (Dictation.micGranted(ctx)) go() else ask.launch(Manifest.permission.RECORD_AUDIO)
+                        },
+                    )
+                    .semantics {
+                        contentDescription = if (phase == Dictation.Phase.Recording) "Finish dictating" else "Start dictating"
                     },
-                )
-                .semantics {
-                    contentDescription = if (phase == Dictation.Phase.Recording) "Finish dictating" else "Start dictating"
-                },
-        ) { PillView(phase, Modifier.fillMaxSize(), doneKey) }
-        Spacer(Modifier.height(12.dp))
+            )
+        }
+        Spacer(Modifier.height(2.dp))
         Text(
             when (phase) {
                 Dictation.Phase.Idle -> "Tap the bubble to talk"

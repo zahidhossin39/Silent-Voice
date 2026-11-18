@@ -35,8 +35,9 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlin.math.sin
 
 /**
- * The bubble (circle with the desktop pill's animation) inside the app. [levels] drives the bars while recording
- * (the microphone by default); bump [doneKey] to flash the green check.
+ * The bubble ([Pill]) inside the app. [levels] drives the bars while recording (the microphone by default); bump
+ * [doneKey] to flash the green check. [inset] is room left round the circle for the listening ring (diameter x
+ * [Pill.RING_ROOM]); without it the ring draws past the bounds.
  */
 @Composable
 fun PillView(
@@ -44,6 +45,7 @@ fun PillView(
     modifier: Modifier = Modifier,
     doneKey: Int = 0,
     levels: Flow<Float> = Dictation.level,
+    inset: Dp = 0.dp,
 ) {
     val density = LocalDensity.current.density
     val pill = remember { Pill(density) }
@@ -73,12 +75,12 @@ fun PillView(
     }
     Canvas(modifier.clearAndSetSemantics { }) {
         val now = frame
-        drawIntoCanvas { pill.draw(it.nativeCanvas, size.width, size.height, now) }
+        drawIntoCanvas { pill.draw(it.nativeCanvas, size.width, size.height, now, inset.toPx()) }
     }
 }
 
 /**
- * The bubble acting out one dictation on a loop: waiting line, the listening
+ * The bubble acting out one dictation on a loop: the mic, the listening
  * pulse, a few seconds of talking, writing, then the check. Shows a new user
  * what the bubble will do before they meet it.
  */

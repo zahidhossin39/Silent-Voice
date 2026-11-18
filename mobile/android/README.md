@@ -3,9 +3,11 @@
 Native Kotlin app (Jetpack Compose, Material 3). Plan and decisions:
 `docs/mobile/PLAN.md`. Download: the newest `android-v*` pre-release on GitHub.
 
-What it does: a round bubble appears above the keyboard in any app. Inside it
-runs the desktop pill's animation (`Pill.kt`, ported from
-`src/components/overlay/RecordingOverlay.tsx`). Tap, talk, tap again, and the
+What it does: a round bubble with a mic appears above the keyboard in any app.
+While listening it shows the desktop pill's bars (`Pill.kt`, ported from
+`src/components/overlay/RecordingOverlay.tsx`) and an orange ring that swells
+with your voice. The look was picked from a prototype kept on the branch
+`prototype/bubble` (`mobile/android/prototype/bubble-prototype.html`). Tap, talk, tap again, and the
 cleaned text is typed at the cursor. Colours, icon and logo follow the desktop
 app (`src/styles.css`, `app-icon.svg`). Speech is
 transcribed on the phone (sherpa-onnx, Parakeet 110M). Clean-up (fillers,

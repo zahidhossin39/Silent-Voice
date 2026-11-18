@@ -96,6 +96,10 @@ Each step ends with something that runs on the phone. Commit at each.
    round bubble with the desktop pill's animation inside, desktop logo as the
    launcher icon, desktop colour tokens. Not checked: a real swipe-away on the
    phone after granting Autostart.
+   Then (2026-11-18) the user picked the bubble's look from a prototype (branch
+   `prototype/bubble`): a still mic while waiting (the grey line meant nothing to
+   a new user), and while listening the desktop bars plus an orange ring outside
+   the bubble that swells with the voice and ripples while quiet.
 3. **Shared crate.** `crates/sv-core` with the copied text logic and its tests,
    built for Android and called from Kotlin through UniFFI.
 4. **Pipeline.** Record, trim silence, transcribe, clean up, optional cloud AI

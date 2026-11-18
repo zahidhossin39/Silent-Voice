@@ -110,10 +110,12 @@ class BubbleService : AccessibilityService() {
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
     private fun show(keyboardTop: Int) {
-        // A 56 dp circle, plus room for its shadow.
-        val w = dp(56) + BubbleView.pad(this) * 2
+        // A 56 dp circle, plus room for its shadow and the listening ring.
+        // The circle itself sits 10 dp from the edge and 8 dp above the keyboard.
+        val pad = BubbleView.pad(this)
+        val w = dp(56) + pad * 2
         val h = w
-        val y = keyboardTop - h - dp(2)
+        val y = keyboardTop - h - (dp(8) - pad)
         if (bubble != null && y == shownAtY) return
         val wm = getSystemService(WindowManager::class.java)
         val params = WindowManager.LayoutParams(
@@ -125,7 +127,7 @@ class BubbleService : AccessibilityService() {
             PixelFormat.TRANSLUCENT,
         ).apply {
             gravity = Gravity.TOP or Gravity.END
-            x = dp(4)
+            x = dp(10) - pad
             this.y = y
             layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         }
@@ -271,8 +273,9 @@ class BubbleService : AccessibilityService() {
 }
 
 /**
- * The floating bubble above the keyboard: a circle with the desktop pill's
- * animation inside ([Pill]), and a soft shadow so it reads on any background.
+ * The floating bubble above the keyboard ([Pill]: a mic while waiting, the
+ * desktop pill's bars and an outer ring while listening), with a soft shadow
+ * so it reads on any background.
  */
 class BubbleView(context: Context) : View(context) {
     private val pill = Pill(resources.displayMetrics.density)
@@ -309,7 +312,7 @@ class BubbleView(context: Context) : View(context) {
     }
 
     companion object {
-        /** Space around the capsule for its shadow. */
-        fun pad(ctx: Context) = (6 * ctx.resources.displayMetrics.density).toInt()
+        /** Space around the circle for its shadow and the listening ring (56 dp x [Pill.RING_ROOM] = 6.7 dp). */
+        fun pad(ctx: Context) = (7 * ctx.resources.displayMetrics.density).toInt()
     }
 }
