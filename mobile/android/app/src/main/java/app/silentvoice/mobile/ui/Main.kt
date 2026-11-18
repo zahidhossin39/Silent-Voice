@@ -269,6 +269,7 @@ fun InAppMic(onText: (String) -> Unit) {
         Text(
             when (phase) {
                 Dictation.Phase.Idle -> "Tap the bubble to talk"
+                Dictation.Phase.Starting -> "Starting the microphone…"
                 Dictation.Phase.Recording -> "Listening. Tap again when you're done"
                 Dictation.Phase.Working -> "Writing it down…"
             },
@@ -320,7 +321,7 @@ private fun HomeScreen(version: Int, onModes: () -> Unit, onSetup: () -> Unit) {
                 } else {
                     val (title, body, label) = when {
                         !mic -> Triple("Microphone is off", "Silent Voice can't hear you until the microphone is allowed.", "Fix in Settings")
-                        !model -> Triple("Voice model missing", "Download the 100 MB voice model to start dictating.", "Go to Settings")
+                        !model -> Triple("Voice model missing", "Download the 110 MB voice model to start dictating.", "Go to Settings")
                         bubble == Keepalive.Bubble.Stopped -> Triple(
                             "Your phone stopped the bubble",
                             "It closed Silent Voice in the background. In Accessibility, switch Silent Voice off, then on again.",
@@ -512,6 +513,7 @@ private fun SettingsScreen(version: Int, onChanged: () -> Unit, onModes: () -> U
     val mic = tick.let { Dictation.micGranted(ctx) }
     val model = tick.let { Dictation.modelReady(ctx) }
     val progress by ModelDownload.progress.collectAsState()
+    val upgrade = tick.let { ModelDownload.upgradeAvailable(ctx) }
     val downloadError by ModelDownload.error.collectAsState()
     val historyCount = History.items.collectAsState().value.size
     var confirmClear by remember { mutableStateOf(false) }
@@ -557,10 +559,11 @@ private fun SettingsScreen(version: Int, onChanged: () -> Unit, onModes: () -> U
                 when {
                     p != null -> "Downloading ${(p * 100).toInt()}%"
                     downloadError != null -> downloadError
+                    upgrade -> "Older version. Tap to get the more accurate one (110 MB)."
                     model -> "Parakeet 110M, English. On this phone."
-                    else -> "Not downloaded (100 MB)"
+                    else -> "Not downloaded (110 MB)"
                 },
-                onClick = if (!model && p == null) ({ ModelDownload.start(ctx) }) else null,
+                onClick = if ((!model || upgrade) && p == null) ({ ModelDownload.start(ctx) }) else null,
             ) { StatusDot(model && p == null) }
             if (p != null) {
                 LinearProgressIndicator(

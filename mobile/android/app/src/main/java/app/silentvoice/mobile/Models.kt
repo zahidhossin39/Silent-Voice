@@ -9,21 +9,34 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 /** How a model's files map onto sherpa-onnx's config. */
-enum class Engine { MOONSHINE, NEMO_CTC }
+enum class Engine { MOONSHINE, NEMO_CTC, NEMO_TDT }
 
 data class SttModel(val id: String, val label: String, val engine: Engine, val archive: String) {
     val url get() = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/$archive.tar.bz2"
 }
 
-/** Measured fastest on the test phone (mobile/android/README.md). */
-const val DEFAULT_MODEL_ID = "parakeet-110m-en"
+/**
+ * Parakeet 110M with its TDT (transducer) decoder. Same network, size and speed
+ * as the CTC version used before, but the decoder sees the words already
+ * written, so the first words of a dictation stop coming out as sound-alike
+ * junk ("Luu Lu is it working" for "Hello, is it working", 2026-11-19, replayed
+ * from real phone recordings).
+ */
+const val DEFAULT_MODEL_ID = "parakeet-tdt-110m-en"
 
-/** The three candidates that were measured; only the default is downloaded. */
+/** The CTC version, still used on phones that had it until the TDT one has downloaded. */
+const val LEGACY_MODEL_ID = "parakeet-110m-en"
+
+/** Models that were measured (mobile/android/README.md); only the default is downloaded. */
 val MODELS = listOf(
     SttModel("moonshine-tiny-en", "Moonshine Tiny", Engine.MOONSHINE, "sherpa-onnx-moonshine-tiny-en-int8"),
     SttModel("moonshine-base-en", "Moonshine Base", Engine.MOONSHINE, "sherpa-onnx-moonshine-base-en-int8"),
-    SttModel("parakeet-110m-en", "Parakeet 110M", Engine.NEMO_CTC, "sherpa-onnx-nemo-parakeet_tdt_ctc_110m-en-36000-int8"),
+    SttModel(LEGACY_MODEL_ID, "Parakeet 110M (CTC)", Engine.NEMO_CTC, "sherpa-onnx-nemo-parakeet_tdt_ctc_110m-en-36000-int8"),
+    SttModel(DEFAULT_MODEL_ID, "Parakeet 110M", Engine.NEMO_TDT, "sherpa-onnx-nemo-parakeet_tdt_transducer_110m-en-36000-int8"),
 )
+
+val DEFAULT_MODEL get() = MODELS.first { it.id == DEFAULT_MODEL_ID }
+val LEGACY_MODEL get() = MODELS.first { it.id == LEGACY_MODEL_ID }
 
 object ModelStore {
     fun root(ctx: Context) = File(ctx.filesDir, "models")
@@ -70,9 +83,17 @@ object ModelStore {
         check(tmp.renameTo(dest)) { "Could not move model into place" }
     }
 
-    /** Frees space taken by models that were only downloaded for the speed test. */
+    /**
+     * Frees space taken by models no longer used. The old default stays until
+     * the new one is installed, so an upgrade never leaves the phone without one.
+     * Half-finished downloads (".part") are left for the download to replace.
+     */
     fun removeUnused(ctx: Context) {
-        root(ctx).listFiles()?.forEach { if (it.name != DEFAULT_MODEL_ID) it.deleteRecursively() }
+        val upgraded = installed(ctx, DEFAULT_MODEL)
+        root(ctx).listFiles()?.forEach {
+            val keep = it.name == DEFAULT_MODEL_ID || it.name.endsWith(".part") || (it.name == LEGACY_MODEL_ID && !upgraded)
+            if (!keep) it.deleteRecursively()
+        }
     }
 
     /** The longest test clip shipped with any installed model: the shared benchmark clip. */

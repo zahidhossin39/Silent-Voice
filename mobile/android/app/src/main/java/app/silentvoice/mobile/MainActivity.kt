@@ -29,6 +29,13 @@ class MainActivity : ComponentActivity() {
     }
 
     // The self-test intent can arrive while the app is already open.
+    // On screen, not at process start: the bubble starts the process in the
+    // background, where Xiaomi hides the network and every network looks metered.
+    override fun onResume() {
+        super.onResume()
+        ModelDownload.upgradeIfNeeded(this)
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         selfTest(intent)

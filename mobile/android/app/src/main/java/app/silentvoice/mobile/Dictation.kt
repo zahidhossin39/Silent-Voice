@@ -39,7 +39,13 @@ private const val IDLE_UNLOAD_MS = 5 * 60_000L
  * Any failure after transcription falls back to the plain words.
  */
 object Dictation {
-    enum class Phase { Idle, Recording, Working }
+    /**
+     * Starting: tapped, but the microphone isn't delivering audio yet (about
+     * 200 ms on a Xiaomi 11i). The bubble keeps showing the mic until Recording,
+     * so the listening look means the phone really is listening; speaking at
+     * the first sight of it used to cut off the first syllable.
+     */
+    enum class Phase { Idle, Starting, Recording, Working }
 
     sealed interface Outcome {
         data class Text(val text: String, val notice: String? = null) : Outcome
@@ -54,7 +60,10 @@ object Dictation {
      */
     val level = MutableSharedFlow<Float>(extraBufferCapacity = 8, onBufferOverflow = BufferOverflow.DROP_OLDEST)
 
-    val model get() = MODELS.first { it.id == DEFAULT_MODEL_ID }
+    /** The default model, or the old one while the default is still downloading. */
+    fun model(ctx: Context): SttModel =
+        if (!ModelStore.installed(ctx, DEFAULT_MODEL) && ModelStore.installed(ctx, LEGACY_MODEL)) LEGACY_MODEL
+        else DEFAULT_MODEL
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val stop = AtomicBoolean(false)
@@ -63,7 +72,7 @@ object Dictation {
     private var idleJob: Job? = null
     private val threads = Runtime.getRuntime().availableProcessors().coerceIn(2, 4)
 
-    fun modelReady(ctx: Context) = ModelStore.installed(ctx, model)
+    fun modelReady(ctx: Context) = ModelStore.installed(ctx, model(ctx))
 
     fun micGranted(ctx: Context) =
         ctx.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
@@ -75,9 +84,12 @@ object Dictation {
     }
 
     private suspend fun engine(app: Context): Stt = loadLock.withLock {
-        val loaded = stt ?: Stt.load(app, model, threads).also {
+        val want = model(app)
+        // A finished upgrade download swaps the model at the next dictation.
+        stt?.takeIf { it.model != want }?.let { it.release(); stt = null }
+        val loaded = stt ?: Stt.load(app, want, threads).also {
             stt = it
-            Log.i(TAG, "model loaded in ${it.loadMs} ms")
+            Log.i(TAG, "model ${want.id} loaded in ${it.loadMs} ms")
         }
         // The model holds a few hundred MB; let it go after a quiet spell.
         idleJob?.cancel()
@@ -98,7 +110,7 @@ object Dictation {
     fun toggle(ctx: Context, onDone: (Outcome) -> Unit) {
         when (phase.value) {
             Phase.Idle -> start(ctx.applicationContext, onDone)
-            Phase.Recording -> stop.set(true)
+            Phase.Starting, Phase.Recording -> stop.set(true)
             Phase.Working -> {}
         }
     }
@@ -113,7 +125,7 @@ object Dictation {
             return
         }
         stop.set(false)
-        phase.value = Phase.Recording
+        phase.value = Phase.Starting
         scope.launch {
             val outcome = try {
                 run(app)
@@ -201,6 +213,7 @@ object Dictation {
             while (!stop.get() && n < RATE * MAX_SECONDS) {
                 val got = rec.read(chunk, 0, chunk.size)
                 if (got <= 0) continue
+                if (n == 0) phase.value = Phase.Recording // audio is flowing: now show it
                 if (n + got > out.size) out = out.copyOf(out.size * 2)
                 for (i in 0 until got) out[n + i] = chunk[i] / 32768f
                 level.tryEmit(Pill.norm(rms(out, n, n + got)))
@@ -212,6 +225,7 @@ object Dictation {
         }
         return out.copyOf(n)
     }
+
 
     private fun rms(a: FloatArray, from: Int, to: Int): Float {
         if (to <= from) return 0f
@@ -228,6 +242,25 @@ object ModelDownload {
     val error = MutableStateFlow<String?>(null)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+    /**
+     * Phones that still have the old CTC model get the new one in the
+     * background; dictation keeps using the old one until it lands.
+     */
+    fun upgradeIfNeeded(ctx: Context) {
+        if (!upgradeAvailable(ctx)) return
+        // 110 MB: only on Wi-Fi by itself; Settings offers it on mobile data.
+        // Runs in App.onCreate: a failed check must never stop the app starting.
+        val wifi = runCatching {
+            !ctx.getSystemService(android.net.ConnectivityManager::class.java).isActiveNetworkMetered
+        }.onFailure { Log.w(TAG, "network check failed: $it") }.getOrDefault(false)
+        Log.i(TAG, "model upgrade: " + if (wifi) "downloading" else "waiting for Wi-Fi")
+        if (wifi) start(ctx)
+    }
+
+    /** The old CTC model is in use and the better one isn't downloaded yet. */
+    fun upgradeAvailable(ctx: Context) =
+        !ModelStore.installed(ctx, DEFAULT_MODEL) && ModelStore.installed(ctx, LEGACY_MODEL)
+
     fun start(ctx: Context) {
         if (progress.value != null) return
         val app = ctx.applicationContext
@@ -235,8 +268,8 @@ object ModelDownload {
         error.value = null
         scope.launch {
             try {
-                ModelStore.download(app, Dictation.model) { progress.value = it }
-                Dictation.warm(app)
+                ModelStore.download(app, DEFAULT_MODEL) { progress.value = it }
+                ModelStore.removeUnused(app)
             } catch (e: Throwable) {
                 Log.e(TAG, "model download failed", e)
                 error.value = "The download stopped. Check your connection and try again."

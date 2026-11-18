@@ -8,6 +8,7 @@ import com.k2fsa.sherpa.onnx.OfflineMoonshineModelConfig
 import com.k2fsa.sherpa.onnx.OfflineNemoEncDecCtcModelConfig
 import com.k2fsa.sherpa.onnx.OfflineRecognizer
 import com.k2fsa.sherpa.onnx.OfflineRecognizerConfig
+import com.k2fsa.sherpa.onnx.OfflineTransducerModelConfig
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -46,6 +47,16 @@ class Stt private constructor(val model: SttModel, val loadMs: Long, private val
                     ),
                     tokens = f("tokens.txt"),
                     numThreads = threads,
+                )
+                Engine.NEMO_TDT -> OfflineModelConfig(
+                    transducer = OfflineTransducerModelConfig(
+                        encoder = f("encoder.int8.onnx"),
+                        decoder = f("decoder.int8.onnx"),
+                        joiner = f("joiner.int8.onnx"),
+                    ),
+                    tokens = f("tokens.txt"),
+                    numThreads = threads,
+                    modelType = "nemo_transducer",
                 )
                 Engine.NEMO_CTC -> OfflineModelConfig(
                     nemo = OfflineNemoEncDecCtcModelConfig(model = f("model.int8.onnx")),

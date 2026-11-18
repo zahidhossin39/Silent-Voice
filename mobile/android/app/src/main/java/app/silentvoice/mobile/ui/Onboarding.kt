@@ -274,12 +274,12 @@ private fun ModelStep(tick: Int, next: () -> Unit) {
     val ready = tick.let { Dictation.modelReady(ctx) } && progress == null
     Page(
         title = "A brain that fits\nin your pocket.",
-        body = "One download, about 100 MB. After that, Silent Voice understands you without the internet.",
+        body = "One download, about 110 MB. After that, Silent Voice understands you without the internet.",
         action = when {
             ready -> "Continue"
             progress != null -> "Downloading…"
             error != null -> "Try again"
-            else -> "Download (100 MB)"
+            else -> "Download (110 MB)"
         },
         actionEnabled = progress == null,
         onAction = { if (ready) next() else ModelDownload.start(ctx) },

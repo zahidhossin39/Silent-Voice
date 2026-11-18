@@ -261,35 +261,36 @@ class BubbleService : AccessibilityService() {
             done("password-skip", "That's a password field, so nothing was typed. Your words are copied.")
             return
         }
-        // An empty field reports its grey hint as its text; treat that as empty.
-        val current = if (node.isShowingHintText) "" else node.text?.toString().orEmpty()
-        var start = node.textSelectionStart
-        var end = node.textSelectionEnd
-        if (start < 0 || end < 0 || start > current.length || end > current.length) {
-            start = current.length
-            end = current.length
+        when (val plan = planInsert(
+            node.text?.toString(), node.isShowingHintText, node.textSelectionStart, node.textSelectionEnd, text,
+        )) {
+            is InsertPlan.SetText -> {
+                val set = node.performAction(
+                    AccessibilityNodeInfo.ACTION_SET_TEXT,
+                    Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, plan.text) },
+                )
+                if (set) {
+                    node.performAction(
+                        AccessibilityNodeInfo.ACTION_SET_SELECTION,
+                        Bundle().apply {
+                            putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, plan.cursor)
+                            putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, plan.cursor)
+                        },
+                    )
+                    done("set-text", null)
+                    return
+                }
+                paste(node, text, "paste")
+            }
+            // No cursor reported: the text may be a placeholder (see planInsert).
+            InsertPlan.Paste -> paste(node, text, "paste-no-cursor")
         }
-        val from = minOf(start, end)
-        val to = maxOf(start, end)
-        val newText = current.substring(0, from) + text + current.substring(to)
-        val set = node.performAction(
-            AccessibilityNodeInfo.ACTION_SET_TEXT,
-            Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, newText) },
-        )
-        if (set) {
-            val cursor = from + text.length
-            node.performAction(
-                AccessibilityNodeInfo.ACTION_SET_SELECTION,
-                Bundle().apply {
-                    putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, cursor)
-                    putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, cursor)
-                },
-            )
-            done("set-text", null)
-            return
-        }
-        copy(text)
-        if (node.performAction(AccessibilityNodeInfo.ACTION_PASTE)) done("paste", null)
+    }
+
+    /** Pastes [text] at the app's own cursor; if the app refuses, leaves it on the clipboard and says so. */
+    private fun paste(node: AccessibilityNodeInfo, text: String, how: String) {
+        copy(text, trim = false) // keep the trailing space that separates it from the next words
+        if (node.performAction(AccessibilityNodeInfo.ACTION_PASTE)) done(how, null)
         else done("clipboard-only", "This app blocked typing. Your words are copied, so just paste.")
     }
 
@@ -329,8 +330,9 @@ class BubbleService : AccessibilityService() {
         return null
     }
 
-    private fun copy(text: String) {
-        getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Silent Voice", text.trim()))
+    private fun copy(text: String, trim: Boolean = true) {
+        val clip = if (trim) text.trim() else text
+        getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Silent Voice", clip))
     }
 
     private fun toast(message: String) = Toast.makeText(this, message, Toast.LENGTH_LONG).show()
@@ -356,6 +358,7 @@ class BubbleView(context: Context) : View(context) {
             pill.phase = value
             contentDescription = when (value) {
                 Dictation.Phase.Idle -> "Start dictating with Silent Voice"
+                Dictation.Phase.Starting -> "Starting the microphone"
                 Dictation.Phase.Recording -> "Finish dictating"
                 Dictation.Phase.Working -> "Silent Voice is writing"
             }
