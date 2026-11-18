@@ -37,6 +37,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
@@ -676,7 +677,7 @@ private fun SettingsScreen(version: Int, onChanged: () -> Unit, onModes: () -> U
                 else "Spells these right: " + vocab.take(3).joinToString(", ") +
                     if (vocab.size > 3) " and ${vocab.size - 3} more." else ".",
                 onClick = { wordsSheet = true },
-            ) { Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+            ) { OpenIcon(empty = vocab.isEmpty()) }
             val shortcuts = (version + words).let { Prefs.shortcuts }
             Row2(
                 "Shortcuts",
@@ -688,7 +689,7 @@ private fun SettingsScreen(version: Int, onChanged: () -> Unit, onModes: () -> U
                         if (more > 0) " and $more more." else ""
                 },
                 onClick = { shortcutsSheet = true },
-            ) { Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+            ) { OpenIcon(empty = shortcuts.isEmpty()) }
         }
 
         SectionLabel("Writing mode", "Type exactly what you said, or let an AI rewrite it first.")
@@ -747,6 +748,17 @@ private fun preview(type: String): String {
         oneLine.length > 24 -> oneLine.take(23).trimEnd() + "…"
         else -> oneLine
     }
+}
+
+/**
+ * Trailing icon for a row that opens a list: an orange plus while the list is
+ * empty (adding is all there is to do), the usual arrow once it has items
+ * (the row then opens a page to view, change and delete them).
+ */
+@Composable
+private fun OpenIcon(empty: Boolean) {
+    if (empty) Icon(Icons.Rounded.Add, null, tint = MaterialTheme.colorScheme.primary)
+    else Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
 /** State shown with an icon and a label, never colour alone. */
