@@ -1,0 +1,532 @@
+<!doctype html>
+<!--
+  PROTOTYPE, throw away after a pick. Question: what should the phone bubble
+  look like when idle (a mic, not the desktop's grey line) and while talking?
+  Three idle designs x (current + three) talking animations, switchable via
+  ?idle=A|B|C&talk=N|A|B|C and the bar at the bottom. Drawing is a port of
+  app/src/main/java/app/silentvoice/mobile/Pill.kt (same units: 30 per circle).
+  Open by double-clicking. Nothing is saved.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bubble prototype</title>
+<style>
+:root{--bg:#f5f6f8;--surface:#fff;--surface2:#eceef2;--border:#dde1e8;--text:#1a1e28;--muted:#5c6473;--accent:#ea580c}
+@media (prefers-color-scheme:dark){:root{--bg:#0b0e14;--surface:#131722;--surface2:#1b2030;--border:#262c3d;--text:#e6e9f0;--muted:#8b93a7;--accent:#f97316}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding:24px 16px 120px}
+.wrap{max-width:1080px;margin:0 auto}
+h1{font-size:20px;margin:0 0 4px}
+h2{font-size:15px;margin:36px 0 4px}
+p.lead,.sub{color:var(--muted);margin:0 0 14px;max-width:760px}
+.tag{display:inline-block;font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--accent);border:1px solid var(--accent);border-radius:99px;padding:1px 8px;margin-left:8px;vertical-align:middle}
+.try{display:flex;gap:28px;flex-wrap:wrap;align-items:flex-start}
+
+/* Phone mock (1 css px = 1 dp) */
+.phone{position:relative;width:360px;height:700px;border-radius:28px;overflow:hidden;border:8px solid #111;flex:none;display:flex;flex-direction:column;
+  --pbg:#efeae2;--bar:#ffffff;--in:#ffffff;--out:#d9fdd3;--ptext:#111b21;--psub:#667781;--field:#ffffff;--kb:#e8eaed;--key:#ffffff;--keyt:#1f1f1f}
+.phone.dark{--pbg:#0b141a;--bar:#1f2c34;--in:#1f2c34;--out:#005c4b;--ptext:#e9edef;--psub:#8696a0;--field:#1f2c34;--kb:#1b1b1f;--key:#3b3b40;--keyt:#e3e3e3}
+.status{height:24px;background:var(--bar);color:var(--ptext);font-size:12px;padding:4px 14px}
+.appbar{height:52px;background:var(--bar);display:flex;align-items:center;gap:10px;padding:0 12px;color:var(--ptext)}
+.avatar{width:34px;height:34px;border-radius:50%;background:#7aa3c4}
+.appbar small{display:block;color:var(--psub);font-size:11px;margin-top:-2px}
+.chat{flex:1;background:var(--pbg);padding:12px 10px;display:flex;flex-direction:column;gap:6px;justify-content:flex-end}
+.msg{max-width:75%;padding:6px 9px;border-radius:8px;font-size:13.5px;color:var(--ptext)}
+.msg.in{background:var(--in);align-self:flex-start}.msg.out{background:var(--out);align-self:flex-end}
+.composer{background:var(--pbg);display:flex;gap:6px;padding:6px 6px 8px;align-items:center}
+.field{flex:1;min-height:44px;background:var(--field);border-radius:22px;display:flex;align-items:center;padding:0 14px 0 44px;color:var(--ptext);font-size:15px;position:relative}
+.field .emoji{position:absolute;left:12px;width:20px;height:20px;border-radius:50%;border:2px solid var(--psub)}
+.field .ph{color:var(--psub)}
+.caret{display:inline-block;width:2px;height:20px;background:#00a884;margin-left:1px;animation:blink 1s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+.send{width:44px;height:44px;border-radius:50%;background:#00a884;flex:none}
+.kb{height:250px;background:var(--kb);padding:8px 3px;display:flex;flex-direction:column;gap:9px;flex:none}
+.row{display:flex;gap:5px;justify-content:center}
+.key{height:44px;flex:1;max-width:32px;background:var(--key);color:var(--keyt);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:17px}
+.key.w{max-width:46px;font-size:13px}.key.sp{max-width:180px}
+#phoneBubble{position:absolute;left:4px;bottom:252px;width:68px;height:68px;cursor:pointer;touch-action:manipulation}
+
+.side{flex:1;min-width:300px;max-width:560px}
+.zoom{width:100%;height:260px;border-radius:14px;border:1px solid var(--border);cursor:pointer;display:block}
+.controls{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}
+button{font:inherit;color:var(--text);background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 12px;cursor:pointer}
+button.on{border-color:var(--accent);color:var(--accent);font-weight:600}
+.state{font:12px/1.5 ui-monospace,Consolas,monospace;color:var(--muted);background:var(--surface2);border-radius:8px;padding:8px 10px;white-space:pre}
+.desc{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-top:12px}
+.desc b{display:block;margin-bottom:2px}
+.desc p{margin:0 0 8px;color:var(--muted)}
+
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px}
+.tile{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:12px;cursor:pointer}
+.tile.sel{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.tile canvas{display:block;width:100%;height:160px;border-radius:10px}
+.tile .mini{display:flex;gap:8px;margin-top:8px}
+.tile .mini canvas{height:76px;flex:1 1 0;min-width:0;width:0;border:1px solid var(--border)}
+.tile b{display:block;margin-top:10px}
+.tile p{margin:2px 0 0;color:var(--muted);font-size:13px}
+
+/* Prototype switcher: deliberately not part of the design */
+.switch{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);background:#111;color:#fff;border-radius:99px;padding:6px 8px;display:flex;align-items:center;gap:4px;box-shadow:0 6px 24px rgba(0,0,0,.35);font-size:13px;z-index:10;max-width:calc(100vw - 32px);flex-wrap:wrap;justify-content:center}
+.switch button{background:transparent;border:0;color:#fff;padding:6px 9px;border-radius:99px}
+.switch button:hover{background:#333}
+.switch .lbl{min-width:150px;text-align:center}
+.switch .lbl small{color:#9aa;display:block;font-size:10px;text-transform:uppercase;letter-spacing:.06em}
+.switch .sep{width:1px;height:28px;background:#444;margin:0 6px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Phone bubble <span class="tag">Prototype</span></h1>
+  <p class="lead">Idle should say "tap to talk" at a glance, so each idle option is a mic. Talking options are the current
+    desktop-pill animation plus three tries at doing better. Tap the bubble (in the phone or the big view) to talk, tap again to stop.
+    The demo voice is fake; "Use my mic" drives it with your own voice. Idle never moves, on purpose: a bubble that always moves distracts and costs battery.</p>
+
+  <div class="try">
+    <div class="phone" id="phone">
+      <div class="status">9:41</div>
+      <div class="appbar"><div class="avatar"></div><div><b>Sam</b><small>online</small></div></div>
+      <div class="chat">
+        <div class="msg in">Are we still on for tonight?</div>
+        <div class="msg out">Yes! What time works for you?</div>
+        <div class="msg in">Whenever you're free</div>
+      </div>
+      <div class="composer"><div class="field"><span class="emoji"></span><span id="typed"></span><span class="caret"></span></div><div class="send"></div></div>
+      <div class="kb" id="kb"></div>
+      <canvas id="phoneBubble" title="Tap to talk"></canvas>
+    </div>
+
+    <div class="side">
+      <canvas class="zoom" id="zoom" title="Tap to talk"></canvas>
+      <div class="controls">
+        <button id="auto" class="on">Auto demo</button>
+        <button id="tapBtn">Tap bubble</button>
+        <button id="micBtn">Use my mic</button>
+        <button id="light" class="on">Light app</button>
+        <button id="dark">Dark app</button>
+      </div>
+      <div class="state" id="state"></div>
+      <div class="desc" id="desc"></div>
+    </div>
+  </div>
+
+  <h2>Idle options</h2>
+  <p class="sub">What sits above the keyboard while you type. Big view, then real size (56 dp) on a light and a dark chat.</p>
+  <div class="grid" id="idleGrid"></div>
+
+  <h2>Talking options</h2>
+  <p class="sub">All four play the same fake sentence at the same time: quiet, talking, quiet, writing, done.</p>
+  <div class="grid" id="talkGrid"></div>
+</div>
+
+<div class="switch" id="switch">
+  <button data-k="idle" data-d="-1" aria-label="Previous idle">&#9664;</button>
+  <div class="lbl"><small>Idle (&larr; &rarr;)</small><span id="idleLbl"></span></div>
+  <button data-k="idle" data-d="1" aria-label="Next idle">&#9654;</button>
+  <span class="sep"></span>
+  <button data-k="talk" data-d="-1" aria-label="Previous talking">&#9664;</button>
+  <div class="lbl"><small>Talking (&uarr; &darr;)</small><span id="talkLbl"></span></div>
+  <button data-k="talk" data-d="1" aria-label="Next talking">&#9654;</button>
+</div>
+
+<script>
+// ---------- colours and helpers (desktop tokens, as in Pill.kt) ----------
+const COL = {fill:'#0E1116', border:'#343B50', accent:'#F97316', muted:'#8B93A7', good:'#22C55E',
+  light:'#E6E9F0', white:'#FFFFFF', onAccent:'#1A1200', outline:'#C9CEDA'};
+const BASE = [6, 10, 13, 9, 5];
+const hexv = c => [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16));
+function mix(a, b, t) {
+  t = Math.max(0, Math.min(1, t));
+  const x = hexv(a), y = hexv(b);
+  return `rgb(${x.map((v, i) => Math.round(v + (y[i] - v) * t)).join(',')})`;
+}
+function rr(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, Math.max(0, Math.min(r, w / 2, h / 2)));
+}
+/** Desktop loudness mapping (Pill.norm). */
+const norm = rms => Math.pow(Math.max(0, Math.min(1, (rms * 300 - 3) / 26)), 0.7);
+/** sv-pulse keyframes: scaleY .4->1->.4, opacity .6->1->.6, 100 ms stagger. */
+function pulse(elapsed, i, period) {
+  const t = elapsed - i * 100;
+  if (t < 0) return [1, 1];
+  const p = (t % period) / period;
+  const u = p < .5 ? p / .5 : (1 - p) / .5;
+  const e = u * u * (3 - 2 * u);
+  return [.4 + .6 * e, .6 + .4 * e];
+}
+
+// ---------- idle designs (units: the circle is 30 across, origin at its centre) ----------
+function micGlyph(ctx, col) {
+  ctx.translate(0, .75);
+  ctx.fillStyle = col; ctx.strokeStyle = col; ctx.lineCap = 'round'; ctx.lineWidth = 1.8;
+  rr(ctx, -3.2, -9, 6.4, 11, 3.2); ctx.fill();
+  ctx.beginPath(); ctx.arc(0, -2.6, 6, 0, Math.PI); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0, 3.4); ctx.lineTo(0, 6.6); ctx.moveTo(-3, 6.6); ctx.lineTo(3, 6.6); ctx.stroke();
+}
+const IDLE = {
+  A: {name: 'Classic mic',
+      text: 'The mic everyone already knows, white on the dark circle. Calmest of the three; reads as "tap to talk" with no learning.',
+      draw(ctx) { ctx.scale(.95, .95); micGlyph(ctx, COL.light); }},
+  B: {name: 'Logo mic',
+      text: 'A mic whose head holds the Silent Voice bars (orange, white centre, like the app icon). Says "voice" and "this app" at once; the bars grow into the talking animation.',
+      draw(ctx) {
+        ctx.scale(.82, .82); ctx.translate(0, 1.9);
+        ctx.strokeStyle = COL.outline; ctx.lineWidth = 1.4; ctx.lineCap = 'round';
+        rr(ctx, -5, -11, 10, 14, 5); ctx.stroke();
+        const hs = [2.4, 4.6, 7.4, 4.6, 2.4], W = 1, G = .65, x0 = -(5 * W + 4 * G) / 2;
+        hs.forEach((h, i) => {
+          ctx.fillStyle = i === 2 ? COL.white : COL.accent;
+          rr(ctx, x0 + i * (W + G), -4 - h / 2, W, h, W / 2); ctx.fill();
+        });
+        ctx.beginPath(); ctx.arc(0, -3, 7.4, 0, Math.PI); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(0, 4.4); ctx.lineTo(0, 7.2); ctx.moveTo(-3.2, 7.2); ctx.lineTo(3.2, 7.2); ctx.stroke();
+      }},
+  C: {name: 'Orange button', orange: true,
+      text: 'The whole bubble is the orange mic button. Easiest to spot and to hit; it turns dark the moment it starts listening, so the change is unmissable. Loudest on screen.',
+      draw(ctx) { ctx.scale(.95, .95); micGlyph(ctx, COL.onAccent); }},
+};
+
+// ---------- talking designs ----------
+function drawBarsN(ctx, b, now) {
+  const g = ctx.globalAlpha;
+  let tot = 8; for (let i = 0; i < 5; i++) tot += b.w[i];
+  let x = -tot / 2;
+  for (let i = 0; i < 5; i++) {
+    let bh = b.h[i], a = b.a[i];
+    if (b.pulseKind) { const [sc, op] = pulse(now - b.pulseStart, i, b.pulseKind === 1 ? 1000 : 1600); bh *= sc; a *= op; }
+    if (a > .01) {
+      ctx.globalAlpha = g * a; ctx.fillStyle = mix(COL.muted, COL.accent, b.warm[i]);
+      rr(ctx, x, -bh / 2, b.w[i], bh, Math.min(b.w[i], bh) / 2); ctx.fill();
+    }
+    x += b.w[i] + 2;
+  }
+  ctx.globalAlpha = g;
+}
+const TALK = {
+  N: {name: 'Now (desktop pill)',
+      text: 'What ships today: the Windows pill\'s bars, pulsing while quiet, following your voice while you talk. Bars are about a third of the circle tall.',
+      draw: drawBarsN},
+  A: {name: 'Big bars',
+      text: 'Same five bars, nearly twice as tall, with a white centre bar like the icon. Your voice spreads out from the centre, and the rim turns orange while listening. A soft wave runs while you are quiet.',
+      draw(ctx, b, now) {
+        const g = ctx.globalAlpha;
+        if (b.warmA > .01) {
+          ctx.globalAlpha = g * b.warmA * .9; ctx.strokeStyle = COL.accent; ctx.lineWidth = 1.1;
+          ctx.beginPath(); ctx.arc(0, 0, 14.1, 0, 2 * Math.PI); ctx.stroke();
+        }
+        const W = 2.8, G = 1.8, x0 = -(5 * W + 4 * G) / 2, per = b.f.work ? 1800 : 1200;
+        const ba = Math.max(b.rv, b.wv);
+        for (let i = 0; i < 5; i++) {
+          const d = Math.abs(i - 2);
+          const wave = 3 + 2.6 * (.5 + .5 * Math.sin(2 * Math.PI * now / per - d * .9));
+          const h = wave + (b.live[i] - wave) * b.spk;
+          ctx.globalAlpha = g * ba;
+          ctx.fillStyle = i === 2 ? mix(COL.muted, COL.white, b.warmA) : mix(COL.muted, COL.accent, b.warmA);
+          rr(ctx, x0 + i * (W + G), -h / 2, W, h, W / 2); ctx.fill();
+        }
+        ctx.globalAlpha = g;
+      }},
+  B: {name: 'Voice ring',
+      text: 'The current bars, plus an orange ring just outside the bubble that swells with your voice. While you are quiet a ripple leaves the bubble every 1.5 s: "still listening".',
+      draw(ctx, b, now) {
+        const g = ctx.globalAlpha;
+        if (b.rv > .01) {
+          ctx.strokeStyle = COL.accent;
+          const e = Math.min(1, b.env * 1.3);
+          ctx.globalAlpha = g * b.rv * (.25 + .75 * e); ctx.lineWidth = 1 + .6 * e;
+          ctx.beginPath(); ctx.arc(0, 0, 15.8 + 1.6 * e, 0, 2 * Math.PI); ctx.stroke();
+          const p = (now % 1500) / 1500;
+          ctx.globalAlpha = g * b.rv * (1 - b.spk) * (1 - p) * .7; ctx.lineWidth = .9;
+          ctx.beginPath(); ctx.arc(0, 0, 15.5 + p * 2.6, 0, 2 * Math.PI); ctx.stroke();
+          ctx.globalAlpha = g;
+        }
+        drawBarsN(ctx, b, now);
+      }},
+  C: {name: 'Ring + stop',
+      text: 'An orange stop square in the middle, so it is obvious that tapping again stops. A ring of ticks moves with your voice; while quiet a light sweeps round it. The ticks spin grey while writing.',
+      draw(ctx, b, now) {
+        const g = ctx.globalAlpha, n = 24, ba = Math.max(b.rv, b.wv);
+        const per = b.f.work ? 900 : 1600, sw = 2 * Math.PI * (now % per) / per - Math.PI / 2;
+        ctx.lineCap = 'round'; ctx.lineWidth = 1.3; ctx.strokeStyle = mix(COL.muted, COL.accent, b.warmA);
+        for (let j = 0; j < n; j++) {
+          const ang = j * 2 * Math.PI / n - Math.PI / 2, L = 1.2 + b.tl[j] * 5.2;
+          const sa = .28 + .72 * Math.pow(Math.max(0, Math.cos(ang - sw)), 6);
+          ctx.globalAlpha = g * ba * (sa + (1 - sa) * b.spk);
+          const c = Math.cos(ang), s = Math.sin(ang);
+          ctx.beginPath(); ctx.moveTo(c * 7.2, s * 7.2); ctx.lineTo(c * (7.2 + L), s * (7.2 + L)); ctx.stroke();
+        }
+        if (b.rv > .01) { ctx.globalAlpha = g * b.rv; ctx.fillStyle = COL.accent; rr(ctx, -3.5, -3.5, 7, 7, 1.8); ctx.fill(); }
+        ctx.globalAlpha = g;
+      }},
+};
+
+// ---------- one bubble's state (mirrors Pill.kt) ----------
+class Bubble {
+  constructor(idle, talk) {
+    Object.assign(this, {idle, talk, phase: 'idle', last: 0, doneUntil: 0, donePending: false,
+      iv: 1, rv: 0, wv: 0, cv: 0, env: 0, spk: 0, warmA: 0, pulseKind: 0, pulseStart: 0,
+      f: {idle: true}});
+    this.hist = new Float32Array(5);
+    this.w = new Float32Array(5).fill(2); this.h = new Float32Array(5).fill(2);
+    this.a = new Float32Array(5); this.warm = new Float32Array(5);
+    this.live = new Float32Array(5).fill(3); this.tl = new Float32Array(24);
+  }
+  setPhase(p) { if (p === this.phase) return; this.phase = p; if (p !== 'recording') this.hist.fill(0); }
+  push(l) { if (this.phase !== 'recording') return; this.hist.copyWithin(0, 1); this.hist[4] = l; }
+  done() { this.donePending = true; }
+  update(now) {
+    if (now === this.last) return;
+    const dt = this.last ? Math.min(100, Math.max(0, now - this.last)) : 16;
+    this.last = now;
+    if (this.donePending) { this.donePending = false; this.doneUntil = now + 700; }
+    const done = now < this.doneUntil, rec = this.phase === 'recording' && !done,
+      work = this.phase === 'working' && !done, idle = !rec && !work && !done;
+    const speaking = rec && Math.max(...this.hist) > .14;
+    this.f = {done, rec, work, idle, speaking};
+    const ex = tau => 1 - Math.exp(-dt / tau);
+    this.iv += ((idle ? 1 : 0) - this.iv) * ex(90);
+    this.rv += ((rec ? 1 : 0) - this.rv) * ex(90);
+    this.wv += ((work ? 1 : 0) - this.wv) * ex(120);
+    this.cv += ((done ? 1 : 0) - this.cv) * ex(40);
+    this.spk += ((speaking ? 1 : 0) - this.spk) * ex(speaking ? 60 : 160);
+    this.warmA += ((rec ? 1 : 0) - this.warmA) * ex(120);
+    const e = rec ? this.hist[4] : 0;
+    this.env += (e - this.env) * ex(e > this.env ? 30 : 160);
+    const kind = rec && !speaking ? 1 : work ? 2 : 0;
+    if (kind !== this.pulseKind) { this.pulseKind = kind; this.pulseStart = now; }
+    // "Now": exactly the desktop targets (300 ms ease, 80 ms while talking)
+    const k = ex(speaking ? 20 : 75);
+    for (let i = 0; i < 5; i++) {
+      let th, ta, tc;
+      if (done) { th = 2; ta = 0; tc = this.warm[i]; }
+      else if (idle) { th = 2; ta = 0; tc = 0; }
+      else if (rec) { th = speaking ? Math.max(2, Math.round(2 + this.hist[i] * 13)) : BASE[i]; ta = 1; tc = 1; }
+      else { th = BASE[i]; ta = 1; tc = 0; }
+      this.h[i] += (th - this.h[i]) * k; this.a[i] += (ta - this.a[i]) * k; this.warm[i] += (tc - this.warm[i]) * k;
+    }
+    // Big bars: newest reading in the centre, older ones spread outwards
+    for (let i = 0; i < 5; i++) {
+      const d = Math.abs(i - 2);
+      const src = rec ? (d === 0 ? this.hist[4] : d === 1 ? this.hist[3] * .85 : this.hist[2] * .6) : 0;
+      const t = 3 + src * 15;
+      this.live[i] += (t - this.live[i]) * ex(t > this.live[i] ? 25 : 130);
+    }
+    // Ring ticks: loudness with a slow, uneven shimmer per tick
+    for (let j = 0; j < 24; j++) {
+      const n = .5 + .5 * Math.sin(now * .006 + j * 1.7) * Math.sin(now * .0037 + j * .9);
+      const t = this.env * (.45 + .55 * n);
+      this.tl[j] += (t - this.tl[j]) * ex(t > this.tl[j] ? 30 : 150);
+    }
+  }
+  draw(ctx, cx, cy, d, now, shadow) {
+    this.update(now);
+    const s = d / 30, R = d / 2, orange = IDLE[this.idle].orange;
+    ctx.save();
+    ctx.fillStyle = orange ? mix(COL.fill, COL.accent, this.iv) : COL.fill;
+    if (shadow) { ctx.shadowColor = 'rgba(0,0,0,.33)'; ctx.shadowBlur = 4; ctx.shadowOffsetY = 1.5; }
+    ctx.beginPath(); ctx.arc(cx, cy, R, 0, 2 * Math.PI); ctx.fill();
+    ctx.restore();
+    ctx.save();
+    ctx.strokeStyle = orange ? mix(COL.border, COL.accent, this.iv) : COL.border; ctx.lineWidth = .75;
+    ctx.beginPath(); ctx.arc(cx, cy, R - .375, 0, 2 * Math.PI); ctx.stroke();
+    ctx.translate(cx, cy); ctx.scale(s, s);
+    if (this.iv > .01) {
+      ctx.save(); ctx.globalAlpha = this.iv; const sc = .82 + .18 * this.iv; ctx.scale(sc, sc);
+      IDLE[this.idle].draw(ctx); ctx.restore();
+    }
+    const la = 1 - this.iv;
+    if (la > .01) {
+      ctx.save(); ctx.globalAlpha = la; const sc = .85 + .15 * la; ctx.scale(sc, sc);
+      TALK[this.talk].draw(ctx, this, now); ctx.restore();
+    }
+    if (this.cv > .01) {
+      const u = 14 / 24;
+      ctx.globalAlpha = this.cv; ctx.strokeStyle = COL.good; ctx.lineWidth = 3.2 * u; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      ctx.beginPath(); ctx.moveTo(-7 + 20 * u, -7 + 6 * u); ctx.lineTo(-7 + 9 * u, -7 + 17 * u); ctx.lineTo(-7 + 4 * u, -7 + 12 * u); ctx.stroke();
+    }
+    ctx.restore();
+  }
+}
+
+// ---------- fake voice, real mic ----------
+function rng(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+  t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+/** One loudness reading (0..1, already through norm) every 50 ms, like Dictation.kt. */
+class Voice {
+  constructor(seed) { this.r = rng(seed); this.mode = 'gap'; this.left = 2; this.dur = 1; this.amp = 0; }
+  next() {
+    if (this.left <= 0) {
+      if (this.mode === 'word') { this.mode = 'gap'; this.left = this.r() < .18 ? 10 + Math.round(this.r() * 6) : 1 + Math.round(this.r() * 3); }
+      else { this.mode = 'word'; this.dur = this.left = 3 + Math.round(this.r() * 6); this.amp = .5 + this.r() * .5; }
+    }
+    this.left--;
+    if (this.mode === 'gap') return .02 + this.r() * .05;
+    const p = 1 - (this.left + .5) / this.dur;
+    return Math.min(1, this.amp * Math.pow(Math.sin(Math.PI * p), .7) * (.8 + this.r() * .35));
+  }
+}
+const mic = {
+  ready: false,
+  async start() {
+    const st = await navigator.mediaDevices.getUserMedia({audio: {echoCancellation: false, noiseSuppression: false, autoGainControl: false}});
+    const ac = new AudioContext(), an = ac.createAnalyser(); an.fftSize = 1024;
+    ac.createMediaStreamSource(st).connect(an);
+    this.an = an; this.buf = new Float32Array(1024); this.ready = true;
+  },
+  level() { this.an.getFloatTimeDomainData(this.buf); let s = 0; for (const v of this.buf) s += v * v; return norm(Math.sqrt(s / this.buf.length)); },
+};
+
+/** Drives one or more bubbles through the dictation flow. */
+class Driver {
+  constructor(bubbles, seed, hooks = {}) {
+    Object.assign(this, {bubbles, voice: new Voice(seed), voiceOn: false, useMic: false, gen: 0, hooks});
+    setInterval(() => this.tick(), 50);
+  }
+  get phase() { return this.bubbles[0].phase; }
+  set(p) { this.bubbles.forEach(b => b.setPhase(p)); }
+  tick() {
+    if (this.phase !== 'recording') return;
+    const l = this.useMic && mic.ready ? mic.level() : this.voiceOn ? this.voice.next() : .01 + Math.random() * .04;
+    this.bubbles.forEach(b => b.push(l));
+  }
+  later(ms, fn) { const g = this.gen; setTimeout(() => { if (g === this.gen) fn(); }, ms); }
+  start() { this.set('recording'); this.voiceOn = false; this.later(800, () => { this.voiceOn = true; }); }
+  stop() {
+    this.voiceOn = false; this.set('working');
+    this.later(1200, () => { this.bubbles.forEach(b => { b.done(); b.setPhase('idle'); }); this.hooks.text?.(); });
+  }
+  tap() { if (this.phase === 'idle') this.start(); else if (this.phase === 'recording') this.stop(); }
+  reset() { this.gen++; this.voiceOn = false; this.set('idle'); }
+  auto() {
+    this.reset(); const cycle = () => {
+      this.hooks.clear?.();
+      this.later(1800, () => this.set('recording'));
+      this.later(2900, () => { this.voiceOn = true; });
+      this.later(6300, () => { this.voiceOn = false; });
+      this.later(7000, () => this.stop());
+      this.later(10600, cycle);
+    }; cycle();
+  }
+}
+
+// ---------- page wiring ----------
+const params = new URLSearchParams(location.search);
+let cur = {idle: IDLE[params.get('idle')] ? params.get('idle') : 'A', talk: TALK[params.get('talk')] ? params.get('talk') : 'N'};
+
+const kb = document.getElementById('kb');
+[['q','w','e','r','t','y','u','i','o','p'], ['a','s','d','f','g','h','j','k','l'], ['⇧','z','x','c','v','b','n','m','⌫'], ['?123',',','space','.','⏎']]
+  .forEach(r => { const row = document.createElement('div'); row.className = 'row';
+    r.forEach(k => { const e = document.createElement('div'); e.className = 'key' + (k.length > 1 && k !== 'space' ? ' w' : '') + (k === 'space' ? ' sp' : '');
+      e.textContent = k === 'space' ? '' : k; row.appendChild(e); }); kb.appendChild(row); });
+
+const typed = document.getElementById('typed');
+const SENTENCES = ['Sounds good, see you at 6.', 'Running 10 minutes late, sorry!', 'Can you grab milk on the way home?'];
+let sIdx = 0;
+const mainB = new Bubble(cur.idle, cur.talk);
+const main = new Driver([mainB], 7, {
+  text: () => { typed.textContent = (typed.textContent ? typed.textContent + ' ' : '') + SENTENCES[sIdx++ % SENTENCES.length]; },
+  clear: () => { typed.textContent = ''; },
+});
+
+const idleTiles = Object.keys(IDLE).map(key => {
+  const t = document.createElement('div'); t.className = 'tile';
+  t.innerHTML = `<canvas></canvas><div class="mini"><canvas style="background:#ffffff"></canvas><canvas style="background:#0b141a"></canvas></div><b>${key} · ${IDLE[key].name}</b><p>${IDLE[key].text}</p>`;
+  t.onclick = () => select('idle', key);
+  document.getElementById('idleGrid').appendChild(t);
+  return {key, el: t, cvs: [...t.querySelectorAll('canvas')], b: new Bubble(key, 'N')};
+});
+const talkTiles = Object.keys(TALK).map(key => {
+  const t = document.createElement('div'); t.className = 'tile';
+  t.innerHTML = `<canvas></canvas><b>${key} · ${TALK[key].name}</b><p>${TALK[key].text}</p>`;
+  t.onclick = () => select('talk', key);
+  document.getElementById('talkGrid').appendChild(t);
+  return {key, el: t, cv: t.querySelector('canvas'), b: new Bubble(cur.idle, key)};
+});
+const board = new Driver(talkTiles.map(t => t.b), 11);
+board.auto();
+
+function select(kind, key) {
+  cur[kind] = key;
+  mainB[kind] = key;
+  if (kind === 'idle') talkTiles.forEach(t => { t.b.idle = key; });
+  const u = new URL(location.href); u.searchParams.set('idle', cur.idle); u.searchParams.set('talk', cur.talk);
+  history.replaceState(null, '', u);
+  render();
+}
+function render() {
+  document.getElementById('idleLbl').textContent = `${cur.idle} · ${IDLE[cur.idle].name}`;
+  document.getElementById('talkLbl').textContent = `${cur.talk} · ${TALK[cur.talk].name}`;
+  idleTiles.forEach(t => t.el.classList.toggle('sel', t.key === cur.idle));
+  talkTiles.forEach(t => t.el.classList.toggle('sel', t.key === cur.talk));
+  document.getElementById('desc').innerHTML =
+    `<b>Idle ${cur.idle}: ${IDLE[cur.idle].name}</b><p>${IDLE[cur.idle].text}</p><b>Talking ${cur.talk}: ${TALK[cur.talk].name}</b><p style="margin:0">${TALK[cur.talk].text}</p>`;
+}
+function cycle(kind, dir) {
+  const keys = Object.keys(kind === 'idle' ? IDLE : TALK);
+  select(kind, keys[(keys.indexOf(cur[kind]) + dir + keys.length) % keys.length]);
+}
+document.querySelectorAll('#switch button').forEach(b => b.onclick = () => cycle(b.dataset.k, +b.dataset.d));
+addEventListener('keydown', e => {
+  if (e.target.closest?.('input,textarea,[contenteditable]')) return;
+  const m = {ArrowLeft: ['idle', -1], ArrowRight: ['idle', 1], ArrowUp: ['talk', -1], ArrowDown: ['talk', 1]}[e.key];
+  if (m) { e.preventDefault(); cycle(...m); }
+});
+
+const autoBtn = document.getElementById('auto');
+function setAuto(on) { autoBtn.classList.toggle('on', on); if (on) main.auto(); else main.reset(); }
+autoBtn.onclick = () => setAuto(!autoBtn.classList.contains('on'));
+const manualTap = () => { if (autoBtn.classList.contains('on')) setAuto(false); main.tap(); };
+document.getElementById('tapBtn').onclick = manualTap;
+document.getElementById('phoneBubble').onclick = manualTap;
+document.getElementById('zoom').onclick = manualTap;
+const micBtn = document.getElementById('micBtn');
+micBtn.onclick = async () => {
+  if (main.useMic) { main.useMic = false; micBtn.classList.remove('on'); micBtn.textContent = 'Use my mic'; return; }
+  try { if (!mic.ready) await mic.start(); main.useMic = true; micBtn.classList.add('on'); micBtn.textContent = 'Using my mic'; setAuto(false); }
+  catch (err) { micBtn.textContent = 'Mic blocked'; }
+};
+const phone = document.getElementById('phone');
+const themeBtns = {light: document.getElementById('light'), dark: document.getElementById('dark')};
+Object.entries(themeBtns).forEach(([k, b]) => b.onclick = () => {
+  phone.classList.toggle('dark', k === 'dark');
+  Object.entries(themeBtns).forEach(([k2, b2]) => b2.classList.toggle('on', k2 === k));
+});
+
+// ---------- frame loop ----------
+function fit(cv) {
+  const dpr = devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
+  if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+  const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h);
+  return [ctx, w, h];
+}
+const stateEl = document.getElementById('state');
+const pb = document.getElementById('phoneBubble'), zoom = document.getElementById('zoom');
+function frame() {
+  const now = performance.now();
+  let [c, w, h] = fit(pb); mainB.draw(c, w / 2, h / 2, 56, now, true);
+  [c, w, h] = fit(zoom);
+  c.fillStyle = phone.classList.contains('dark') ? '#0b141a' : '#efeae2'; c.fillRect(0, 0, w, h);
+  mainB.draw(c, w / 2, h / 2, 56 * 3.4, now, false);
+  idleTiles.forEach(t => {
+    t.b.idle = t.key;
+    [c, w, h] = fit(t.cvs[0]); c.fillStyle = '#1b2030'; c.fillRect(0, 0, w, h); t.b.draw(c, w / 2, h / 2, 112, now, false);
+    [c, w, h] = fit(t.cvs[1]); t.b.draw(c, w / 2, h / 2, 56, now, true);
+    [c, w, h] = fit(t.cvs[2]); t.b.draw(c, w / 2, h / 2, 56, now, true);
+  });
+  talkTiles.forEach(t => {
+    [c, w, h] = fit(t.cv); c.fillStyle = '#1b2030'; c.fillRect(0, 0, w, h); t.b.draw(c, w / 2, h / 2, 112, now, false);
+  });
+  const f = mainB.f;
+  stateEl.textContent = `phase   ${f.done ? 'done (check)' : mainB.phase}${f.speaking ? ' · talking' : f.rec ? ' · quiet' : ''}\n` +
+    `level   ${mainB.hist[4].toFixed(2)}   source ${main.useMic && mic.ready ? 'your mic' : 'fake voice'}\n` +
+    `idle ${cur.idle}   talking ${cur.talk}   (?idle=${cur.idle}&talk=${cur.talk})`;
+  requestAnimationFrame(frame);
+}
+render();
+setAuto(true);
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
