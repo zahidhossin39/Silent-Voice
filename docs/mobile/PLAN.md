@@ -114,6 +114,11 @@ Each step ends with something that runs on the phone. Commit at each.
    (with Undo on delete), no full stop after a shortcut that ends the
    dictation, and a Settings page where every section and row says what it
    does. Rows that add things show a plus.
+   0.1.4 (2026-11-19): shortcuts apply the longest phrase first (desktop's
+   order), and matching no longer panics on letters that change size when
+   lowercased ("İ" with the ohm sign lost the dictation). Found by a
+   blast-radius check of 0.1.3, which also showed odd word-list entries
+   (Bengali, emoji, "C++") can't crash the engine.
 3. **Shared crate.** `crates/sv-core` with the copied text logic and its tests,
    built for Android and called from Kotlin through UniFFI.
 4. **Pipeline.** Record, trim silence, transcribe, clean up, optional cloud AI
