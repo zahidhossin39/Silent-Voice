@@ -26,6 +26,35 @@ class WordsTest {
         assertEquals(listOf("Vue"), Words.boosted(":D, Vue :), :Big"))
     }
 
+    // A stand-in for sv-core's apply_replacements: whole word, any case.
+    private val rules = listOf(Shortcut("my email", "name@example.com"), Shortcut("brb", "be right back"))
+    private fun fake(t: String) = t
+        .replace(Regex("(?i)\\bmy email\\b"), "name@example.com")
+        .replace(Regex("(?i)\\bbrb\\b"), "be right back")
+
+    @Test fun shortcutAloneGetsNoFullStop() {
+        assertEquals("name@example.com", Words.expand("My email.", rules, ::fake))
+    }
+
+    @Test fun shortcutEndingASentenceGetsNoFullStop() {
+        assertEquals("Please send it to name@example.com", Words.expand("Please send it to my email.", rules, ::fake))
+        assertEquals("be right back", Words.expand("BRB!", rules, ::fake))
+    }
+
+    @Test fun shortcutMidSentenceKeepsPunctuation() {
+        assertEquals("name@example.com is best.", Words.expand("My email is best.", rules, ::fake))
+    }
+
+    @Test fun noShortcutLeavesTextAlone() {
+        assertEquals("Hello there.", Words.expand("Hello there.", rules, ::fake))
+        assertEquals("Hello there.", Words.expand("Hello there.", emptyList(), ::fake))
+    }
+
+    @Test fun partOfAWordIsNotAShortcut() {
+        // "brb" inside "xbrb" is not the shortcut, so the full stop stays.
+        assertEquals("Call xbrb.", Words.expand("Call xbrb.", rules, ::fake))
+    }
+
     @Test fun emptyListBoostsNothing() {
         assertEquals(emptyList<String>(), Words.boosted("  \n , "))
     }

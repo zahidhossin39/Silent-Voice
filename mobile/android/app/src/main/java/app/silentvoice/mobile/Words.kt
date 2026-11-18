@@ -42,6 +42,27 @@ object Words {
     /** One shortcut. Whole words, not case-sensitive (see sv-core `apply_replacements`). */
     data class Shortcut(val say: String, val type: String)
 
+    /**
+     * Applies [rules] with [apply] (sv-core's `apply_replacements`). When the
+     * dictation ends with a shortcut, the sentence-ending punctuation the voice
+     * model put after it is dropped: "My email." must type the address, not
+     * "name@example.com." A shortcut mid-sentence keeps normal punctuation.
+     */
+    fun expand(text: String, rules: List<Shortcut>, apply: (String) -> String): String {
+        if (rules.isEmpty()) return text
+        val end = Regex("[.!?]+\\s*$").find(text) ?: return apply(text)
+        val core = text.substring(0, end.range.first)
+        val endsWithShortcut = rules.any { endsWithWord(core, it.say.trim()) }
+        return apply(if (endsWithShortcut) core else text)
+    }
+
+    /** True when [text] ends with [phrase] as whole words, ignoring case. */
+    private fun endsWithWord(text: String, phrase: String): Boolean {
+        if (phrase.isEmpty() || !text.endsWith(phrase, ignoreCase = true)) return false
+        val before = text.length - phrase.length - 1
+        return before < 0 || !text[before].isLetterOrDigit()
+    }
+
     /** Stored one per line as "say<TAB>type", each part URL-encoded so tabs and line breaks survive. */
     fun encode(list: List<Shortcut>): String =
         list.joinToString("\n") { enc(it.say) + "\t" + enc(it.type) }

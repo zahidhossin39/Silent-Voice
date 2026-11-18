@@ -45,9 +45,24 @@ object History {
         save()
     }
 
+    /** Replaces an entry's text (a corrected word); keeps its time, place and mode. */
+    @Synchronized
+    fun update(id: Long, text: String) {
+        items.value = items.value.map { if (it.id == id) it.copy(text = text) else it }
+        save()
+    }
+
     @Synchronized
     fun delete(id: Long) {
         items.value = items.value.filterNot { it.id == id }
+        save()
+    }
+
+    /** Puts a deleted entry back where it was (Undo). Newest first, by time. */
+    @Synchronized
+    fun restore(e: Entry) {
+        if (items.value.any { it.id == e.id }) return
+        items.value = (items.value + e).sortedByDescending { it.time }.take(MAX)
         save()
     }
 

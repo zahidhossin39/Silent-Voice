@@ -39,6 +39,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.AlertDialog
@@ -51,11 +52,16 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -66,6 +72,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -80,7 +87,9 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import app.silentvoice.mobile.Ai
@@ -93,6 +102,8 @@ import app.silentvoice.mobile.Words
 import app.silentvoice.mobile.ModelDownload
 import app.silentvoice.mobile.Prefs
 import app.silentvoice.mobile.R
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -107,9 +118,22 @@ fun MainScreen() {
     // Bumped whenever a setting changes, so every screen re-reads Prefs.
     var settingsVersion by remember { mutableIntStateOf(0) }
     BackHandler(enabled = tab != 0) { tab = 0 }
+    val snackbar = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    // Delete at once, offer Undo for a few seconds. Lives here so leaving History doesn't cancel it.
+    fun deleted(e: Entry) {
+        scope.launch {
+            snackbar.currentSnackbarData?.dismiss()
+            val result = withTimeoutOrNull(5_000) {
+                snackbar.showSnackbar("Dictation deleted", actionLabel = "Undo", duration = SnackbarDuration.Indefinite)
+            }
+            if (result == SnackbarResult.ActionPerformed) History.restore(e)
+        }
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.surface,
+        snackbarHost = { SnackbarHost(snackbar) },
         bottomBar = {
             NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
                 Tab.entries.forEachIndexed { i, t ->
@@ -136,7 +160,7 @@ fun MainScreen() {
         ) { current ->
             when (Tab.entries[current]) {
                 Tab.Home -> HomeScreen(settingsVersion, onModes = { modeSheet = true }, onSetup = { tab = 2 })
-                Tab.History -> HistoryScreen()
+                Tab.History -> HistoryScreen(onDeleted = ::deleted)
                 Tab.Settings -> SettingsScreen(settingsVersion, onChanged = { settingsVersion++ }, onModes = { modeSheet = true })
             }
         }
@@ -162,14 +186,23 @@ private fun ScreenTitle(eyebrow: String?, title: String) {
     }
 }
 
+/** A section heading, with an optional one-line "what this is for" under it. */
 @Composable
-private fun SectionLabel(text: String) {
+private fun SectionLabel(text: String, hint: String? = null) {
     Text(
         text,
         style = MaterialTheme.typography.titleSmall,
         color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(top = 28.dp, bottom = 8.dp, start = 4.dp).semantics { heading() },
+        modifier = Modifier.padding(top = 28.dp, bottom = if (hint == null) 8.dp else 2.dp, start = 4.dp).semantics { heading() },
     )
+    if (hint != null) {
+        Text(
+            hint,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 4.dp, end = 4.dp, bottom = 10.dp),
+        )
+    }
 }
 
 /** A rounded surface that groups related rows, the M3 way of separating content without lines. */
@@ -375,7 +408,7 @@ private fun HomeScreen(version: Int, onModes: () -> Unit, onSetup: () -> Unit) {
         Group {
             Row2(
                 title = if (aiOn) Ai.current().name else "Exact words",
-                subtitle = if (aiOn) Ai.current().blurb else "What you say, tidied up. Nothing leaves your phone.",
+                subtitle = if (aiOn) Ai.current().blurb else EXACT_BLURB,
                 onClick = onModes,
             ) { Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
         }
@@ -384,7 +417,7 @@ private fun HomeScreen(version: Int, onModes: () -> Unit, onSetup: () -> Unit) {
         OutlinedTextField(
             value = scratch,
             onValueChange = { scratch = it },
-            placeholder = { Text("Try it here. Nothing in this box is saved.") },
+            placeholder = { Text("Try it here. What you say is also saved in History.") },
             minLines = 3,
             modifier = Modifier.fillMaxWidth(),
             shape = MaterialTheme.shapes.large,
@@ -422,9 +455,12 @@ private fun Stat(value: String, label: String, modifier: Modifier) {
 // -------------------------------------------------------------------- History
 
 @Composable
-private fun HistoryScreen() {
+private fun HistoryScreen(onDeleted: (Entry) -> Unit) {
     val ctx = LocalContext.current
     val items by History.items.collectAsState()
+    var editingId by rememberSaveable { mutableStateOf<Long?>(null) }
+    val editing = editingId?.let { id -> items.firstOrNull { it.id == id } }
+    if (editing != null) HistoryEditSheet(editing, onClose = { editingId = null })
     if (items.isEmpty()) {
         Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
             ScreenTitle("History", "Nothing yet.")
@@ -456,14 +492,26 @@ private fun HistoryScreen() {
                     )
                 }
             }
-            item(key = e.id) { HistoryCard(e, onCopy = { copyText(ctx, e.text) }, onDelete = { History.delete(e.id) }) }
+            item(key = e.id) {
+                HistoryCard(
+                    e,
+                    onEdit = { editingId = e.id },
+                    onCopy = { copyText(ctx, e.text) },
+                    onDelete = { History.delete(e.id); onDeleted(e) },
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun HistoryCard(e: Entry, onCopy: () -> Unit, onDelete: () -> Unit) {
-    Surface(color = MaterialTheme.colorScheme.surfaceContainerLow, shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth()) {
+private fun HistoryCard(e: Entry, onEdit: () -> Unit, onCopy: () -> Unit, onDelete: () -> Unit) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        shape = MaterialTheme.shapes.large,
+        modifier = Modifier.fillMaxWidth().clip(MaterialTheme.shapes.large)
+            .clickable(onClickLabel = "Edit dictation", role = Role.Button, onClick = onEdit),
+    ) {
         Column(Modifier.padding(start = 20.dp, end = 8.dp, top = 16.dp, bottom = 4.dp)) {
             Text(
                 e.text,
@@ -490,6 +538,37 @@ private fun HistoryCard(e: Entry, onCopy: () -> Unit, onDelete: () -> Unit) {
                     Icon(Icons.Rounded.Delete, "Delete", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
                 }
             }
+        }
+    }
+}
+
+/** Fix a past dictation's text. Its time and mode stay as they were. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun HistoryEditSheet(e: Entry, onClose: () -> Unit) {
+    var text by rememberSaveable(e.id) { mutableStateOf(e.text) }
+    ModalBottomSheet(sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), onDismissRequest = onClose, containerColor = MaterialTheme.colorScheme.surfaceContainerLow) {
+        Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).padding(bottom = 32.dp)) {
+            Text("Edit dictation", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onSurface)
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "Fix anything it misheard. The change is saved on this phone only.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedTextField(
+                text, { text = it },
+                label = { Text("Text") },
+                minLines = 3,
+                modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+            )
+            Spacer(Modifier.height(16.dp))
+            FilledTonalButton(
+                onClick = { History.update(e.id, text.trim()); onClose() },
+                enabled = text.isNotBlank(),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
+            ) { Text("Save") }
+            TextButton(onClick = onClose, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Cancel") }
         }
     }
 }
@@ -533,14 +612,14 @@ private fun SettingsScreen(version: Int, onChanged: () -> Unit, onModes: () -> U
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
         ScreenTitle("Settings", "Make it\nyours.")
 
-        SectionLabel("Setup")
+        SectionLabel("Setup", "What it needs so you can talk instead of type in any app.")
         Group {
             Row2(
                 "Bubble",
                 when (bubble) {
-                    Keepalive.Bubble.On -> "On. It appears with your keyboard. Drag it to move it."
+                    Keepalive.Bubble.On -> "On. A mic bubble shows above your keyboard. Tap it, talk, tap again. Drag it to move it."
                     Keepalive.Bubble.Stopped -> "Stopped by your phone. Switch it off and on again in Accessibility."
-                    Keepalive.Bubble.Off -> "Off. Turn it on to dictate in any app."
+                    Keepalive.Bubble.Off -> "Off. Turn it on to get a mic bubble above your keyboard in every app."
                 },
                 onClick = { openAccessibility(ctx) },
             ) {
@@ -551,12 +630,12 @@ private fun SettingsScreen(version: Int, onChanged: () -> Unit, onModes: () -> U
                 }
             }
             if ((tick + resets).let { Prefs.bubbleAt } != null) {
-                Row2("Bubble position", "Moved by you. Tap to put it back by the keyboard.", onClick = {
+                Row2("Bubble position", "You moved it. Tap to put it back above the keyboard.", onClick = {
                     Prefs.bubbleAt = null
                     resets++
                 })
             }
-            Row2("Microphone", if (mic) "Allowed" else "Not allowed yet",
+            Row2("Microphone", if (mic) "Allowed, so it can hear you." else "Not allowed yet. It can't hear you until you allow it.",
                 onClick = { if (!mic) askMic.launch(Manifest.permission.RECORD_AUDIO) else openAppInfo(ctx) }) { StatusDot(mic) }
             val p = progress
             Row2(
@@ -565,8 +644,8 @@ private fun SettingsScreen(version: Int, onChanged: () -> Unit, onModes: () -> U
                     p != null -> "Downloading ${(p * 100).toInt()}%"
                     downloadError != null -> downloadError
                     upgrade -> "Older version. Tap to get the more accurate one (110 MB)."
-                    model -> "Parakeet 110M, English. On this phone."
-                    else -> "Not downloaded (110 MB)"
+                    model -> "Turns speech into text on this phone, offline. Parakeet, English."
+                    else -> "Turns your speech into text. Tap to download it (110 MB)."
                 },
                 onClick = if ((!model || upgrade) && p == null) ({ ModelDownload.start(ctx) }) else null,
             ) { StatusDot(model && p == null) }
@@ -578,51 +657,58 @@ private fun SettingsScreen(version: Int, onChanged: () -> Unit, onModes: () -> U
             }
         }
 
-        SectionLabel("Keep it running")
+        SectionLabel("Keep it running", "Phones close apps to save battery. These stop that from switching off the bubble.")
         Group { KeepAliveRows(tick) }
 
-        SectionLabel("Clean-up")
+        SectionLabel("Clean-up", "Small fixes to your words before they're typed. Done on this phone.")
         Group {
-            SwitchRow("Drop the ums", "\"Um, so, uh, yes\" becomes \"So, yes\".", fillers) { Prefs.fillers = it; onChanged() }
-            SwitchRow("Fix stutters", "\"I went went home\" becomes \"I went home\".", repeats) { Prefs.repeats = it; onChanged() }
-            SwitchRow("Numbers as digits", "\"Twenty five\" becomes \"25\".", numbers) { Prefs.numbers = it; onChanged() }
+            SwitchRow("Drop the ums", "“Um, so, uh, yes” becomes “So, yes”.", fillers) { Prefs.fillers = it; onChanged() }
+            SwitchRow("Fix stutters", "“I went went home” becomes “I went home”.", repeats) { Prefs.repeats = it; onChanged() }
+            SwitchRow("Numbers as digits", "“Twenty five” becomes “25”.", numbers) { Prefs.numbers = it; onChanged() }
         }
 
-        SectionLabel("Your words")
+        SectionLabel("Your words", "Help it get your names right, and save phrases that type longer text.")
         Group {
             val vocab = (version + words).let { Words.entries(Prefs.vocabulary) }
             Row2(
                 "Words it should recognize",
-                if (vocab.isEmpty()) "Names and jargon it keeps getting wrong."
-                else vocab.take(3).joinToString(", ") + if (vocab.size > 3) " and ${vocab.size - 3} more" else "",
+                if (vocab.isEmpty()) "Names and terms it spells wrong. Add “Zaid” and it stops typing “Said”."
+                else "Spells these right: " + vocab.take(3).joinToString(", ") +
+                    if (vocab.size > 3) " and ${vocab.size - 3} more." else ".",
                 onClick = { wordsSheet = true },
             ) { Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
-            val shortcutCount = (version + words).let { Prefs.shortcuts.size }
+            val shortcuts = (version + words).let { Prefs.shortcuts }
             Row2(
                 "Shortcuts",
-                when (shortcutCount) {
-                    0 -> "Say a short phrase, get the full text."
-                    1 -> "1 shortcut."
-                    else -> "$shortcutCount shortcuts."
+                if (shortcuts.isEmpty()) "Say a short phrase to type longer text. “My email” types your address."
+                else {
+                    val first = shortcuts.first()
+                    val more = shortcuts.size - 1
+                    "“${first.say}” → ${preview(first.type)}" +
+                        if (more > 0) " and $more more." else ""
                 },
                 onClick = { shortcutsSheet = true },
             ) { Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
         }
 
-        SectionLabel("Writing mode")
+        SectionLabel("Writing mode", "Type exactly what you said, or let an AI rewrite it first.")
         Group {
             Row2(
                 if (aiOn) Ai.current().name else "Exact words",
-                if (aiOn) "Rewritten by your own AI provider." else "Off. Add a provider to rewrite as you dictate.",
+                if (aiOn) Ai.current().blurb + " Uses your own AI provider." else "$EXACT_BLURB Tap to add an AI that rewrites it.",
                 onClick = onModes,
             ) { Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
         }
 
-        SectionLabel("Your data")
+        SectionLabel("Your data", "Past dictations are kept only on this phone, for the History tab.")
         Group {
             Row2(
                 "Clear history",
-                if (historyCount == 0) "Nothing saved yet." else "$historyCount saved on this phone.",
+                when (historyCount) {
+                    0 -> "Nothing saved yet."
+                    1 -> "1 dictation saved. Tap to delete it."
+                    else -> "$historyCount dictations saved. Tap to delete them all."
+                },
                 onClick = if (historyCount > 0) ({ confirmClear = true }) else null,
             )
         }
@@ -647,6 +733,19 @@ private fun SettingsScreen(version: Int, onChanged: () -> Unit, onModes: () -> U
             confirmButton = { TextButton(onClick = { History.clear(); confirmClear = false }) { Text("Delete all") } },
             dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("Keep them") } },
         )
+    }
+}
+
+/** What "Exact words" does, said the same way everywhere. */
+private const val EXACT_BLURB = "Your own words, cleaned of ums and repeats. Stays on this phone."
+
+/** A shortcut's typed text, cut short for a one-line preview. */
+private fun preview(type: String): String {
+    val oneLine = type.replace(Regex("\\s+"), " ").trim()
+    return when {
+        oneLine.isEmpty() -> "(removed)"
+        oneLine.length > 24 -> oneLine.take(23).trimEnd() + "…"
+        else -> oneLine
     }
 }
 
@@ -691,8 +790,8 @@ fun KeepAliveRows(tick: Int) {
     }
     Row2(
         "Battery",
-        if (battery) "Unrestricted. Battery saver leaves the bubble alone."
-        else "Battery saver may stop the bubble. Tap and choose Allow.",
+        if (battery) "Unrestricted, so battery saver leaves the bubble alone."
+        else "Battery saver may switch off the bubble. Tap and choose Allow.",
         onClick = if (battery) null else ({ Keepalive.askBattery(ctx) }),
     ) { StatusDot(battery, "Allow") }
 }
@@ -707,6 +806,7 @@ private fun ModeSheet(onClose: () -> Unit) {
     var baseUrl by remember { mutableStateOf(Prefs.aiBaseUrl) }
     var model by remember { mutableStateOf(Prefs.aiModel) }
     var key by remember { mutableStateOf(Prefs.apiKey) }
+    var showKey by remember { mutableStateOf(false) }
     val configured = baseUrl.isNotBlank() && model.isNotBlank() && key.isNotBlank()
     fun save() {
         Prefs.aiBaseUrl = baseUrl.trim()
@@ -716,7 +816,7 @@ private fun ModeSheet(onClose: () -> Unit) {
         Prefs.aiOn = on && configured
     }
 
-    ModalBottomSheet(onDismissRequest = { save(); onClose() }, containerColor = MaterialTheme.colorScheme.surfaceContainerLow) {
+    ModalBottomSheet(sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), onDismissRequest = { save(); onClose() }, containerColor = MaterialTheme.colorScheme.surfaceContainerLow) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).padding(bottom = 32.dp)) {
             Text("Writing mode", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onSurface)
             Spacer(Modifier.height(6.dp))
@@ -727,7 +827,7 @@ private fun ModeSheet(onClose: () -> Unit) {
             )
             Spacer(Modifier.height(16.dp))
 
-            ModeRow("Exact words", "What you say, tidied up. Private and offline.", selected = !on) { on = false }
+            ModeRow("Exact words", EXACT_BLURB, selected = !on) { on = false }
             Ai.modes.forEach { m ->
                 ModeRow(m.name, m.blurb, selected = on && mode == m.id, enabled = configured) { on = true; mode = m.id }
             }
@@ -743,28 +843,48 @@ private fun ModeSheet(onClose: () -> Unit) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Ai.providers.take(3).forEach { p ->
                     AssistChip(
-                        onClick = { baseUrl = p.baseUrl; if (model.isBlank()) model = p.modelHint },
+                        onClick = {
+                            baseUrl = p.baseUrl
+                            // Swap in this provider's model unless the user typed their own;
+                            // keeping OpenAI's model on Groq would fail every request.
+                            if (model.isBlank() || Ai.providers.any { it.modelHint == model.trim() }) model = p.modelHint
+                        },
                         label = { Text(p.name) },
                     )
                 }
             }
             OutlinedTextField(
-                baseUrl, { baseUrl = it }, label = { Text("Address") },
+                baseUrl, { baseUrl = it }, label = { Text("Server address") },
                 placeholder = { Text("https://api.example.com/v1") },
                 singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Uri,
+                    autoCorrectEnabled = false,
+                    capitalization = KeyboardCapitalization.None,
+                ),
+                supportingText = { Text("Filled in when you pick a provider above.") },
             )
             OutlinedTextField(
                 model, { model = it }, label = { Text("Model name") },
                 singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, capitalization = KeyboardCapitalization.None),
             )
             OutlinedTextField(
                 key, { key = it }, label = { Text("API key") },
                 singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                visualTransformation = PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                supportingText = { Text("If the provider doesn't answer, you still get your exact words.") },
+                visualTransformation = if (showKey) VisualTransformation.None else PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
+                trailingIcon = {
+                    TextButton(onClick = { showKey = !showKey }) { Text(if (showKey) "Hide" else "Show") }
+                },
+                supportingText = { Text("Get a key from your provider's website. If the provider doesn't answer, you still get your exact words.") },
             )
+            if (configured) {
+                TextButton(
+                    onClick = { baseUrl = ""; model = ""; key = ""; on = false },
+                    modifier = Modifier.heightIn(min = 48.dp),
+                ) { Text("Remove provider") }
+            }
             Spacer(Modifier.height(16.dp))
             FilledTonalButton(onClick = { save(); onClose() }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
                 Text("Done")
@@ -793,7 +913,7 @@ private fun ModeRow(title: String, blurb: String, selected: Boolean, enabled: Bo
 
 // ---------------------------------------------------------------- Your words
 
-/** The list of words the voice model should favour (see [Words.boosted]). */
+/** The list of words the voice model should favor (see [Words.boosted]). */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun WordsSheet(onClose: () -> Unit) {
@@ -806,12 +926,12 @@ private fun WordsSheet(onClose: () -> Unit) {
     val canBias = remember { Dictation.model(ctx).engine == Engine.NEMO_TDT }
     fun save() { Prefs.vocabulary = text.trim() }
 
-    ModalBottomSheet(onDismissRequest = { save(); onClose() }, containerColor = MaterialTheme.colorScheme.surfaceContainerLow) {
+    ModalBottomSheet(sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), onDismissRequest = { save(); onClose() }, containerColor = MaterialTheme.colorScheme.surfaceContainerLow) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).padding(bottom = 32.dp)) {
             Text("Words it should recognize", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onSurface)
             Spacer(Modifier.height(6.dp))
             Text(
-                "Names and jargon the voice model keeps getting wrong. Write them the way they should be spelled, separated by commas.",
+                "Names and terms it keeps spelling wrong. Write each one the way it should look, separated by commas. Add “Zaid” and it stops typing “Said”.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -827,8 +947,8 @@ private fun WordsSheet(onClose: () -> Unit) {
                     Text(
                         when {
                             !canBias -> "Starts working once the voice model update is installed (Settings > Voice model)."
-                            skipped.isNotEmpty() -> "Not favoured: ${skipped.joinToString(", ")}. Favouring plain lowercase words makes them pop up in normal speech, so capitalise names."
-                            boosted.isNotEmpty() -> "Favouring ${boosted.size} ${if (boosted.size == 1) "word" else "words"}. Dictation takes a moment longer while this list has words."
+                            skipped.isNotEmpty() -> "Skipped: ${skipped.joinToString(", ")}. Plain lowercase words would start popping up in normal speech, so capitalize names."
+                            boosted.isNotEmpty() -> "Listening for ${boosted.size} ${if (boosted.size == 1) "word" else "words"}. Dictation takes a moment longer while this list has words."
                             else -> "Everything stays on this phone."
                         },
                     )
@@ -836,7 +956,7 @@ private fun WordsSheet(onClose: () -> Unit) {
             )
             Spacer(Modifier.height(8.dp))
             Text(
-                "Spelled-out words like \u201cn eight n\u201d are a job for Shortcuts.",
+                "Want one phrase to type something else, like \u201cn eight n\u201d typing n8n? Use Shortcuts.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -848,82 +968,151 @@ private fun WordsSheet(onClose: () -> Unit) {
     }
 }
 
-/** "Say this, type that" pairs, applied to every dictation. */
+/** "Say this, type that" pairs, applied to every dictation. Tap one to edit it in place. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ShortcutsSheet(onClose: () -> Unit) {
     var list by remember { mutableStateOf(Prefs.shortcuts) }
     var say by rememberSaveable { mutableStateOf("") }
     var type by rememberSaveable { mutableStateOf("") }
+    // Index of the shortcut loaded into the form, or -1 when adding a new one.
+    var editing by rememberSaveable { mutableIntStateOf(-1) }
+    if (editing >= list.size) editing = -1
+    val scroll = rememberScrollState()
+    val scope = rememberCoroutineScope()
     fun store(new: List<Words.Shortcut>) { list = new; Prefs.shortcuts = new }
-    val clash = list.any { it.say.equals(say.trim(), ignoreCase = true) }
-    // Closing with a filled-in shortcut keeps it rather than dropping it silently.
+    // The entry being edited doesn't count, so you can change only its "Type".
+    val clash = list.withIndex().any { (i, it) -> i != editing && it.say.equals(say.trim(), ignoreCase = true) }
+    val canSave = say.isNotBlank() && !clash
+    fun resetForm() { say = ""; type = ""; editing = -1 }
+    // Add the form as a new shortcut, or replace the one being edited at the same position.
+    fun commit() {
+        if (!canSave) return
+        val sc = Words.Shortcut(say.trim(), type)
+        store(if (editing >= 0) list.toMutableList().also { it[editing] = sc } else list + sc)
+        resetForm()
+    }
+    // Switching or closing keeps a finished shortcut rather than dropping it. One
+    // with an empty "Type" (removes the phrase) is only saved with the button, so
+    // a half-typed form never quietly becomes a "delete this word" rule.
+    fun autoSave() { if (type.isNotBlank()) commit() }
+    fun startEdit(i: Int) {
+        if (i == editing) return
+        autoSave() // keep a finished shortcut typed in the form (adds append, so i stays valid)
+        val sc = list[i]
+        say = sc.say
+        type = sc.type
+        editing = i
+        // The form sits at the top, above the keyboard; bring it into view.
+        scope.launch { scroll.animateScrollTo(0) }
+    }
+    fun delete(i: Int) {
+        store(list.toMutableList().also { it.removeAt(i) })
+        when {
+            i == editing -> resetForm()
+            i < editing -> editing--
+        }
+    }
     fun close() {
-        if (say.isNotBlank() && !clash) store(list + Words.Shortcut(say.trim(), type))
+        autoSave()
         onClose()
     }
 
-    ModalBottomSheet(onDismissRequest = ::close, containerColor = MaterialTheme.colorScheme.surfaceContainerLow) {
-        Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).padding(bottom = 32.dp)) {
+    ModalBottomSheet(sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), onDismissRequest = ::close, containerColor = MaterialTheme.colorScheme.surfaceContainerLow) {
+        Column(Modifier.verticalScroll(scroll).padding(horizontal = 24.dp).padding(bottom = 32.dp)) {
             Text("Shortcuts", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onSurface)
             Spacer(Modifier.height(6.dp))
             Text(
-                "Say a short phrase and the full text is typed instead. Whole words only, not case-sensitive.",
+                "Say a short phrase and longer text is typed instead. Say “my email” and your address is typed. Matches whole words, any capitals.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Spacer(Modifier.height(12.dp))
-            list.forEach { sc ->
+            Spacer(Modifier.height(16.dp))
+            Text(
+                if (editing >= 0) "Edit shortcut" else "Add one",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.semantics { heading() },
+            )
+            OutlinedTextField(
+                say, { say = it }, label = { Text("When I say") }, placeholder = { Text("my email") },
+                singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                keyboardOptions = KeyboardOptions(autoCorrectEnabled = false),
+                isError = clash,
+                supportingText = if (clash) ({ Text("You already have this one. Tap it in the list to change it.") }) else null,
+            )
+            OutlinedTextField(
+                type, { type = it }, label = { Text("Type") }, placeholder = { Text("name@example.com") },
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                keyboardOptions = KeyboardOptions(autoCorrectEnabled = false),
+                supportingText = { Text("Leave empty to remove the phrase from your text.") },
+            )
+            Spacer(Modifier.height(16.dp))
+            FilledTonalButton(
+                onClick = ::commit,
+                enabled = canSave,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
+            ) { Text(if (editing >= 0) "Save changes" else "Add shortcut") }
+            if (editing >= 0) {
+                TextButton(onClick = ::resetForm, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Cancel") }
+            } else {
+                TextButton(onClick = ::close, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Done") }
+            }
+            Spacer(Modifier.height(24.dp))
+            if (list.isNotEmpty()) {
+                Text(
+                    "Your shortcuts",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.semantics { heading() },
+                )
+                Text(
+                    "Tap one to change it.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 4.dp),
+                )
+            }
+            list.forEachIndexed { i, sc ->
+                val selected = i == editing
                 Row(
-                    Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(vertical = 2.dp),
+                    Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(vertical = 2.dp)
+                        .clip(MaterialTheme.shapes.medium)
+                        .background(if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
+                        .clickable(onClickLabel = "Edit", role = Role.Button) { startEdit(i) }
+                        .semantics {
+                            contentDescription = "Edit shortcut ${sc.say}. Types ${sc.type.ifEmpty { "nothing" }}" +
+                                if (selected) ". Editing now" else ""
+                        }
+                        .padding(start = 12.dp, top = 6.dp, bottom = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text("\u201c${sc.say}\u201d", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+                        Text("“${sc.say}”", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
                         Text(
-                            sc.type.ifEmpty { "(removed)" },
+                            "types " + sc.type.ifEmpty { "nothing (the phrase is removed)" },
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 2,
                         )
                     }
-                    IconButton(onClick = { store(list - sc) }) {
+                    Icon(
+                        Icons.Rounded.Edit, null,
+                        tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    IconButton(onClick = { delete(i) }) {
                         Icon(Icons.Rounded.Delete, "Delete shortcut ${sc.say}", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
             if (list.isEmpty()) {
                 Text(
-                    "None yet. For example: \u201cmy email\u201d types your address.",
+                    "None yet. Your shortcuts will show here.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Spacer(Modifier.height(16.dp))
-            Text("Add one", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
-            OutlinedTextField(
-                say, { say = it }, label = { Text("When I say") }, placeholder = { Text("my email") },
-                singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                keyboardOptions = KeyboardOptions(autoCorrectEnabled = false),
-                isError = clash,
-                supportingText = if (clash) ({ Text("You already have this one. Delete it first to change it.") }) else null,
-            )
-            OutlinedTextField(
-                type, { type = it }, label = { Text("Type") }, placeholder = { Text("name@example.com") },
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                keyboardOptions = KeyboardOptions(autoCorrectEnabled = false),
-            )
-            Spacer(Modifier.height(16.dp))
-            FilledTonalButton(
-                onClick = {
-                    store(list + Words.Shortcut(say.trim(), type))
-                    say = ""
-                    type = ""
-                },
-                enabled = say.isNotBlank() && !clash,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
-            ) { Text("Add shortcut") }
-            TextButton(onClick = ::close, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Done") }
         }
     }
 }

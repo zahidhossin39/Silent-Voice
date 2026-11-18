@@ -137,8 +137,9 @@ object Dictation {
 
     /** The user's "say this, type that" shortcuts (sv-core, same rules as desktop). */
     private fun shortcuts(text: String): String {
-        val rules = Prefs.shortcuts.map { Replacement(it.say, it.type) }
-        return if (rules.isEmpty()) text else applyReplacements(text, rules)
+        val list = Prefs.shortcuts
+        val rules = list.map { Replacement(it.say, it.type) }
+        return Words.expand(text, list) { applyReplacements(it, rules) }
     }
 
     /** First call starts listening, second call finishes. [onDone] runs on the main thread. */
