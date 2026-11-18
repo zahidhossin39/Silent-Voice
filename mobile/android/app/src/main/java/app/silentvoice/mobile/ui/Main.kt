@@ -677,7 +677,7 @@ private fun SettingsScreen(version: Int, onChanged: () -> Unit, onModes: () -> U
                 else "Spells these right: " + vocab.take(3).joinToString(", ") +
                     if (vocab.size > 3) " and ${vocab.size - 3} more." else ".",
                 onClick = { wordsSheet = true },
-            ) { OpenIcon(empty = vocab.isEmpty()) }
+            ) { AddIcon() }
             val shortcuts = (version + words).let { Prefs.shortcuts }
             Row2(
                 "Shortcuts",
@@ -689,7 +689,7 @@ private fun SettingsScreen(version: Int, onChanged: () -> Unit, onModes: () -> U
                         if (more > 0) " and $more more." else ""
                 },
                 onClick = { shortcutsSheet = true },
-            ) { OpenIcon(empty = shortcuts.isEmpty()) }
+            ) { AddIcon() }
         }
 
         SectionLabel("Writing mode", "Type exactly what you said, or let an AI rewrite it first.")
@@ -698,7 +698,7 @@ private fun SettingsScreen(version: Int, onChanged: () -> Unit, onModes: () -> U
                 if (aiOn) Ai.current().name else "Exact words",
                 if (aiOn) Ai.current().blurb + " Uses your own AI provider." else "$EXACT_BLURB Tap to add an AI that rewrites it.",
                 onClick = onModes,
-            ) { Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+            ) { AddIcon() }
         }
 
         SectionLabel("Your data", "Past dictations are kept only on this phone, for the History tab.")
@@ -750,16 +750,9 @@ private fun preview(type: String): String {
     }
 }
 
-/**
- * Trailing icon for a row that opens a list: an orange plus while the list is
- * empty (adding is all there is to do), the usual arrow once it has items
- * (the row then opens a page to view, change and delete them).
- */
+/** Trailing icon for a Settings row whose page is where you add things. */
 @Composable
-private fun OpenIcon(empty: Boolean) {
-    if (empty) Icon(Icons.Rounded.Add, null, tint = MaterialTheme.colorScheme.primary)
-    else Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-}
+private fun AddIcon() = Icon(Icons.Rounded.Add, null, tint = MaterialTheme.colorScheme.primary)
 
 /** State shown with an icon and a label, never colour alone. */
 @Composable
