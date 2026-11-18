@@ -110,6 +110,10 @@ Each step ends with something that runs on the phone. Commit at each.
    beam search, `bpe.vocab` pulled from NVIDIA's `.nemo`) and say/type Shortcuts
    through `apply_replacements`. Strength 1.5 fixed names on PC test clips; 2.5
    started inserting the words into normal speech. Details in the README.
+   0.1.3 (2026-11-19): Your words, plus editable shortcuts and History entries
+   (with Undo on delete), no full stop after a shortcut that ends the
+   dictation, and a Settings page where every section and row says what it
+   does. Rows that add things show a plus.
 3. **Shared crate.** `crates/sv-core` with the copied text logic and its tests,
    built for Android and called from Kotlin through UniFFI.
 4. **Pipeline.** Record, trim silence, transcribe, clean up, optional cloud AI
