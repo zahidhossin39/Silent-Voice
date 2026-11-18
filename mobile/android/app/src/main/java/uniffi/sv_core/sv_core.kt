@@ -873,7 +873,7 @@ private fun uniffiCheckContractApiVersion(lib: UniffiLib) {
 
 @Suppress("UNUSED_PARAMETER")
 private fun uniffiCheckApiChecksums(lib: UniffiLib) {
-    if (lib.uniffi_sv_core_checksum_func_apply_replacements() != 38529.toShort()) {
+    if (lib.uniffi_sv_core_checksum_func_apply_replacements() != 36302.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_sv_core_checksum_func_clean_after_ai() != 18165.toShort()) {
@@ -1134,7 +1134,9 @@ public object FfiConverterSequenceTypeReplacement: FfiConverterRustBuffer<List<R
     }
 }
         /**
-         * Applies replacements last, as desktop does.
+         * Applies replacements last, as desktop does. Longer phrases go first (also as
+         * desktop does), so "my email work" is not cut short by a "my email" rule
+         * listed before it.
          */ fun `applyReplacements`(`text`: kotlin.String, `rules`: List<Replacement>): kotlin.String {
             return FfiConverterString.lift(
     uniffiRustCall() { _status ->
