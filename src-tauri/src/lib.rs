@@ -1037,6 +1037,12 @@ async fn meeting_retranscribe(app: AppHandle, id: i64, cloud: Option<transcribe_
     meeting_job::retranscribe(&app, id, cloud, language, speakers.unwrap_or(false))
 }
 
+/// Put a meeting back to how it was before an AI agent changed it over MCP.
+#[tauri::command]
+fn meeting_undo_agent(id: i64) -> Result<transcripts::Transcript, String> {
+    transcribe_job::unless_running(id, "Wait for the meeting to finish first.", || transcripts::undo_agent(id))
+}
+
 /// Set how many Others were on a meeting (None = let the model guess) and
 /// label its lines again with that count. Labels arrive as a transcript update.
 #[tauri::command]
@@ -1811,6 +1817,7 @@ pub fn run() {
             file_transcribe_start,
             file_transcribe_cancel,
             meeting_start,
+            meeting_undo_agent,
             meeting_stop,
             meeting_retranscribe,
             meeting_set_people,

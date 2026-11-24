@@ -960,6 +960,17 @@ export async function meetingStart(cloud?: { base_url: string; api_key: string; 
   return invoke<Transcript>("meeting_start", { cloud: cloud ?? null, language: language ?? null, speakers, recordOnly });
 }
 
+/** Put a meeting back to how it was before an AI agent changed it over MCP. */
+export async function meetingUndoAgent(id: number): Promise<Transcript> {
+  if (!isTauri()) throw new Error("Needs the desktop app");
+  return invoke<Transcript>("meeting_undo_agent", { id });
+}
+
+/** What wrote a meeting's text when an AI agent did it over MCP ("agy"), else null. */
+export function agentOf(t: Transcript): string | null {
+  return t.model_id.startsWith("agent: ") ? t.model_id.slice("agent: ".length) : null;
+}
+
 /** Transcribe a saved meeting again from its audio; updates arrive like a recording's. */
 export async function meetingRetranscribe(id: number, cloud?: { base_url: string; api_key: string; model: string }, language?: string, speakers = false): Promise<Transcript> {
   if (!isTauri()) throw new Error("Needs the desktop app");

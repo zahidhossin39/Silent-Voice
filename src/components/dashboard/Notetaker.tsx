@@ -20,6 +20,8 @@ import {
   meetingSetPeople,
   meetingsSearch,
   meetingStart,
+  meetingUndoAgent,
+  agentOf,
   meetingStop,
   transcriptDelete,
   transcriptGet,
@@ -107,12 +109,30 @@ export default function Notetaker() {
   const selectedRef = useRef(selected);
   selectedRef.current = selected;
 
-  useEffect(() => {
+  // An AI agent saves over MCP from another process, which sends the page no
+  // event: read the meetings again whenever the window comes back into view.
+  const reload = useCallback(() => {
     transcriptsList().then((all) => {
       const l = all.filter((t) => t.kind === "meeting");
       setList(l);
       setSelected((s) => s ?? l[0]?.id ?? null);
     });
+    const id = selectedRef.current;
+    if (id !== null) transcriptGet(id).then((t) => selectedRef.current === t.id && setFull(t), () => {});
+  }, []);
+
+  useEffect(() => {
+    const onVisible = () => document.visibilityState === "visible" && reload();
+    window.addEventListener("focus", reload);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.removeEventListener("focus", reload);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [reload]);
+
+  useEffect(() => {
+    reload();
     meetingDevices().then(setDevices, () => {});
     meetingCaptureSupport().then(setCapture, () => {});
     const un = listenEvent<Transcript>("transcript://update", (t) => {
@@ -124,7 +144,7 @@ export default function Notetaker() {
     return () => {
       un.then((f) => f());
     };
-  }, [upsert]);
+  }, [upsert, reload]);
 
   useEffect(() => {
     if (selected === null) return setFull(null);
@@ -467,6 +487,15 @@ export default function Notetaker() {
             onSettings={() => setSettingsOpen(true)}
             redoWith={busy ? null : cloud ? cloud.name : "this PC"}
             onRedo={() => redo(full.id)}
+            onUndoAgent={async () => {
+              try {
+                const t = await meetingUndoAgent(full.id);
+                upsert(t);
+                setFull(t);
+              } catch (e) {
+                setError(String(e));
+              }
+            }}
           />
         ) : (
           <div className="hidden rounded-2xl border border-sv-border bg-sv-surface md:block" />
@@ -804,6 +833,7 @@ function MeetingPanel({
   onSettings,
   redoWith,
   onRedo,
+  onUndoAgent,
 }: {
   t: Transcript;
   stopping: boolean;
@@ -815,6 +845,8 @@ function MeetingPanel({
   /** Where "Transcribe again" would send the audio; null while a job runs. */
   redoWith: string | null;
   onRedo: () => void;
+  /** Put back the meeting as it was before an AI agent changed it. */
+  onUndoAgent: () => void;
 }) {
   const [confirmRedo, setConfirmRedo] = useState(false);
   useEffect(() => {
@@ -841,6 +873,13 @@ function MeetingPanel({
   const live = t.status === "running";
   // Record only: audio, no text yet. Nothing to replace, so no confirm step.
   const waiting = t.status === "recorded";
+  const agent = agentOf(t);
+  const [confirmUndo, setConfirmUndo] = useState(false);
+  useEffect(() => {
+    if (!confirmUndo) return;
+    const timer = setTimeout(() => setConfirmUndo(false), 5000);
+    return () => clearTimeout(timer);
+  }, [confirmUndo]);
 
   useEffect(() => {
     const el = scroller.current;
@@ -860,6 +899,24 @@ function MeetingPanel({
             {dayLabel(t.created)} · {timeOf(t.created)}
             {!live && ` · ${clock(t.duration_ms ?? t.done_ms)}`}
             {!live && !t.redo && (t.others != null || t.lines.some((l) => l.who)) && <PeopleCount t={t} />}
+            {agent && !live && (
+              <>
+                {` · transcribed by ${agent} · `}
+                <button
+                  onClick={() => {
+                    if (!confirmUndo) return setConfirmUndo(true);
+                    setConfirmUndo(false);
+                    onUndoAgent();
+                  }}
+                  title={`Put back this meeting as it was before ${agent} changed it`}
+                  className={`rounded font-medium hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sv-accent ${
+                    confirmUndo ? "text-sv-warn" : "text-sv-accent"
+                  }`}
+                >
+                  {confirmUndo ? `Undo ${agent}'s changes?` : "Undo"}
+                </button>
+              </>
+            )}
             {t.redo && (
               <>
                 {" · transcribing again… "}

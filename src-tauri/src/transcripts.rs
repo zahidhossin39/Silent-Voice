@@ -162,6 +162,20 @@ pub(crate) fn load_in(dir: &Path, id: i64) -> Result<Transcript, String> {
     serde_json::from_slice(&bytes).map_err(|e| e.to_string())
 }
 
+/// Put back the version from before an AI agent changed this meeting.
+pub fn undo_agent(id: i64) -> Result<Transcript, String> {
+    undo_agent_in(&dir(), id)
+}
+
+fn undo_agent_in(dir: &Path, id: i64) -> Result<Transcript, String> {
+    let prev = prev_in(dir, id);
+    let bytes = std::fs::read(&prev).map_err(|_| "There is nothing to undo for this meeting.".to_string())?;
+    let before: Transcript = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+    save_in(dir, &before)?;
+    let _ = std::fs::remove_file(prev);
+    Ok(before)
+}
+
 /// The version from before an AI agent's first save, kept so it can be undone.
 /// Not ".json": the list must not pick it up as a meeting.
 pub(crate) fn prev_in(dir: &Path, id: i64) -> PathBuf {
@@ -382,6 +396,24 @@ pub fn render(t: &Transcript, format: Format) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn undoing_an_agent_puts_the_meeting_back_once() {
+        let dir = std::env::temp_dir().join(format!("sv-undo-agent-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut before = Transcript::new(5, Kind::Meeting, String::new(), String::new(), "record only".into());
+        before.status = Status::Recorded;
+        std::fs::write(prev_in(&dir, 5), serde_json::to_vec(&before).unwrap()).unwrap();
+        let mut after = before.clone();
+        after.status = Status::Done;
+        after.model_id = "agent: agy".into();
+        save_in(&dir, &after).unwrap();
+        assert_eq!(undo_agent_in(&dir, 5).unwrap().status, Status::Recorded);
+        assert_eq!(load_in(&dir, 5).unwrap().model_id, "record only");
+        assert!(!prev_in(&dir, 5).exists(), "the undo copy is used up");
+        assert!(undo_agent_in(&dir, 5).unwrap_err().contains("nothing to undo"));
+    }
 
     fn sample() -> Transcript {
         Transcript {
