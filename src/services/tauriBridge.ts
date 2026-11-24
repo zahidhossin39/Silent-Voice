@@ -960,6 +960,12 @@ export async function meetingStart(cloud?: { base_url: string; api_key: string; 
   return invoke<Transcript>("meeting_start", { cloud: cloud ?? null, language: language ?? null, speakers, recordOnly });
 }
 
+/** The app's exe, which AI agents run with `--mcp` to reach the local MCP server. */
+export async function mcpServerPath(): Promise<string> {
+  if (!isTauri()) return "C:\Program Files\Silent Voice\silent-voice.exe";
+  return invoke<string>("mcp_server_path");
+}
+
 /** Put a meeting back to how it was before an AI agent changed it over MCP. */
 export async function meetingUndoAgent(id: number): Promise<Transcript> {
   if (!isTauri()) throw new Error("Needs the desktop app");

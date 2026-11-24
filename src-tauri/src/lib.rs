@@ -1037,6 +1037,13 @@ async fn meeting_retranscribe(app: AppHandle, id: i64, cloud: Option<transcribe_
     meeting_job::retranscribe(&app, id, cloud, language, speakers.unwrap_or(false))
 }
 
+/// This app's own exe: what an AI agent runs (with `--mcp`) to reach the
+/// local MCP server. Settings shows it in the agents' setup text.
+#[tauri::command]
+fn mcp_server_path() -> Result<String, String> {
+    std::env::current_exe().map(|p| p.to_string_lossy().into_owned()).map_err(|e| e.to_string())
+}
+
 /// Put a meeting back to how it was before an AI agent changed it over MCP.
 #[tauri::command]
 fn meeting_undo_agent(id: i64) -> Result<transcripts::Transcript, String> {
@@ -1818,6 +1825,7 @@ pub fn run() {
             file_transcribe_cancel,
             meeting_start,
             meeting_undo_agent,
+            mcp_server_path,
             meeting_stop,
             meeting_retranscribe,
             meeting_set_people,

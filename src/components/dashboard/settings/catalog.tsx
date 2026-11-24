@@ -2,14 +2,15 @@
 // to, whether a beginner sees it (basic) or it lives in the fold-open advanced
 // card, its plain-language label, the explanation behind its info icon, and
 // the control. The page only decides layout.
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import HotkeyRecorder from "../../shared/HotkeyRecorder";
 import Select from "../../shared/Select";
 import { useSettingsStore } from "../../../stores/settingsStore";
 import { useModelStore } from "../../../stores/modelStore";
 import { LANGUAGES, TTS_MODELS, findSttModel, TTS_SAMPLE_TEXT, honorsLanguage } from "../../../services/catalog";
-import { copyDiagnostics, copyToClipboard, exportLogs, openLogsFolder, previewDictationSound, ttsSpeakText } from "../../../services/tauriBridge";
+import { copyDiagnostics, copyToClipboard, exportLogs, mcpServerPath, openLogsFolder, previewDictationSound, ttsSpeakText } from "../../../services/tauriBridge";
+import { AGENTS, agentSetup, type AgentId } from "../../../services/agentSetup";
 import { checkForUpdatesManual } from "../../../services/updater";
 import type { Settings } from "../../../types";
 import type { TopicId } from "./topics";
@@ -499,6 +500,16 @@ export const SETTINGS: SettingDef[] = [
     render: (c, label) => <Toggle label={label} checked={c.s.use_gpu} onChange={(v) => c.set({ use_gpu: v })} />,
   },
   {
+    id: "agents",
+    topic: "system",
+    tier: "basic",
+    label: "Connect an AI agent",
+    info: "Lets an AI agent on this PC (Antigravity, Claude Code, Codex, Cursor...) read your meetings, listen to their audio and save transcripts and summaries, through a local MCP server. Silent Voice starts it only while the agent uses it, and it opens no network port. Pair it with Notetaker → Record only.",
+    keywords: "mcp agent ai claude antigravity agy gemini codex cursor meeting transcribe record only server",
+    wide: true,
+    render: () => <AgentConnect />,
+  },
+  {
     id: "diagnostics",
     topic: "system",
     tier: "basic",
@@ -732,6 +743,45 @@ function UpdateCheck() {
         Check now
       </GhostButton>
     </span>
+  );
+}
+
+function AgentConnect() {
+  const [agent, setAgent] = useState<AgentId>("agy");
+  const [exe, setExe] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    mcpServerPath().then(setExe, () => setExe(null));
+  }, []);
+  const a = AGENTS.find((x) => x.id === agent)!;
+  const text = exe ? agentSetup(agent, exe) : "";
+  return (
+    <div className="flex flex-col gap-2.5">
+      <Segmented label="AI agent" value={agent} onChange={(v) => { setAgent(v as AgentId); setCopied(false); }} options={AGENTS.map((x) => [x.id, x.label])} />
+      <p className="text-[12.5px] text-sv-muted">{a.where}</p>
+      <div className="relative">
+        <pre className="overflow-x-auto whitespace-pre rounded-lg border border-sv-border bg-sv-bg px-3 py-2.5 pr-20 font-mono text-[12px] leading-relaxed text-sv-text">
+          {text || "Needs the desktop app"}
+        </pre>
+        {text && (
+          <span className="absolute right-2 top-2">
+            <GhostButton
+              onClick={async () => {
+                await copyToClipboard(text);
+                setCopied(true);
+              }}
+            >
+              {copied ? "Copied" : "Copy"}
+            </GhostButton>
+          </span>
+        )}
+      </div>
+      <p className="text-[12.5px] text-sv-muted">
+        {a.hears
+          ? "This agent can listen to the audio itself. Then ask it: “Transcribe my latest Silent Voice meeting.”"
+          : "This agent's models may not hear audio: give it a speech-to-text tool of its own, or use it for meetings that already have a transcript (summaries, questions)."}
+      </p>
+    </div>
   );
 }
 
