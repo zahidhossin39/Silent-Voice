@@ -3,9 +3,9 @@ import Page from "../shared/Page";
 import Select from "../shared/Select";
 import { useNotetakerSettings, useSettingsStore } from "../../stores/settingsStore";
 import { DownloadButton, RemoveButton } from "./settings/downloads";
-import { Toggle } from "./settings/parts";
+import { Info, Toggle } from "./settings/parts";
 import { LANGUAGES, STT_MODELS, honorsLanguage } from "../../services/catalog";
-import TranscriptHeader, { clock } from "../shared/TranscriptHeader";
+import TranscriptHeader, { ToolButton, clock } from "../shared/TranscriptHeader";
 import { TrashIcon } from "../shared/TranscriptCard";
 import MeetingOverview, { GearIcon, Picker, SummarySettings, useSummaryChoice, type Choice, type SummaryChoice } from "./MeetingOverview";
 import { ModelPicker } from "./providers/shared";
@@ -245,6 +245,8 @@ export default function Notetaker() {
     : !honorsLanguage(localModel) && meetingLang !== "en"
       ? `Your voice model (${localModel?.label ?? "this PC's"}) only understands ${localModel?.id.startsWith("sense-voice") ? "a few languages" : "English"}. For ${meetingLang === "auto" ? "other languages" : langName(meetingLang)}, transcribe with a cloud provider or download a Whisper model.`
       : `Transcribed in ${meetingLang === "auto" ? "whatever language is spoken" : langName(meetingLang)}.`;
+  // A language the chosen model handles badly is a warning, shown in full; the rest sits behind an info icon.
+  const langWarn = !listed && (cloud ? meetingLang !== "en" && /whisper/i.test(sttModelOf(cloud)) : !honorsLanguage(localModel) && meetingLang !== "en");
   const summary = useSummaryChoice();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const pickStt = (v: string) => setNt({ stt: v });
@@ -306,9 +308,19 @@ export default function Notetaker() {
       fill
       title="Notetaker"
       subtitle={
-        recordOnly
-          ? "Record a call. Only the audio is kept, for an AI agent on this PC to transcribe later."
-          : `Record a call and get a live transcript of who said what. ${cloud ? `Audio is sent to ${cloud.name} to transcribe; recordings and text stay on this PC.` : "Audio and text stay on this PC."}`
+        <span className="inline-flex items-center gap-1.5">
+          {recordOnly ? "Record a call now, transcribe it later." : "Record a call and get a live transcript of who said what."}
+          <Info
+            label="where your audio goes"
+            text={
+              recordOnly
+                ? "Only the audio is kept, on this PC. An AI agent you connect in Settings transcribes it later, or pick Transcribe here on the meeting."
+                : cloud
+                  ? `Audio is sent to ${cloud.name} to transcribe. Recordings and text stay on this PC.`
+                  : "Audio and text stay on this PC. Nothing is uploaded."
+            }
+          />
+        </span>
       }
       actions={
         <div className="relative flex items-center gap-2">
@@ -317,8 +329,8 @@ export default function Notetaker() {
             aria-expanded={settingsOpen}
             aria-label="Notetaker settings"
             title="Notetaker settings"
-            className={`flex h-10 w-10 items-center justify-center rounded-xl border transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sv-accent ${
-              settingsOpen ? "border-sv-accent text-sv-text" : "border-sv-border text-sv-muted hover:text-sv-text"
+            className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl border bg-sv-surface transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sv-accent ${
+              settingsOpen ? "border-sv-accent/70 bg-sv-surface-2 text-sv-text" : "border-sv-border text-sv-muted hover:bg-sv-surface-2 hover:text-sv-text"
             }`}
           >
             <GearIcon className="h-[18px] w-[18px]" />
@@ -329,7 +341,7 @@ export default function Notetaker() {
           <button
             onClick={start}
             disabled={starting}
-            className="flex shrink-0 items-center gap-2 rounded-xl bg-sv-accent px-4 py-2 text-sm font-semibold text-sv-on-accent shadow-sm transition hover:bg-sv-accent/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sv-accent focus-visible:ring-offset-2 focus-visible:ring-offset-sv-bg disabled:opacity-60"
+            className="flex h-10 shrink-0 items-center gap-2 rounded-xl bg-sv-accent px-4 text-sm font-semibold text-sv-on-accent shadow-sm transition hover:bg-sv-accent/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sv-accent focus-visible:ring-offset-2 focus-visible:ring-offset-sv-bg disabled:opacity-60"
           >
             <span className="relative flex h-3.5 w-3.5 items-center justify-center rounded-full border-2 border-current">
               <span className="h-1.5 w-1.5 rounded-full bg-current" />
@@ -384,6 +396,8 @@ export default function Notetaker() {
                 </div>
               }
               languageNote={langNote}
+              languageWarn={langWarn}
+              locked={!!recording}
               stt={
                 <div className="flex flex-col gap-2">
                   <Picker
@@ -406,9 +420,7 @@ export default function Notetaker() {
                 </div>
               }
               sttNote={
-                recording
-                  ? "Applies to the next meeting."
-                  : recordOnly
+                recordOnly
                     ? "Nothing is transcribed while you record. Connect an AI agent in Settings, or pick Transcribe here on the meeting."
                     : cloud
                     ? `Audio is sent to ${cloud.name}. If a call fails, that part is transcribed on this PC.`
@@ -452,9 +464,7 @@ export default function Notetaker() {
             {found && shown.length === 0 ? (
               <p className="px-1 pt-2 text-sm text-sv-muted">No meeting mentions "{query.trim()}".</p>
             ) : list.length === 0 ? (
-              <p className="px-1 pt-2 text-sm text-sv-muted">
-                Your meetings will be listed here. Start recording when a call begins, and stop when it ends.
-              </p>
+              <p className="px-1 pt-2 text-sm text-sv-muted">No meetings yet.</p>
             ) : (
               groups.map((g) => (
                 <div key={g.day} className="mb-4">
@@ -498,7 +508,17 @@ export default function Notetaker() {
             }}
           />
         ) : (
-          <div className="hidden rounded-2xl border border-sv-border bg-sv-surface md:block" />
+          <div className="hidden flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-sv-border px-8 text-center md:flex">
+            <span className="grid h-11 w-11 place-items-center rounded-xl bg-sv-surface-2 text-sv-muted" aria-hidden>
+              <MicIcon />
+            </span>
+            <div>
+              <p className="text-sm font-medium text-sv-text">{list.length ? "Pick a meeting to open it" : "Your meetings show up here"}</p>
+              <p className="mx-auto mt-1 max-w-[34ch] text-xs leading-relaxed text-sv-muted">
+                {list.length ? "Its transcript, overview and recording open on this side." : "Start recording when a call begins and stop when it ends. The transcript fills in as people talk."}
+              </p>
+            </div>
+          </div>
         )}
       </div>
     </Page>
@@ -513,6 +533,8 @@ function NotetakerSettings({
   sttNote,
   language,
   languageNote,
+  languageWarn,
+  locked,
 }: {
   onClose: () => void;
   summary: SummaryChoice;
@@ -520,6 +542,9 @@ function NotetakerSettings({
   sttNote: string;
   language: React.ReactNode;
   languageNote: string;
+  languageWarn: boolean;
+  /** A meeting is recording: changes wait for the next one. */
+  locked: boolean;
 }) {
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -541,26 +566,36 @@ function NotetakerSettings({
       ref={box}
       role="dialog"
       aria-label="Notetaker settings"
-      className="absolute right-0 top-[calc(100%+8px)] z-40 w-[min(26rem,calc(100vw-2rem))] space-y-5 rounded-2xl border border-sv-border bg-sv-surface p-5 text-left shadow-[0_16px_40px_-12px_rgb(0_0_0/0.5)]"
+      className="absolute right-0 top-[calc(100%+8px)] z-40 max-h-[calc(100vh-8rem)] w-[min(24rem,calc(100vw-2rem))] divide-y divide-sv-border overflow-y-auto rounded-2xl border border-sv-border bg-sv-surface text-left shadow-[0_16px_40px_-12px_rgb(0_0_0/0.5)]"
     >
-      <section>
-        <h3 className="text-sm font-semibold">Language spoken</h3>
-        <p className="mb-2 mt-0.5 text-xs text-sv-muted">What people speak in your meetings.</p>
+      {locked && <p className="bg-sv-surface-2/60 px-5 py-2.5 text-xs text-sv-muted">Recording now. Changes apply to the next meeting.</p>}
+      <section className="px-5 py-4">
+        <SettingHead title="Language spoken" about={`What people speak in your meetings.${languageWarn ? "" : ` ${languageNote}`}`} />
         {language}
-        <p className="mt-1.5 text-xs text-sv-muted">{languageNote}</p>
+        {languageWarn && <p className="mt-2 text-xs leading-relaxed text-sv-warn">{languageNote}</p>}
       </section>
-      <section className="border-t border-sv-border pt-4">
-        <h3 className="text-sm font-semibold">Transcription</h3>
-        <p className="mb-2 mt-0.5 text-xs text-sv-muted">Turns the meeting's audio into text as people talk.</p>
+      <section className="px-5 py-4">
+        <SettingHead title="Transcription" about={`Turns the meeting's audio into text as people talk. ${sttNote}`} />
         {stt}
-        <p className="mt-1.5 text-xs text-sv-muted">{sttNote}</p>
       </section>
       <SpeakersSetting />
-      <section className="border-t border-sv-border pt-4">
-        <h3 className="text-sm font-semibold">Summary</h3>
-        <p className="mb-2 mt-0.5 text-xs text-sv-muted">Writes the Overview: key points, decisions and action items.</p>
+      <section className="px-5 py-4">
+        <SettingHead title="Summary" about="Writes the Overview: key points, decisions and action items." />
         <SummarySettings s={summary} />
       </section>
+    </div>
+  );
+}
+
+/** A settings heading with its explanation behind an info icon, and an optional control on the right. */
+function SettingHead({ title, about, children }: { title: string; about: string; children?: React.ReactNode }) {
+  return (
+    <div className="mb-2.5 flex min-h-6 items-center justify-between gap-3">
+      <div className="flex items-center gap-1.5">
+        <h3 className="text-sm font-semibold">{title}</h3>
+        <Info label={title} text={about} />
+      </div>
+      {children}
     </div>
   );
 }
@@ -574,9 +609,11 @@ function SpeakersSetting() {
     diarizeInstalled().then(setReady);
   }, []);
   return (
-    <section className="border-t border-sv-border pt-4">
-      <div className="flex items-center justify-between gap-3">
-        <h3 className="text-sm font-semibold">Tell speakers apart</h3>
+    <section className="px-5 py-4">
+      <SettingHead
+        title="Tell speakers apart"
+        about="After you stop, Others is split into Speaker 1, Speaker 2… by voice, on this PC. It takes about 15 s per minute of meeting; the text shows meanwhile."
+      >
         {ready === null ? null : ready ? (
           <div className="flex items-center gap-3">
             <RemoveButton
@@ -604,12 +641,8 @@ function SpeakersSetting() {
             }}
           />
         )}
-      </div>
-      <p className="mt-0.5 text-xs text-sv-muted">
-        After you stop, Others is split into Speaker 1, Speaker 2… by voice, on this PC. Takes about 15 s per minute of meeting; the text shows
-        meanwhile.
-      </p>
-      {error && <p className="mt-1 text-xs text-sv-warn">Download failed: {error}</p>}
+      </SettingHead>
+      {error && <p className="text-xs text-sv-warn">Download failed: {error}</p>}
     </section>
   );
 }
@@ -688,47 +721,116 @@ function Setup({
   onConsentSeen: () => void;
 }) {
   return (
-    <div className="space-y-3 rounded-2xl border border-sv-border bg-sv-surface px-5 py-4">
-      <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5 text-sm">
-        <dt className="text-sv-muted">You</dt>
-        <dd className="truncate" title={mic ?? undefined}>
-          {mic ?? "Default microphone"}
-        </dd>
-        <dt className="text-sv-muted">Others</dt>
-        {capture ? (
-          <dd className="text-sv-muted">Not recorded</dd>
-        ) : (
-          <dd className="truncate" title={speakers ?? undefined}>
-            {speakers ? `What plays on ${speakers}` : "What plays on your speakers"}
-          </dd>
-        )}
-      </dl>
-      {capture && <CaptureNote capture={capture} />}
-      {btMic ? (
-        <p className="rounded-lg bg-sv-warn/10 px-3 py-2 text-xs leading-relaxed text-sv-warn">
-          This mic looks like a Bluetooth headset. Recording from it switches the headset to call quality, so everyone
-          sounds worse. Pick your laptop's built-in mic in Settings for better sound.
-        </p>
-      ) : (
-        <p className="text-xs leading-relaxed text-sv-muted">
-          Best with headphones. On speakers your mic also hears the others; Silent Voice drops those repeats, but
-          headphones keep "You" cleanest.
-        </p>
+    <section aria-labelledby="nt-sources" className="rounded-2xl border border-sv-border bg-sv-surface">
+      <div className="flex items-center justify-between gap-2 px-4 pb-1 pt-3">
+        <h2 id="nt-sources" className="text-xs font-semibold text-sv-muted">
+          What gets recorded
+        </h2>
+        <Info
+          label="getting a clean recording"
+          text={`Best with headphones. On speakers your mic also hears the others; Silent Voice removes those repeats, but headphones keep "You" cleanest. To change the mic, open Settings.`}
+        />
+      </div>
+      <ul className="px-2 pb-2">
+        <Source
+          icon={<MicIcon />}
+          who="You"
+          device={mic ?? "Default microphone"}
+          state={btMic ? "warn" : "ok"}
+          note={
+            btMic && (
+              <span className="flex items-center gap-1 text-sv-warn">
+                Bluetooth headset: everyone sounds worse
+                <Info
+                  label="Bluetooth microphones"
+                  text="Recording from a Bluetooth headset switches it to call quality, so everyone sounds worse. Pick your laptop's built-in mic in Settings for better sound."
+                />
+              </span>
+            )
+          }
+        />
+        <Source
+          icon={<SpeakerIcon />}
+          who="Others"
+          device={capture ? "Not recorded" : speakers ? `What plays on ${speakers}` : "What plays on your speakers"}
+          state={capture ? "off" : "ok"}
+        />
+      </ul>
+      {capture && (
+        <div className="px-4 pb-3">
+          <CaptureNote capture={capture} />
+        </div>
       )}
       {showConsent && (
-        <div className="flex items-start justify-between gap-3 border-t border-sv-border pt-3">
-          <p className="text-xs leading-relaxed text-sv-text">
-            Let people know you're recording. In many places everyone on a call has to agree to it.
+        <div className="flex items-center gap-2.5 border-t border-sv-border px-4 py-2.5">
+          <p className="min-w-0 flex-1 text-xs leading-5 text-sv-text">
+            Tell people you're recording.{" "}
+            <span className="inline-block align-middle">
+              <Info label="recording consent" text="In many places everyone on a call has to agree to being recorded." />
+            </span>
           </p>
           <button
             onClick={onConsentSeen}
-            className="shrink-0 rounded-md px-2 py-0.5 text-xs font-medium text-sv-accent hover:bg-sv-accent/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sv-accent"
+            className="shrink-0 rounded-md px-2 py-1 text-xs font-medium text-sv-accent hover:bg-sv-accent/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sv-accent"
           >
             Got it
           </button>
         </div>
       )}
-    </div>
+    </section>
+  );
+}
+
+/** One recorded side: an icon, who it is, the device, and a status dot. */
+function Source({
+  icon,
+  who,
+  device,
+  state,
+  note,
+}: {
+  icon: React.ReactNode;
+  who: string;
+  device: string;
+  state: "ok" | "warn" | "off";
+  note?: React.ReactNode;
+}) {
+  const dot = { ok: ["bg-sv-good", "Ready"], warn: ["bg-sv-warn", "Check this"], off: ["bg-sv-muted/50", "Off"] }[state];
+  return (
+    <li className="flex items-center gap-3 rounded-xl px-2 py-2">
+      <span
+        className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg ${state === "off" ? "bg-sv-surface-2/50 text-sv-muted/60" : "bg-sv-surface-2 text-sv-text"}`}
+        aria-hidden
+      >
+        {icon}
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="text-[11px] font-medium uppercase tracking-wide text-sv-muted">{who}</div>
+        <div className={`truncate text-sm ${state === "off" ? "text-sv-muted" : "text-sv-text"}`} title={device}>
+          {device}
+        </div>
+        {note && <div className="mt-0.5 text-xs">{note}</div>}
+      </div>
+      <span className={`h-2 w-2 shrink-0 rounded-full ${dot[0]}`} role="img" aria-label={dot[1]} title={dot[1]} />
+    </li>
+  );
+}
+
+function MicIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-[18px] w-[18px]" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+      <rect x="9" y="3" width="6" height="11" rx="3" />
+      <path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" />
+    </svg>
+  );
+}
+
+function SpeakerIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-[18px] w-[18px]" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 9.5v5h3.5L12 18.5v-13L7.5 9.5H4Z" />
+      <path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11" />
+    </svg>
   );
 }
 
@@ -895,59 +997,67 @@ function MeetingPanel({
         title={title(t)}
         name={t.name}
         details={
-          <>
-            {dayLabel(t.created)} · {timeOf(t.created)}
-            {!live && ` · ${clock(t.duration_ms ?? t.done_ms)}`}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+            <span className="flex items-center gap-1.5">
+              <CalendarIcon />
+              {dayLabel(t.created)}, {timeOf(t.created)}
+            </span>
+            {!live && (
+              <span className="flex items-center gap-1.5 tabular-nums">
+                <ClockIcon />
+                {clock(t.duration_ms ?? t.done_ms)}
+              </span>
+            )}
             {!live && !t.redo && (t.others != null || t.lines.some((l) => l.who)) && <PeopleCount t={t} />}
             {agent && !live && (
-              <>
-                {` · transcribed by ${agent} · `}
+              <span className="flex items-center gap-1 rounded-full bg-sv-surface-2 py-0.5 pl-2.5 pr-1 text-sv-text">
+                Transcribed by {agent}
                 <button
                   onClick={() => {
                     if (!confirmUndo) return setConfirmUndo(true);
                     setConfirmUndo(false);
                     onUndoAgent();
                   }}
-                  title={`Put back this meeting as it was before ${agent} changed it`}
-                  className={`rounded font-medium hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sv-accent ${
+                  aria-label={confirmUndo ? `Confirm: undo ${agent}'s changes` : `Undo ${agent}'s changes`}
+                  className={`rounded-full px-2 py-0.5 font-medium transition hover:bg-sv-bg/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sv-accent ${
                     confirmUndo ? "text-sv-warn" : "text-sv-accent"
                   }`}
                 >
-                  {confirmUndo ? `Undo ${agent}'s changes?` : "Undo"}
+                  {confirmUndo ? "Undo changes?" : "Undo"}
                 </button>
-              </>
+              </span>
             )}
             {t.redo && (
-              <>
-                {" · transcribing again… "}
+              <span className="flex items-center gap-1.5 rounded-full bg-sv-accent/10 py-0.5 pl-2.5 pr-1 text-sv-text" role="status">
+                <span className="h-3 w-3 animate-spin rounded-full border-2 border-sv-accent/30 border-t-sv-accent" aria-hidden />
+                Transcribing again
                 <button
                   onClick={() => transcribeCancel()}
-                  title="Stop and keep the old text"
-                  className="rounded font-medium text-sv-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sv-accent"
+                  aria-label="Stop transcribing again and keep the old text"
+                  className="rounded-full px-2 py-0.5 font-medium text-sv-accent transition hover:bg-sv-bg/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sv-accent"
                 >
                   Cancel
                 </button>
-              </>
+              </span>
             )}
-            {!live && !waiting && redoWith && (
-              <>
-                {" · "}
-                <button
-                  onClick={() => {
-                    if (!confirmRedo) return setConfirmRedo(true);
-                    setConfirmRedo(false);
-                    onRedo();
-                  }}
-                  title={`Transcribe this meeting's audio again with ${redoWith}. The Overview is kept.`}
-                  className={`rounded font-medium hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sv-accent ${
-                    confirmRedo ? "text-sv-warn" : "text-sv-accent"
-                  }`}
-                >
-                  {confirmRedo ? `Replace the text? Transcribe with ${redoWith}` : "Transcribe again"}
-                </button>
-              </>
-            )}
-          </>
+          </div>
+        }
+        tools={
+          !live &&
+          !waiting &&
+          redoWith && (
+            <ToolButton
+              onClick={() => {
+                if (!confirmRedo) return setConfirmRedo(true);
+                setConfirmRedo(false);
+                onRedo();
+              }}
+              label={confirmRedo ? "Replace text?" : "Transcribe again"}
+              danger={confirmRedo}
+            >
+              <RedoIcon />
+            </ToolButton>
+          )
         }
         copyText={(t.summary ? t.summary.trim() + "\n\n---\n\n" : "") + paras.map((p) => speakerLabel(p.speaker, p.who) + p.text).join("\n\n")}
         busy={live}
@@ -1164,9 +1274,10 @@ function PeopleCount({ t }: { t: Transcript }) {
   }, [busy]);
   return (
     <>
-      {" · "}
-      <label className="inline-flex items-center gap-1">
-        People besides you
+      <span className="inline-flex items-center gap-1.5">
+      <label className="inline-flex items-center gap-1.5">
+        <PeopleIcon />
+        <span className="sr-only">People besides you</span>
         <select
           value={t.others ?? ""}
           disabled={busy}
@@ -1178,19 +1289,56 @@ function PeopleCount({ t }: { t: Transcript }) {
               setErr(String(x));
             });
           }}
-          title="How many voices to tell apart on the Others side. Auto lets the model guess."
-          className="h-6 rounded-md border border-sv-border bg-sv-bg px-1 text-xs text-sv-muted outline-none focus:border-sv-accent disabled:opacity-60"
+          className="h-6 rounded-md border border-sv-border bg-sv-bg px-1 text-xs text-sv-text outline-none focus:border-sv-accent disabled:opacity-60"
         >
-          <option value="">Auto</option>
+          <option value="">Others: auto</option>
           {[1, 2, 3, 4, 5, 6].map((n) => (
             <option key={n} value={n}>
-              {n}
+              {n === 1 ? "1 other person" : `${n} other people`}
             </option>
           ))}
         </select>
       </label>
-      {busy && " · telling voices apart…"}
-      {err && <span className="text-sv-warn"> · {err}</span>}
+      <Info label="people count" text="How many voices to tell apart on the Others side. Auto lets the model guess; pick the number if you know it." />
+      </span>
+      {busy && <span role="status">Telling voices apart…</span>}
+      {err && <span className="text-sv-warn">{err}</span>}
     </>
+  );
+}
+
+function CalendarIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" aria-hidden>
+      <rect x="4" y="5.5" width="16" height="14" rx="2.5" />
+      <path d="M4 10h16M8.5 3.5v4M15.5 3.5v4" />
+    </svg>
+  );
+}
+
+function ClockIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" aria-hidden>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 7.5V12l3 2" />
+    </svg>
+  );
+}
+
+function PeopleIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" aria-hidden>
+      <circle cx="9" cy="8.5" r="3.5" />
+      <path d="M3 19.5a6 6 0 0 1 12 0M16 5.2a3.5 3.5 0 0 1 0 6.6M18 14a6 6 0 0 1 3 5.5" />
+    </svg>
+  );
+}
+
+function RedoIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3" />
+      <path d="M19.5 4.5v4.2h-4.2" />
+    </svg>
   );
 }

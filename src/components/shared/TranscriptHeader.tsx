@@ -21,6 +21,7 @@ export default function TranscriptHeader({
   details,
   copyText,
   busy,
+  tools,
   onRenamed,
   onDeleted,
 }: {
@@ -34,6 +35,8 @@ export default function TranscriptHeader({
   copyText: string;
   /** Still being written: Save and Delete wait. */
   busy: boolean;
+  /** Page-specific buttons, before Copy. */
+  tools?: ReactNode;
   onRenamed: (name: string) => void;
   onDeleted: () => void;
 }) {
@@ -80,7 +83,7 @@ export default function TranscriptHeader({
 
   return (
     <header className="flex flex-wrap items-start justify-between gap-3 border-b border-sv-border px-6 py-4">
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 flex-1 basis-48">
         {renaming ? (
           <input
             autoFocus
@@ -116,7 +119,7 @@ export default function TranscriptHeader({
             </button>
           </h2>
         )}
-        <div className="mt-0.5 text-xs text-sv-muted">{details}</div>
+        <div className="mt-1 text-xs text-sv-muted">{details}</div>
       </div>
       <div className="flex shrink-0 items-center gap-1.5">
         {note && (
@@ -124,6 +127,7 @@ export default function TranscriptHeader({
             {note.msg}
           </span>
         )}
+        {tools}
         <ToolButton onClick={copy} disabled={!copyText} label="Copy">
           <CopyIcon />
         </ToolButton>
@@ -138,7 +142,7 @@ export default function TranscriptHeader({
   );
 }
 
-function ToolButton({
+export function ToolButton({
   onClick,
   disabled,
   label,
