@@ -845,7 +845,7 @@ export interface Transcript {
   created: number;
   duration_ms: number | null;
   model_id: string;
-  status: "running" | "done" | "stopped" | "failed";
+  status: "running" | "done" | "stopped" | "failed" | "recorded";
   error?: string | null;
   done_ms: number;
   work_ms: number;

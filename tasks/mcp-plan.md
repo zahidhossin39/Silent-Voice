@@ -34,11 +34,11 @@ session scratchpad.
   prose.
 - **Tool annotations:** reads are `readOnlyHint`. `save_transcript` is
   `destructiveHint`, because it replaces lines, so agents ask before using it.
-- **Audio goes to the agent in pieces.** The cloud model can't read a local
-  path (agy, Gemini docs). `get_meeting_audio` returns one track, a time window
-  of at most 5 minutes, as an MCP `audio` content block (16 kHz mono WAV, about
-  9.6 MB), plus the full file paths for agents that can upload files with their
-  own tools. A one-hour meeting is 12 calls per track.
+- **Audio goes to the agent in pieces, as files.** `get_meeting_audio` saves
+  one track's time window (at most 5 minutes, 16 kHz mono WAV, about 9.6 MB)
+  as a file and returns its path, which the agent opens with its own file
+  tool. MCP audio blocks are optional (`inline`), because agy drops them
+  (Task 1). A one-hour meeting is 12 calls per track.
 - **Record-only = a new status `Recorded`** on the transcript, with no lines
   yet. The "Transcribe here" button reuses the existing `retranscribe`, so
   changing your mind costs nothing.
@@ -61,7 +61,7 @@ session scratchpad.
 ## Task list
 
 ### Phase 1: Prove the risky parts first
-- [ ] **Task 1: `--mcp` spike.** Do the release Windows build and the
+- [x] **Task 1: `--mcp` spike.** Done 2026-11-24, results below. Do the release Windows build and the
   agents actually talk over stdio, and does Gemini CLI pass MCP audio to its
   model?
   - Build `--mcp` with one tool (`list_meetings`) and a test
@@ -69,6 +69,20 @@ session scratchpad.
   - Register it in Gemini CLI and Claude Code.
   - Measure RAM and start time, and check the process exits when the agent quits.
   - Ask Gemini "what is said in this clip" to prove that audio reaches the model.
+
+**Task 1 results:**
+- A GUI-subsystem exe uses an agent's stdio pipes fine: a test exe echoed over pipes.
+- Debug build: the handshake answers in 0.5 s and uses 18.7 MB of RAM. It
+  exits 4 ms after the agent closes stdin. Typed output and read-only hints
+  reach the client.
+- Gemini CLI no longer works for individual accounts ("migrate to
+  Antigravity"). Tested with agy (the Antigravity CLI) instead.
+- **agy drops MCP audio blocks**: only text reaches its model. It **can**
+  listen to a local WAV with its own file tool, and transcribed real
+  Bangla/English correctly.
+- **Decision:** `get_meeting_audio` saves each piece as a WAV in
+  `transcripts/agent-pieces/` (deleted after a day) and returns `piece_file`.
+  `inline: true` also attaches the audio block, for agents that support it.
 
 ### Checkpoint A (stop and show you)
 - [ ] Spike results. If audio does not reach the model, choose: paths only

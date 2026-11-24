@@ -4,6 +4,7 @@ mod gector;
 mod history;
 mod llm;
 mod logging;
+pub mod mcp;
 mod models;
 mod onnx;
 mod proofread;

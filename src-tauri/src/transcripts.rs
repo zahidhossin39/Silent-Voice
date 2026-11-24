@@ -102,6 +102,9 @@ pub enum Status {
     /// Cancelled, or the app closed mid-way: offers Resume.
     Stopped,
     Failed,
+    /// Record-only meeting: audio saved, no transcript yet. An AI agent fills
+    /// it in over MCP (mcp.rs), or the user picks Transcribe here.
+    Recorded,
 }
 
 pub fn dir() -> PathBuf {
