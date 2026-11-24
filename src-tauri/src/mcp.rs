@@ -45,7 +45,10 @@ pub fn serve() {
     let code = rt.block_on(async {
         match server.serve(rmcp::transport::stdio()).await {
             Ok(service) => {
+                let agent = service.peer().peer_info().map(|p| p.client_info.name.clone()).unwrap_or_default();
+                crate::logging::log_info("mcp", &format!("agent connected: {agent}"));
                 let _ = service.waiting().await;
+                crate::logging::log_info("mcp", &format!("agent left: {agent}"));
                 0
             }
             Err(e) => {
@@ -291,6 +294,17 @@ fn client_name(ctx: &RequestContext<RoleServer>) -> String {
         .unwrap_or_else(|| "AI agent".into())
 }
 
+/// One log line per tool call: the tool, the meeting and how it went, never
+/// the meeting's words. It is how a stuck agent session gets diagnosed.
+fn logged<T>(tool: &str, id: Option<i64>, r: Result<T, String>) -> Result<T, String> {
+    let on = id.map(|i| format!(" {i}")).unwrap_or_default();
+    match &r {
+        Ok(_) => crate::logging::log_info("mcp", &format!("{tool}{on}: ok")),
+        Err(e) => crate::logging::log_error("mcp", &format!("{tool}{on}: {e}")),
+    }
+    r
+}
+
 /// Pieces older than a day are leftovers from earlier agent sessions.
 fn sweep_old_pieces(dir: &Path) {
     let day = std::time::Duration::from_secs(24 * 3600);
@@ -334,6 +348,45 @@ impl Meetings {
             return Ok(()); // already kept from before the agent started
         }
         std::fs::write(&prev, serde_json::to_vec(t).map_err(|e| e.to_string())?).map_err(|e| format!("Could not keep a copy for undo: {e}"))
+    }
+
+    fn audio_piece(&self, args: AudioArgs) -> Result<CallToolResult, String> {
+        let t = self.meeting(args.id)?;
+        let track = parse_speaker(&args.track)?;
+        let track_name = speaker_name(track);
+        if !transcripts::audio_path_in(&self.dir, t.id, track).exists() {
+            return Err(format!("Meeting {} has no saved {track_name} audio.", t.id));
+        }
+        let total = t.duration_ms.unwrap_or(0);
+        if total > 0 && args.start_ms >= total {
+            return Err(format!("start_ms {} is past the end of the meeting ({total} ms).", args.start_ms));
+        }
+        let length = args.length_ms.unwrap_or(MAX_PIECE_MS).clamp(1_000, MAX_PIECE_MS);
+        let end = if total > 0 { (args.start_ms + length).min(total) } else { args.start_ms + length };
+        let wav = transcripts::audio_clip_in(&self.dir, t.id, Some(track), args.start_ms, end)?;
+
+        let dir = self.pieces_dir();
+        std::fs::create_dir_all(&dir).map_err(|e| format!("Could not save the audio piece: {e}"))?;
+        let file = dir.join(format!("{}-{track_name}-{}-{end}.wav", t.id, args.start_ms));
+        std::fs::write(&file, &wav).map_err(|e| format!("Could not save the audio piece: {e}"))?;
+
+        let path = |s| transcripts::audio_path_in(&self.dir, t.id, s).to_string_lossy().into_owned();
+        let piece = AudioPiece {
+            id: t.id,
+            track: track_name.into(),
+            start_ms: args.start_ms,
+            end_ms: end,
+            duration_ms: total,
+            piece_file: file.to_string_lossy().into_owned(),
+            next_start_ms: (total > 0 && end < total).then_some(end),
+            file_you: path(Speaker::You),
+            file_others: path(Speaker::Others),
+        };
+        let mut result = CallToolResult::structured(serde_json::to_value(&piece).map_err(|e| e.to_string())?);
+        if args.inline {
+            result.content.push(ContentBlock::audio(base64::engine::general_purpose::STANDARD.encode(&wav), "audio/wav"));
+        }
+        Ok(result)
     }
 
     fn save_lines(&self, args: SaveTranscriptArgs, agent: &str) -> Result<Saved, String> {
@@ -404,7 +457,7 @@ impl Meetings {
             .take(limit)
             .map(|t| info(&t, t.lines.len()))
             .collect();
-        Ok(Json(MeetingList { meetings }))
+        logged("list_meetings", None, Ok(Json(MeetingList { meetings })))
     }
 
     #[tool(
@@ -412,7 +465,7 @@ impl Meetings {
         annotations(title = "Get meeting", read_only_hint = true, open_world_hint = false)
     )]
     pub async fn get_meeting(&self, Parameters(args): Parameters<IdArgs>) -> Result<Json<MeetingDetail>, String> {
-        let t = self.meeting(args.id)?;
+        let t = logged("get_meeting", Some(args.id), self.meeting(args.id))?;
         let transcript = t
             .lines
             .iter()
@@ -432,42 +485,8 @@ impl Meetings {
         annotations(title = "Get meeting audio", read_only_hint = true, open_world_hint = false)
     )]
     pub async fn get_meeting_audio(&self, Parameters(args): Parameters<AudioArgs>) -> Result<CallToolResult, String> {
-        let t = self.meeting(args.id)?;
-        let track = parse_speaker(&args.track)?;
-        let track_name = speaker_name(track);
-        if !transcripts::audio_path_in(&self.dir, t.id, track).exists() {
-            return Err(format!("Meeting {} has no saved {track_name} audio.", t.id));
-        }
-        let total = t.duration_ms.unwrap_or(0);
-        if total > 0 && args.start_ms >= total {
-            return Err(format!("start_ms {} is past the end of the meeting ({total} ms).", args.start_ms));
-        }
-        let length = args.length_ms.unwrap_or(MAX_PIECE_MS).clamp(1_000, MAX_PIECE_MS);
-        let end = if total > 0 { (args.start_ms + length).min(total) } else { args.start_ms + length };
-        let wav = transcripts::audio_clip_in(&self.dir, t.id, Some(track), args.start_ms, end)?;
-
-        let dir = self.pieces_dir();
-        std::fs::create_dir_all(&dir).map_err(|e| format!("Could not save the audio piece: {e}"))?;
-        let file = dir.join(format!("{}-{track_name}-{}-{end}.wav", t.id, args.start_ms));
-        std::fs::write(&file, &wav).map_err(|e| format!("Could not save the audio piece: {e}"))?;
-
-        let path = |s| transcripts::audio_path_in(&self.dir, t.id, s).to_string_lossy().into_owned();
-        let piece = AudioPiece {
-            id: t.id,
-            track: track_name.into(),
-            start_ms: args.start_ms,
-            end_ms: end,
-            duration_ms: total,
-            piece_file: file.to_string_lossy().into_owned(),
-            next_start_ms: (total > 0 && end < total).then_some(end),
-            file_you: path(Speaker::You),
-            file_others: path(Speaker::Others),
-        };
-        let mut result = CallToolResult::structured(serde_json::to_value(&piece).map_err(|e| e.to_string())?);
-        if args.inline {
-            result.content.push(ContentBlock::audio(base64::engine::general_purpose::STANDARD.encode(&wav), "audio/wav"));
-        }
-        Ok(result)
+        let (id, track, start) = (args.id, args.track.clone(), args.start_ms);
+        logged(&format!("get_meeting_audio {track} from {start} ms of"), Some(id), self.audio_piece(args))
     }
 
     #[tool(
@@ -475,7 +494,8 @@ impl Meetings {
         annotations(title = "Save transcript", read_only_hint = false, destructive_hint = true, idempotent_hint = false, open_world_hint = false)
     )]
     pub async fn save_transcript(&self, Parameters(args): Parameters<SaveTranscriptArgs>, ctx: RequestContext<RoleServer>) -> Result<Json<Saved>, String> {
-        self.save_lines(args, &client_name(&ctx)).map(Json)
+        let (id, n) = (args.id, args.lines.len());
+        logged(&format!("save_transcript ({n} lines) to"), Some(id), self.save_lines(args, &client_name(&ctx)).map(Json))
     }
 
     #[tool(
@@ -483,7 +503,8 @@ impl Meetings {
         annotations(title = "Save summary", read_only_hint = false, destructive_hint = true, idempotent_hint = true, open_world_hint = false)
     )]
     pub async fn save_summary(&self, Parameters(args): Parameters<SaveSummaryArgs>) -> Result<Json<Saved>, String> {
-        self.save_overview(args).map(Json)
+        let id = args.id;
+        logged("save_summary", Some(id), self.save_overview(args).map(Json))
     }
 }
 
