@@ -8,7 +8,7 @@ bundled llama.cpp for local LLM, Piper + sherpa-onnx for TTS.
 **Deep reference:** `docs/HANDBOOK.md` holds the full architecture, subsystem
 histories, and the WHY behind every rule below. Decisions that are hard to
 reverse are recorded in `docs/adr/` (0001 system-audio capture per OS, 0002
-the pinned, checked sherpa-onnx version): read them before changing those areas. **Read the matching handbook
+the pinned, checked sherpa-onnx version, 0003 the MCP server over stdio): read them before changing those areas. **Read the matching handbook
 section before touching:** overlay/pill, hotkey pipeline, inline proofreading
 (squiggles/UIA), TTS engines, model catalogs, the updater, or release steps.
 
@@ -82,6 +82,9 @@ After `cargo build`, whisper DLLs must be copied from `sidecars/` into
   Untested there: hotkey/paste, TTS, per-app profiles, the updater. Inline
   proofreading now exists on all three: UIA on Windows, Accessibility on macOS,
   AT-SPI on Linux (`inline_unix.rs` over `ax.rs` / `atspi.rs`). See `PORTING.md`.
+- Notetaker "Record only" + local MCP server: `silent-voice --mcp` (stdio, `src-tauri/src/mcp.rs`,
+  rmcp 3.11) lets an AI agent list meetings, fetch audio as WAV piece files, and save
+  transcripts/summaries (undoable). HANDBOOK §18, ADR 0003. Nothing but protocol on stdout.
 - Notetaker Others (computer sound): WASAPI loopback / ScreenCaptureKit (macOS 13+) /
   PulseAudio monitor, behind `audio/system_audio.rs` (ADR 0001, HANDBOOK §17).
   macOS minimum is 12. sherpa-onnx is pinned by `sidecars/sherpa/VERSION` and
