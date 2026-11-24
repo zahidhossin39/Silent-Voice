@@ -431,7 +431,7 @@ export default function HfBrowser({ track }: { track: "llm" | "stt" }) {
   const activeFilters = (track === "stt" ? ((category !== "all" ? 1 : 0) + (language !== "all" ? 1 : 0)) : 0) + (hfShowIncompatible ? 1 : 0);
 
   return (
-    <div className="flex h-[calc(100vh-140px)] w-full flex-col gap-4">
+    <div className="flex min-h-0 w-full flex-1 flex-col gap-4">
       <div className="flex w-full max-w-[1180px] flex-col gap-2">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <input
@@ -655,16 +655,19 @@ function SttRow({
         <ProviderLogo provider={model.provider} size={30} />
         <div className="flex min-w-[150px] max-w-[380px] flex-1 flex-col gap-0.5">
           <div className="flex items-center gap-2">
-            <span className="truncate text-[13px] font-semibold text-sv-text">{model.label}</span>
+            <span className="line-clamp-2 text-[13px] font-semibold leading-snug text-sv-text" title={model.label}>
+              {model.label}
+            </span>
             {isActive ? (
               <span className="shrink-0 rounded bg-sv-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-sv-accent">In use</span>
             ) : recommended ? (
               <span className="shrink-0 rounded bg-sv-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-sv-accent">Recommended</span>
-            ) : model.size_mb > 0 ? (
-              <span className="shrink-0 rounded bg-sv-surface-2 px-1.5 py-0.5 text-[10px] text-sv-muted">Staff Pick</span>
             ) : null}
           </div>
-          <div className="truncate text-[11px] text-sv-muted">{model.provider}</div>
+          <div className="truncate text-[11px] text-sv-muted">
+            {model.provider}
+            {model.size_mb > 0 && !isActive && !recommended && " · Staff pick"}
+          </div>
           {progress?.status === "error" && <div className="truncate text-[11px] text-sv-bad">{progress.error}</div>}
         </div>
 
@@ -857,14 +860,15 @@ function LlmRow({
         <ProviderLogo provider={model.provider} size={30} />
         <div className="flex min-w-[150px] max-w-[380px] flex-1 flex-col gap-0.5">
           <div className="flex items-center gap-2">
-            <span className="truncate text-[13px] font-semibold text-sv-text">{model.name}</span>
-            {inUse ? (
-              <span className="shrink-0 rounded bg-sv-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-sv-accent">In use</span>
-            ) : model.size_mb > 0 ? (
-              <span className="shrink-0 rounded bg-sv-surface-2 px-1.5 py-0.5 text-[10px] text-sv-muted">Staff Pick</span>
-            ) : null}
+            <span className="line-clamp-2 text-[13px] font-semibold leading-snug text-sv-text" title={model.name}>
+              {model.name}
+            </span>
+            {inUse && <span className="shrink-0 rounded bg-sv-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-sv-accent">In use</span>}
           </div>
-          <div className="truncate text-[11px] text-sv-muted">{model.provider}</div>
+          <div className="truncate text-[11px] text-sv-muted">
+            {model.provider}
+            {model.size_mb > 0 && !inUse && " · Staff pick"}
+          </div>
           {progress?.status === "error" && <div className="truncate text-[11px] text-sv-bad">{progress.error}</div>}
         </div>
 

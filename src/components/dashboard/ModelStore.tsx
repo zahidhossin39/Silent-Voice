@@ -123,6 +123,7 @@ export default function ModelStore() {
 
   return (
     <Page
+      fill={tab !== "tts"}
       title="Model Store"
       subtitle="Pick what listens, speaks, and rewrites. Models are grouped by how well they run on this PC."
     >
@@ -208,7 +209,7 @@ export default function ModelStore() {
         </>
       ) : tab === "stt" ? (
         <>
-          <div className="flex-1 overflow-hidden">
+          <div className="flex min-h-0 flex-1 flex-col">
             <HfBrowser track="stt" />
           </div>
         </>
@@ -219,7 +220,9 @@ export default function ModelStore() {
             modes (Clean Up, Formal, Email…). Assign one to a mode in the Writing styles
             tab. You can also use a cloud provider instead (Cloud providers).
           </p>
-          <HfBrowser track="llm" />
+          <div className="flex min-h-0 flex-1 flex-col">
+            <HfBrowser track="llm" />
+          </div>
         </>
       )}
     </Page>
