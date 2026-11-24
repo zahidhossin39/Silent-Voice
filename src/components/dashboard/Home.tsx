@@ -23,7 +23,8 @@ const STATUS_LABEL: Record<string, string> = {
   done: "Pasted ✓",
 };
 
-// "Intel(R) Core(TM) i7-8650U CPU @ 1.90GHz" → "Intel Core i7-8650U · 1.90GHz"
+// "Intel(R) Core(TM) i7-8650U CPU @ 1.90GHz" → "Intel Core i7-8650U · 1.90GHz";
+// also drops the (R)/(TM) from GPU names ("Intel(R) UHD Graphics 620").
 function tidyCpuName(raw: string): string {
   const cleaned = raw
     .replace(/\((R|TM|C)\)/gi, "")
@@ -378,7 +379,7 @@ export default function Home() {
                   sub={`RAM · ${hardware.available_ram_gb.toFixed(1)} GB free`}
                 />
                 <DeviceTile
-                  value={hardware.gpu_name ?? "None detected"}
+                  value={hardware.gpu_name ? tidyCpuName(hardware.gpu_name) : "None detected"}
                   sub={
                     hasDedicatedGpu(hardware)
                       ? `${formatGB(hardware.gpu_vram_gb ?? 0)} — GPU models`

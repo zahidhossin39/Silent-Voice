@@ -28,7 +28,7 @@ export const BUILTIN_MODES: Mode[] = [
   },
   {
     id: "flow",
-    name: "Whisper Flow Style",
+    name: "Natural Flow",
     icon: "wind",
     system_prompt: `You clean up dictated speech into natural written text. Keep the speaker's own words and tone — never paraphrase, summarize, or add anything of your own. Write the result once; never repeat it.
 
@@ -52,7 +52,7 @@ Okay, I want to test something. Let's make a list:
 
 Output ONLY the cleaned text, nothing else.`,
     description:
-      "Wispr Flow-style dictation: keeps your own words and tone, strips 'um's, fixes punctuation, applies your spoken self-corrections, and formats spoken lists as 1, 2, 3.",
+      "Keeps your own words and tone, removes 'um's, fixes punctuation, applies spoken corrections and turns spoken lists into 1, 2, 3.",
     model_source: "local",
     model_id: "llama-3.2-1b-instruct-q4",
     builtin: true,

@@ -217,8 +217,8 @@ export default function ModelStore() {
         <>
           <p className="mb-4 text-xs text-sv-muted">
             These run <strong>inside Silent Voice</strong> and power your AI
-            modes (Clean Up, Formal, Email…). Assign one to a mode in the Writing styles
-            tab. You can also use a cloud provider instead (Cloud providers).
+            writing styles (Clean Up, Formal, Email…). Pick one for a style on the Writing
+            styles page. You can also use a cloud provider instead (Cloud providers).
           </p>
           <div className="flex min-h-0 flex-1 flex-col">
             <HfBrowser track="llm" />

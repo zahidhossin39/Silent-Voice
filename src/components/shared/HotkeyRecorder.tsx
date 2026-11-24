@@ -197,21 +197,22 @@ export default function HotkeyRecorder({ value, onChange, error }: Props) {
           )}
         </div>
         {!recording && (
-          <span className="text-[10px] text-sv-muted">click to change</span>
+          <span className="text-xs font-medium text-sv-accent">Change</span>
         )}
       </div>
 
       {error && (
-        <p className="text-[11px] text-sv-bad">{error}</p>
+        <p className="text-xs text-sv-bad">{error}</p>
       )}
       {warning && !error && (
-        <p className="text-[11px] text-sv-warn">⚠ {warning}</p>
+        <p className="text-xs text-sv-warn">{warning}</p>
       )}
 
       {/* Quick-pick presets — F9 is a genuine single-key option (bare
           modifier keys like solo "Alt" can't be registered as global
           hotkeys — the OS-level API has no code path for that). */}
-      <div className="flex flex-wrap justify-start gap-1.5">
+      <div className="flex flex-wrap items-center justify-start gap-1.5">
+        <span className="mr-0.5 text-xs text-sv-muted">Quick picks</span>
         {[
           "Alt+Space",
           "F9",
@@ -221,7 +222,8 @@ export default function HotkeyRecorder({ value, onChange, error }: Props) {
           <button
             key={preset}
             onClick={() => onChange(preset)}
-            className={`rounded-full border px-2 py-0.5 text-[10px] transition ${
+            aria-pressed={value === preset}
+            className={`rounded-full border px-2.5 py-1 text-xs transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sv-accent ${
               value === preset
                 ? "border-sv-accent bg-sv-accent/10 text-sv-accent"
                 : "border-sv-border text-sv-muted hover:border-sv-accent/50 hover:text-sv-text"

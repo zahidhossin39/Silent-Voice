@@ -1,5 +1,6 @@
 import { useState } from "react";
 import Page from "../shared/Page";
+import { Info } from "./settings/parts";
 import ThemeSwitch from "../shared/ThemeSwitch";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { APP_THEMES } from "../../services/appThemes";
@@ -97,7 +98,12 @@ export default function Theme() {
   return (
     <Page
       title="Theme"
-      subtitle="Give Silent Voice its color. The app accent recolors the whole window and the dictation pill live; below it you can style the grammar-suggestion popup separately."
+      subtitle={
+        <span className="inline-flex items-center gap-1.5">
+          Colors for the app, the dictation pill and the grammar popup.
+          <Info label="themes" text="The app accent recolors the whole window and the dictation pill as you pick it. The grammar-suggestion popup has its own style further down." />
+        </span>
+      }
     >
       {/* Appearance leads the page: it is the setting people come to Theme
           looking for, and it used to live in Settings → System where nobody
