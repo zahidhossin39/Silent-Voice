@@ -89,38 +89,42 @@ session scratchpad.
   (agents upload the files themselves) or something else.
 
 ### Phase 2: Record only
-- [ ] **Task 2: Record-only mode.**
+- [x] **Task 2: Record-only mode.**
   - A Notetaker choice: "Transcribe: on this device / Record only".
   - `Status::Recorded`, and `meeting_job` records with no STT.
   - The meeting card says "Waiting for an AI agent" and has a "Transcribe here"
     button.
 
 ### Phase 3: The MCP tools
-- [ ] **Task 3: Read tools.**
+- [x] **Task 3: Read tools.**
   - `list_meetings` (newest first; filter by status; limit), `get_meeting`
     (details, lines, summary), and `get_meeting_audio` (5-minute pieces + paths).
   - Typed output, and unit tests on a temporary data folder.
-- [ ] **Task 4: Write tools.**
+- [x] **Task 4: Write tools.**
   - `save_transcript` (replace or append lines) and `save_summary` (Markdown).
   - Checks, `.json.prev` backup, the Running guard, and `agent: <name>`.
   - Unit tests: bad id, a time past the end, a wrong speaker, a save during
     Running, and the backup restoring.
-- [ ] **Task 5: The `transcribe_meeting` prompt + server instructions.** Step
+- [x] **Task 5: The `transcribe_meeting` prompt + server instructions.** Step
   by step for the agent: get pieces in order, label You/Others, number the
   Others, save, then summarise.
 
 ### Checkpoint B
-- [ ] `cargo test` and clippy are clean. A full test with Gemini CLI on a real
+- [x] Passed 2026-11-24. 207 Rust tests and 49 frontend tests pass, and clippy adds no
+  new warnings. agy transcribed a real 111 s Bangla/English record-only
+  meeting through the tools in about 5 min: 2 pieces, 19 lines, a summary, all
+  logged. Its handshake sends no client name, so it shows as "AI agent".
+- [x] `cargo test` and clippy are clean. A full test with Gemini CLI on a real
   2-minute recorded meeting: transcript and summary show up in the Notetaker.
 
 ### Phase 4: In the app
-- [ ] **Task 6: The Notetaker** reloads on focus, shows "Transcribed by
+- [x] **Task 6: The Notetaker** reloads on focus, shows "Transcribed by
   <agent>", and has Undo when a `.json.prev` exists.
-- [ ] **Task 7: Settings → "Connect an AI agent".** The exe path, plus
+- [x] **Task 7: Settings → "Connect an AI agent".** The exe path, plus
   ready-to-copy setup for Claude Code (`claude mcp add`), Gemini CLI
   (`settings.json`), Codex (`config.toml`) and Cursor (`mcp.json`). Says which
   agents can listen to audio.
-- [ ] **Task 8: Docs and cross-platform.**
+- [x] **Task 8: Docs and cross-platform.**
   - An ADR (0003: MCP over stdio in the main exe) and the feature doc.
   - Update `docs/FUTURE.md`, `CLAUDE.md` and HANDBOOK.
   - Check that the Mac and Linux CI builds run `--mcp` (a smoke test that
