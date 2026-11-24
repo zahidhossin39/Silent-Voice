@@ -13,6 +13,9 @@ on:
       - "scripts/smoke-linux.sh"
       - "scripts/fix-appimage.sh"
       - "scripts/macos-signing.sh"
+      - "scripts/mcp_smoke.py"
+      - "src-tauri/src/mcp.rs"
+      - "src-tauri/src/main.rs"
       # Inline proofreading links glib/gobject and creates windows at startup;
       # only a full build and launch proves either still works.
       - "src-tauri/src/system/atspi.rs"
@@ -177,6 +180,16 @@ jobs:
           CODE=${PIPESTATUS[0]}
           echo "code=$CODE" >> $GITHUB_OUTPUT
           exit $CODE
+
+      # The local MCP server (`--mcp`, src-tauri/src/mcp.rs) answers an agent's
+      # handshake on stdio and exits when the agent leaves. docs/adr/0003.
+      - name: Smoke test - the MCP server answers over stdio
+        if: steps.build.outputs.code == '0'
+        shell: bash
+        run: |
+          exe=src-tauri/target/release/silent-voice
+          [ -f "$exe.exe" ] && exe="$exe.exe"
+          python3 scripts/mcp_smoke.py "$exe" || python scripts/mcp_smoke.py "$exe"
 
       # The .deb smoke test above never touched the AppImage, which is what
       # every non-Debian distro has to use.

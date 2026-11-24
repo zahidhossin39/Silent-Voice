@@ -962,7 +962,7 @@ export async function meetingStart(cloud?: { base_url: string; api_key: string; 
 
 /** The app's exe, which AI agents run with `--mcp` to reach the local MCP server. */
 export async function mcpServerPath(): Promise<string> {
-  if (!isTauri()) return "C:\Program Files\Silent Voice\silent-voice.exe";
+  if (!isTauri()) return String.raw`C:\Program Files\Silent Voice\silent-voice.exe`;
   return invoke<string>("mcp_server_path");
 }
 
