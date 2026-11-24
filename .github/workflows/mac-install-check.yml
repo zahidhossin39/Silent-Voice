@@ -1,0 +1,55 @@
+name: Mac install script check
+
+# Runs scripts/install-macos.sh on a clean Mac against the latest release, the
+# same way a user does (curl | bash), and checks the installed app.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/install-macos.sh"
+      - ".github/workflows/mac-install-check.yml"
+  pull_request:
+    paths:
+      - "scripts/install-macos.sh"
+      - ".github/workflows/mac-install-check.yml"
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    # A new published release, not the Android pre-releases.
+    if: github.event_name != 'release' || !startsWith(github.event.release.tag_name, 'android-')
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install through curl | bash
+        env:
+          SV_INSTALL_DIR: ${{ runner.temp }}/Applications
+          SV_NO_OPEN: "1"
+        run: cat scripts/install-macos.sh | bash
+
+      - name: Check the installed app
+        run: |
+          app="$RUNNER_TEMP/Applications/Silent Voice.app"
+          test -d "$app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          # No quarantine tag: Gatekeeper would block the first launch.
+          if xattr -p com.apple.quarantine "$app" 2>/dev/null; then
+            echo "::error::app is quarantined"; exit 1
+          fi
+          installed=$(defaults read "$app/Contents/Info.plist" CFBundleShortVersionString)
+          latest=$(curl -fsSL https://github.com/${{ github.repository }}/releases/latest/download/latest.json | grep -o '"version"[^,]*' | grep -o '[0-9][0-9.]*')
+          echo "installed $installed, latest $latest"
+          test "$installed" = "$latest"
+
+      - name: Running it again updates in place
+        env:
+          SV_INSTALL_DIR: ${{ runner.temp }}/Applications
+          SV_NO_OPEN: "1"
+        run: bash scripts/install-macos.sh

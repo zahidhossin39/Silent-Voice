@@ -49,6 +49,16 @@ src-tauri/           Rust backend
 
 Download the latest installer from the [GitHub Releases](https://github.com/zahidhossin39/Silent-Voice/releases) page.
 
+**Mac (Apple Silicon, macOS 12+):** open Terminal and paste:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/zahidhossin39/Silent-Voice/main/scripts/install-macos.sh | bash
+```
+
+This installs the latest release into Applications with no "Apple could not verify…" warning. The app is signed with the project's own certificate, not Apple's paid Developer ID, so a `.dmg` downloaded in a browser gets blocked; files downloaded with `curl` are not. Run the same command again to reinstall.
+
+If you already downloaded the `.dmg` and macOS blocked it: click **Done**, open **System Settings → Privacy & Security**, scroll down and click **Open Anyway**.
+
 Silent Voice checks for updates on startup and shows an **"Update available"** button in the sidebar — updates install when you click it, never silently. You can also check manually from Settings. Installs from before v0.1.4 have no updater and need one manual reinstall to start receiving updates.
 
 ## Develop

@@ -186,7 +186,11 @@ release workflow refuses to publish any platform whose `.sig` is missing.
 Still missing: **code signing and notarization**, which is a different thing
 from updater signing. It needs a paid Apple Developer membership and a
 certificate tied to a real Apple ID — there is no way around that. Until then
-Gatekeeper refuses the `.dmg` until the user right-clicks → Open.
+Gatekeeper refuses a browser-downloaded `.dmg` (macOS 15 removed the
+right-click → Open bypass; only System Settings → Privacy & Security → Open
+Anyway works). The supported install is `scripts/install-macos.sh` (one
+`curl | bash` line in the README): curl adds no quarantine tag, so Gatekeeper
+never checks it. The in-app updater downloads the same way.
 
 ## Wayland
 
