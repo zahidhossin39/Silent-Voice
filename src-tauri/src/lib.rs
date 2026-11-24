@@ -981,10 +981,17 @@ fn file_transcribe_cancel() {
     transcribe_job::cancel();
 }
 
-/// Record the mic (You) and the computer's sound (Others) into a live transcript.
+/// Record the mic (You) and the computer's sound (Others) into a live transcript,
+/// or (`record_only`) just the audio, for an AI agent to transcribe over MCP.
 #[tauri::command]
-async fn meeting_start(app: AppHandle, cloud: Option<transcribe_job::Cloud>, language: Option<String>, speakers: Option<bool>) -> Result<transcripts::Transcript, String> {
-    meeting_job::start(&app, cloud, language, speakers.unwrap_or(false))
+async fn meeting_start(
+    app: AppHandle,
+    cloud: Option<transcribe_job::Cloud>,
+    language: Option<String>,
+    speakers: Option<bool>,
+    record_only: Option<bool>,
+) -> Result<transcripts::Transcript, String> {
+    meeting_job::start(&app, cloud, language, speakers.unwrap_or(false), record_only.unwrap_or(false))
 }
 
 /// The mic and speakers a meeting would record: `[mic, speakers]`.
@@ -1643,7 +1650,7 @@ pub fn run() {
                         std::thread::sleep(std::time::Duration::from_millis(500));
                     }
                     std::thread::sleep(std::time::Duration::from_secs(5));
-                    let r = meeting_job::start(&app, None, None, false);
+                    let r = meeting_job::start(&app, None, None, false, false);
                     logging::log_info("selftest", &format!("meeting started: {:?}", r.map(|t| t.id)));
                     if let Some(w) = app.get_webview_window("main") {
                         let _ = w.show();

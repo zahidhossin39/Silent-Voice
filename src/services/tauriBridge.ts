@@ -953,9 +953,11 @@ export async function transcriptSaveAs(id: number): Promise<boolean> {
 /** Record the mic and the computer's sound into a live transcript, transcribed
  * locally or, with `cloud`, by a provider's speech-to-text. */
 /** `language`: the meeting's language code ("auto" detects); unset = the dictation language. */
-export async function meetingStart(cloud?: { base_url: string; api_key: string; model: string }, language?: string, speakers = false): Promise<Transcript> {
+/** Start recording a meeting. `recordOnly`: save the audio only, for an AI
+ *  agent to transcribe over MCP (status "recorded" once stopped). */
+export async function meetingStart(cloud?: { base_url: string; api_key: string; model: string }, language?: string, speakers = false, recordOnly = false): Promise<Transcript> {
   if (!isTauri()) throw new Error("Needs the desktop app");
-  return invoke<Transcript>("meeting_start", { cloud: cloud ?? null, language: language ?? null, speakers });
+  return invoke<Transcript>("meeting_start", { cloud: cloud ?? null, language: language ?? null, speakers, recordOnly });
 }
 
 /** Transcribe a saved meeting again from its audio; updates arrive like a recording's. */

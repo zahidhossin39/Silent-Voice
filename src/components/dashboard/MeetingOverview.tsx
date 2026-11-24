@@ -16,6 +16,8 @@ export interface Choice extends SummaryWith {
   label: string;
   /** Short model id ("gemini-2.5-flash-lite"), empty for local. */
   detail: string;
+  /** "Record only": nothing is transcribed now; an AI agent does it later. */
+  agent?: boolean;
 }
 
 /** Cloud providers set up for AI, then the local models on this PC. */
@@ -237,7 +239,8 @@ export function Picker({
 
   const groups = [
     { title: "Cloud", items: choices.filter((c) => c.source === "api") },
-    { title: localTitle, items: choices.filter((c) => c.source === "local") },
+    { title: localTitle, items: choices.filter((c) => c.source === "local" && !c.agent) },
+    { title: "Later, by an AI agent", items: choices.filter((c) => c.agent) },
   ].filter((g) => g.items.length);
 
   return (
@@ -254,7 +257,7 @@ export function Picker({
         <Logo c={chosen} size={22} />
         <span className="min-w-0 flex-1 truncate text-sm">
           <span className="text-sv-text">{chosen.label}</span>
-          {chosen.source === "local" && chosen.detail && <span className="text-sv-muted"> · {chosen.detail}</span>}
+          {chosen.source === "local" && !chosen.agent && chosen.detail && <span className="text-sv-muted"> · {chosen.detail}</span>}
         </span>
         <Icon.chevron className={`h-4 w-4 shrink-0 text-sv-muted transition ${open ? "rotate-180" : ""}`} />
       </button>
@@ -297,6 +300,19 @@ export function Picker({
 
 function Logo({ c, size }: { c: Choice; size: number }) {
   if (c.source === "api") return <ProviderLogo provider={c.label} size={size} />;
+  if (c.agent)
+    return (
+      <span
+        className="flex shrink-0 items-center justify-center rounded-md bg-sv-surface-2 text-sv-muted"
+        style={{ width: size, height: size }}
+        aria-hidden
+      >
+        {/* A waveform going into a box: audio kept for later. */}
+        <svg viewBox="0 0 24 24" width={size * 0.6} height={size * 0.6} fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round">
+          <path d="M4 10v4M8 7v10M12 9v6M16 5v14M20 10v4" />
+        </svg>
+      </span>
+    );
   return (
     <span
       className="flex shrink-0 items-center justify-center rounded-md bg-sv-surface-2 text-sv-muted"

@@ -166,6 +166,8 @@ export default function Notetaker() {
   const sttModelOf = (p: { id: string; stt_model: string }) => nt.stt_models[p.id] || p.stt_model;
   const sttKey = nt.stt;
   const cloudProvider = sttProviders.find((p) => p.id === sttKey);
+  // "Record only": keep the audio; an AI agent transcribes it over MCP later.
+  const recordOnly = sttKey === "record";
   // A provider with no speech-to-text model picked can't transcribe yet.
   const cloud = cloudProvider && sttModelOf(cloudProvider) ? cloudProvider : undefined;
   const lang = nt.language;
@@ -191,6 +193,17 @@ export default function Notetaker() {
       model: "",
       base_url: "",
       api_key: "",
+    },
+    {
+      key: "record:record",
+      id: "record",
+      label: "Record only",
+      detail: "Keep the audio; an AI agent transcribes it",
+      source: "local" as const,
+      model: "",
+      base_url: "",
+      api_key: "",
+      agent: true,
     },
   ];
   const localModel = STT_MODELS.find((m) => m.id === useSettingsStore.getState().settings.active_stt_model);
@@ -233,7 +246,7 @@ export default function Notetaker() {
     setError(null);
     setStarting(true);
     try {
-      const t = await meetingStart(cloudArg, lang || undefined, nt.speakers);
+      const t = await meetingStart(cloudArg, lang || undefined, nt.speakers, recordOnly);
       upsert(t);
       setSelected(t.id);
       setFull(t);
@@ -272,7 +285,11 @@ export default function Notetaker() {
     <Page
       fill
       title="Notetaker"
-      subtitle={`Record a call and get a live transcript of who said what. ${cloud ? `Audio is sent to ${cloud.name} to transcribe; recordings and text stay on this PC.` : "Audio and text stay on this PC."}`}
+      subtitle={
+        recordOnly
+          ? "Record a call. Only the audio is kept, for an AI agent on this PC to transcribe later."
+          : `Record a call and get a live transcript of who said what. ${cloud ? `Audio is sent to ${cloud.name} to transcribe; recordings and text stay on this PC.` : "Audio and text stay on this PC."}`
+      }
       actions={
         <div className="relative flex items-center gap-2">
           <button
@@ -351,9 +368,9 @@ export default function Notetaker() {
                 <div className="flex flex-col gap-2">
                   <Picker
                     choices={sttChoices}
-                    chosen={sttChoices.find((c) => c.id === (cloudProvider?.id ?? "local")) ?? sttChoices[0]}
+                    chosen={sttChoices.find((c) => c.id === (cloudProvider?.id ?? (recordOnly ? "record" : "local"))) ?? sttChoices[0]}
                     disabled={!!recording}
-                    onPick={(k) => pickStt(k.replace(/^(api|local):/, ""))}
+                    onPick={(k) => pickStt(k.replace(/^(api|local|record):/, ""))}
                     action="Transcribe with"
                     localTitle="On this PC · offline"
                   />
@@ -371,7 +388,9 @@ export default function Notetaker() {
               sttNote={
                 recording
                   ? "Applies to the next meeting."
-                  : cloud
+                  : recordOnly
+                    ? "Nothing is transcribed while you record. Connect an AI agent in Settings, or pick Transcribe here on the meeting."
+                    : cloud
                     ? `Audio is sent to ${cloud.name}. If a call fails, that part is transcribed on this PC.`
                     : sttProviders.length === 0
                       ? "To transcribe in the cloud, turn on Speech-to-text for a provider in Cloud providers."
@@ -737,6 +756,7 @@ function MeetingRow({
         <span className="mt-0.5 block text-[11px] text-sv-muted">
           {live ? "Recording now" : `${timeOf(t.created)} · ${clock(t.duration_ms ?? t.done_ms)}`}
           {t.status === "stopped" && " · cut short"}
+          {t.status === "recorded" && " · waiting for an AI agent"}
         </span>
       </span>
     </button>
@@ -819,6 +839,8 @@ function MeetingPanel({
   const scroller = useRef<HTMLDivElement>(null);
   const bottom = useRef<HTMLDivElement>(null);
   const live = t.status === "running";
+  // Record only: audio, no text yet. Nothing to replace, so no confirm step.
+  const waiting = t.status === "recorded";
 
   useEffect(() => {
     const el = scroller.current;
@@ -850,7 +872,7 @@ function MeetingPanel({
                 </button>
               </>
             )}
-            {!live && redoWith && (
+            {!live && !waiting && redoWith && (
               <>
                 {" · "}
                 <button
@@ -885,7 +907,22 @@ function MeetingPanel({
       <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
         <MeetingOverview t={t} onSummarized={onSummarized} chosen={summaryWith} onSettings={onSettings} />
 
-        {paras.length === 0 && !live ? (
+        {waiting ? (
+          <div className="rounded-xl border border-sv-border bg-sv-surface-2/50 px-4 py-3.5 text-sm">
+            <p className="font-medium text-sv-text">Only the audio was recorded</p>
+            <p className="mt-1 text-sv-muted">
+              An AI agent on this PC can transcribe it: connect one in Settings, then ask it to transcribe your latest meeting.
+            </p>
+            {redoWith && (
+              <button
+                onClick={onRedo}
+                className="mt-3 rounded-lg border border-sv-border px-3 py-1.5 text-sm font-medium text-sv-text transition hover:border-sv-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sv-accent"
+              >
+                Transcribe here with {redoWith}
+              </button>
+            )}
+          </div>
+        ) : paras.length === 0 && !live ? (
           <p className="text-sm text-sv-muted">No speech was picked up in this meeting.</p>
         ) : (
           <ol className="space-y-5">
