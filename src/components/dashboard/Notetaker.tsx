@@ -1081,7 +1081,8 @@ function MeetingPanel({
       )}
 
       <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
-        <MeetingOverview t={t} onSummarized={onSummarized} chosen={summaryWith} onSettings={onSettings} />
+        {/* Nothing to summarize until there is text. */}
+        {!waiting && <MeetingOverview t={t} onSummarized={onSummarized} chosen={summaryWith} onSettings={onSettings} />}
 
         {waiting ? (
           <div className="rounded-xl border border-sv-border bg-sv-surface-2/50 px-4 py-3.5 text-sm">
