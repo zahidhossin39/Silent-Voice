@@ -1722,9 +1722,6 @@ pub fn run() {
                 fit_to_screen(&win);
                 let _ = win.center();
                 let _ = win.show();
-                // Windows applies the launcher's "start minimized" hint to the first show
-                // (seen when started from a hidden shell); undo it.
-                let _ = win.unminimize();
                 let _ = win.set_focus();
             }
 
