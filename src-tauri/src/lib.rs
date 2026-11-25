@@ -1041,6 +1041,10 @@ async fn meeting_retranscribe(app: AppHandle, id: i64, cloud: Option<transcribe_
 /// local MCP server. Settings shows it in the agents' setup text.
 #[tauri::command]
 fn mcp_server_path() -> Result<String, String> {
+    // An AppImage runs from a temporary mount renamed on every launch; $APPIMAGE is the file the user keeps.
+    if let Some(p) = std::env::var_os("APPIMAGE").filter(|p| !p.is_empty()) {
+        return Ok(p.to_string_lossy().into_owned());
+    }
     std::env::current_exe().map(|p| p.to_string_lossy().into_owned()).map_err(|e| e.to_string())
 }
 
