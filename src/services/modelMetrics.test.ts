@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   parseRealtime,
   accuracyScore,
+  accuracyCaption,
   deviceSpeedFactor,
   speedScore,
 } from "./modelMetrics";
@@ -26,6 +27,12 @@ function hw(over: Partial<HardwareInfo> = {}): HardwareInfo {
 }
 
 describe("modelMetrics", () => {
+  it("shows accuracy rather than the error rate under the accuracy label", () => {
+    expect(accuracyCaption("2.5% WER")).toBe("97.5%");
+    expect(accuracyCaption("3%")).toBe("97%");
+    expect(accuracyCaption("unmeasured")).toBe("unmeasured");
+  });
+
   it("parseRealtime parses speed labels", () => {
     expect(parseRealtime("~10x realtime")).toBe(10);
     expect(parseRealtime("~0.5x realtime")).toBe(0.5);

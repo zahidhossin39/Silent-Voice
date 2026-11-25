@@ -75,10 +75,11 @@ export function speedScore(
 }
 
 
+/** "97.5%": the catalog's word error rate turned around, so a bigger number is better like the bar beside it. */
 export function accuracyCaption(wer: string): string {
   const w = parseWer(wer);
   if (w === null) return wer;
-  let s = w.toFixed(1);
+  let s = (100 - w).toFixed(1);
   if (s.endsWith(".0")) s = s.slice(0, -2);
   return `${s}%`;
 }

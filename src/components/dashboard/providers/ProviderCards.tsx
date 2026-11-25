@@ -32,8 +32,45 @@ export default function ProviderCards({ api, onRemove }: { api: ProvidersApi; on
         </p>
         <AddMenu onAdd={(n) => api.add(n)} />
       </div>
+      {api.providers.length === 0 && <WhatProvidersAdd />}
       {api.providers.map((p) => (
         <Card key={p.id} p={p} api={api} onRemove={() => onRemove(p)} />
+      ))}
+    </div>
+  );
+}
+
+/** Shown while none is connected: what connecting one would add. */
+function WhatProvidersAdd() {
+  const uses = [
+    {
+      title: "Writing styles",
+      text: "Clean Up, Formal, Email and the rest rewrite with a bigger model than this PC can run.",
+      icon: <path d="M4 20h4L19 9l-4-4L4 16v4ZM13.5 6.5l4 4" />,
+    },
+    {
+      title: "Meeting summaries",
+      text: "The Notetaker's Overview: key points, decisions and action items.",
+      icon: <path d="M7 4h10a2 2 0 0 1 2 2v14l-3-2-3 2-3-2-3 2V6a2 2 0 0 1 2-2ZM9 9h6M9 13h4" />,
+    },
+    {
+      title: "Cloud transcription",
+      text: "Turn speech into text in the cloud, for languages or speed this PC can't manage.",
+      icon: <path d="M7 18a4.5 4.5 0 0 1-.6-8.96A6 6 0 0 1 18 9.5a4 4 0 0 1-.5 8.5H7Z" />,
+    },
+  ];
+  return (
+    <div className="grid gap-3 pt-2 sm:grid-cols-3">
+      {uses.map((u) => (
+        <div key={u.title} className="rounded-xl border border-sv-border bg-sv-surface p-4">
+          <span className="grid h-9 w-9 place-items-center rounded-lg bg-sv-surface-2 text-sv-text" aria-hidden>
+            <svg viewBox="0 0 24 24" className="h-[18px] w-[18px]" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+              {u.icon}
+            </svg>
+          </span>
+          <h3 className="mt-3 text-sm font-semibold">{u.title}</h3>
+          <p className="mt-1 text-xs leading-relaxed text-sv-muted">{u.text}</p>
+        </div>
       ))}
     </div>
   );

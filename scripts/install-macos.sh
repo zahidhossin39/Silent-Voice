@@ -72,8 +72,10 @@ main() {
   say "Installing to $install_dir"
   local dest="$install_dir/$APP_NAME"
   # sudo only when the folder is not writable (standard, non-admin accounts).
-  local sudo=""
-  if [ ! -w "$install_dir" ] || { [ -e "$dest" ] && [ ! -w "$dest" ]; }; then
+  local sudo="" probe="$install_dir"
+  # A folder that does not exist yet is created inside its parent: test that.
+  [ -d "$probe" ] || probe="$(dirname "$probe")"
+  if [ ! -w "$probe" ] || { [ -e "$dest" ] && [ ! -w "$dest" ]; }; then
     say "Your Mac password is needed to write to $install_dir"
     sudo="sudo"
   fi

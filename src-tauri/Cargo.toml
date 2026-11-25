@@ -1,6 +1,6 @@
 [package]
 name = "silent-voice"
-version = "0.2.0"
+version = "0.3.0"
 description = "Free, local-first voice-to-text dictation"
 authors = ["Silent Voice"]
 edition = "2021"
@@ -57,6 +57,8 @@ ort = { version = "=2.0.0-rc.10", default-features = false, features = ["load-dy
 tokenizers = { version = "0.21", default-features = false, features = ["onig"] }
 ndarray = "0.16"
 urlencoding = "2"
+rmcp = { version = "3.11", features = ["server", "macros", "transport-io"] }
+schemars = "1"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # Accessibility FFI (system/ax.rs). Already in the tree via enigo/arboard.

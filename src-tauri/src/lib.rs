@@ -4,6 +4,7 @@ mod gector;
 mod history;
 mod llm;
 mod logging;
+pub mod mcp;
 mod models;
 mod onnx;
 mod proofread;
@@ -980,10 +981,17 @@ fn file_transcribe_cancel() {
     transcribe_job::cancel();
 }
 
-/// Record the mic (You) and the computer's sound (Others) into a live transcript.
+/// Record the mic (You) and the computer's sound (Others) into a live transcript,
+/// or (`record_only`) just the audio, for an AI agent to transcribe over MCP.
 #[tauri::command]
-async fn meeting_start(app: AppHandle, cloud: Option<transcribe_job::Cloud>, language: Option<String>, speakers: Option<bool>) -> Result<transcripts::Transcript, String> {
-    meeting_job::start(&app, cloud, language, speakers.unwrap_or(false))
+async fn meeting_start(
+    app: AppHandle,
+    cloud: Option<transcribe_job::Cloud>,
+    language: Option<String>,
+    speakers: Option<bool>,
+    record_only: Option<bool>,
+) -> Result<transcripts::Transcript, String> {
+    meeting_job::start(&app, cloud, language, speakers.unwrap_or(false), record_only.unwrap_or(false))
 }
 
 /// The mic and speakers a meeting would record: `[mic, speakers]`.
@@ -1027,6 +1035,23 @@ async fn meeting_stop(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 async fn meeting_retranscribe(app: AppHandle, id: i64, cloud: Option<transcribe_job::Cloud>, language: Option<String>, speakers: Option<bool>) -> Result<transcripts::Transcript, String> {
     meeting_job::retranscribe(&app, id, cloud, language, speakers.unwrap_or(false))
+}
+
+/// This app's own exe: what an AI agent runs (with `--mcp`) to reach the
+/// local MCP server. Settings shows it in the agents' setup text.
+#[tauri::command]
+fn mcp_server_path() -> Result<String, String> {
+    // An AppImage runs from a temporary mount renamed on every launch; $APPIMAGE is the file the user keeps.
+    if let Some(p) = std::env::var_os("APPIMAGE").filter(|p| !p.is_empty()) {
+        return Ok(p.to_string_lossy().into_owned());
+    }
+    std::env::current_exe().map(|p| p.to_string_lossy().into_owned()).map_err(|e| e.to_string())
+}
+
+/// Put a meeting back to how it was before an AI agent changed it over MCP.
+#[tauri::command]
+fn meeting_undo_agent(id: i64) -> Result<transcripts::Transcript, String> {
+    transcribe_job::unless_running(id, "Wait for the meeting to finish first.", || transcripts::undo_agent(id))
 }
 
 /// Set how many Others were on a meeting (None = let the model guess) and
@@ -1506,6 +1531,24 @@ fn capture_selftest(secs: u64) -> String {
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+/// Sizes the main window to the screen it opens on. The fixed 980x700 in
+/// tauri.conf.json ran past the taskbar on small laptop screens (1280x720 at
+/// 150% scaling), and looked small on big ones.
+fn fit_to_screen(win: &tauri::WebviewWindow) {
+    let Ok(Some(monitor)) = win.current_monitor() else { return };
+    let area = monitor.work_area().size.to_logical::<f64>(monitor.scale_factor());
+    let (w, h) = window_size(area.width, area.height);
+    let _ = win.set_size(tauri::LogicalSize::new(w, h));
+}
+
+/// Up to 1100x740, leaving a margin of the work area free; never under the
+/// window's minimum (820x520) unless the screen itself is smaller.
+fn window_size(area_w: f64, area_h: f64) -> (f64, f64) {
+    let w = (area_w * 0.88).clamp(820.0, 1100.0).min(area_w);
+    let h = (area_h * 0.9).clamp(520.0, 740.0).min(area_h);
+    (w, h)
+}
+
 pub fn run() {
     logging::log_info("app", &format!("Silent Voice starting (v{})", env!("CARGO_PKG_VERSION")));
 
@@ -1642,7 +1685,7 @@ pub fn run() {
                         std::thread::sleep(std::time::Duration::from_millis(500));
                     }
                     std::thread::sleep(std::time::Duration::from_secs(5));
-                    let r = meeting_job::start(&app, None, None, false);
+                    let r = meeting_job::start(&app, None, None, false, false);
                     logging::log_info("selftest", &format!("meeting started: {:?}", r.map(|t| t.id)));
                     if let Some(w) = app.get_webview_window("main") {
                         let _ = w.show();
@@ -1676,6 +1719,7 @@ pub fn run() {
 
             // Force the main window to be visible, centered, and focused.
             if let Some(win) = app.get_webview_window("main") {
+                fit_to_screen(&win);
                 let _ = win.center();
                 let _ = win.show();
                 let _ = win.set_focus();
@@ -1803,6 +1847,8 @@ pub fn run() {
             file_transcribe_start,
             file_transcribe_cancel,
             meeting_start,
+            meeting_undo_agent,
+            mcp_server_path,
             meeting_stop,
             meeting_retranscribe,
             meeting_set_people,
@@ -1922,6 +1968,19 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::should_unload;
+
+    #[test]
+    fn window_fits_small_screens_and_caps_on_big_ones() {
+        // 1280x720 at 150%, minus a 48 px taskbar.
+        let size = |w, h| {
+            let (w, h) = super::window_size(w, h);
+            (w.round(), h.round())
+        };
+        assert_eq!(size(1280.0, 672.0), (1100.0, 605.0));
+        assert_eq!(size(2560.0, 1400.0), (1100.0, 740.0));
+        // A screen smaller than the minimum gets the whole work area.
+        assert_eq!(size(800.0, 500.0), (800.0, 500.0));
+    }
 
     /// Real speakers: the self-test line reports sound while a tone plays and
     /// near-silence after. `cargo test --lib capture_selftest -- --ignored --nocapture`

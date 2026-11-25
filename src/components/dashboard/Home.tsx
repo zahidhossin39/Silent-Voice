@@ -5,7 +5,7 @@ import WaveformVisualizer from "../shared/WaveformVisualizer";
 import { buildAccelerator } from "../shared/HotkeyRecorder";
 import { STT_MODELS, LANGUAGES, honorsLanguage } from "../../services/catalog";
 import Select from "../shared/Select";
-import InfoPopover from "../shared/InfoPopover";
+import { Info } from "./settings/parts";
 import { useHardwareInfo } from "../../hooks/useHardwareInfo";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useModelStore } from "../../stores/modelStore";
@@ -23,7 +23,8 @@ const STATUS_LABEL: Record<string, string> = {
   done: "Pasted ✓",
 };
 
-// "Intel(R) Core(TM) i7-8650U CPU @ 1.90GHz" → "Intel Core i7-8650U · 1.90GHz"
+// "Intel(R) Core(TM) i7-8650U CPU @ 1.90GHz" → "Intel Core i7-8650U · 1.90GHz";
+// also drops the (R)/(TM) from GPU names ("Intel(R) UHD Graphics 620").
 function tidyCpuName(raw: string): string {
   const cleaned = raw
     .replace(/\((R|TM|C)\)/gi, "")
@@ -88,7 +89,7 @@ export default function Home() {
   return (
     // No page header here on purpose: Home is a single-screen cockpit, and the
     // title/subtitle were the ~90px that pushed the Device card off-screen.
-    <div className="flex h-full flex-col gap-3 px-6 py-5">
+    <div className="flex h-full flex-col gap-3 px-6 py-5 [@media(max-height:700px)]:py-4">
       {!isTauri() && (
         <div className="shrink-0 rounded-lg border border-sv-warn/30 bg-sv-warn/10 px-4 py-2 text-xs text-sv-warn">
           Running in browser preview. Audio capture, transcription, and paste
@@ -253,10 +254,10 @@ export default function Home() {
             windows — at any normal size the stack fits and no bar appears. The
             Recent card at the end is flex-1 so it absorbs the leftover height,
             filling the column instead of leaving a gap at the bottom. */}
-        <div className="flex min-h-0 flex-col gap-3 overflow-y-auto">
+        <div className="flex min-h-0 flex-col gap-3 overflow-y-auto [@media(max-height:700px)]:gap-2">
           {/* Setup */}
-          <div className="shrink-0 rounded-xl border border-sv-border bg-sv-surface px-4 py-3">
-            <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.13em] text-sv-muted">
+          <div className="shrink-0 rounded-xl border border-sv-border bg-sv-surface px-4 py-3 [@media(max-height:700px)]:py-2.5">
+            <div className="mb-2 [@media(max-height:700px)]:mb-1.5 text-[10px] font-semibold uppercase tracking-[0.13em] text-sv-muted">
               Setup
             </div>
             <div className="flex flex-col gap-1.5">
@@ -285,8 +286,8 @@ export default function Home() {
           </div>
 
           {/* Quick controls */}
-          <div className="shrink-0 rounded-xl border border-sv-border bg-sv-surface px-4 py-3">
-            <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.13em] text-sv-muted">
+          <div className="shrink-0 rounded-xl border border-sv-border bg-sv-surface px-4 py-3 [@media(max-height:700px)]:py-2.5">
+            <div className="mb-2 [@media(max-height:700px)]:mb-1.5 text-[10px] font-semibold uppercase tracking-[0.13em] text-sv-muted">
               Quick controls
             </div>
             <div className="flex flex-col gap-2">
@@ -322,15 +323,18 @@ export default function Home() {
                 label="Language"
               >
                 {langIgnored ? (
-                  <InfoPopover
-                    label={langSelfDetects ? "Auto-detect" : "English"}
-                    message={
-                      langSelfDetects
-                        ? "This model figures out the language on its own — there's nothing to pick."
-                        : `${activeModel?.label ?? "This model"} only understands English. Pick a different model to dictate in another language.`
-                    }
-                    className="w-full"
-                  />
+                  // Nothing to pick: plain text, not a box that looks like a dropdown.
+                  <div className="flex h-[34px] items-center gap-1.5 px-1 text-sm text-sv-text">
+                    {langSelfDetects ? "Auto-detect" : "English"}
+                    <Info
+                      label="the language"
+                      text={
+                        langSelfDetects
+                          ? "This model figures out the language on its own, so there's nothing to pick."
+                          : `${activeModel?.label ?? "This model"} only understands English. Pick a different model to dictate in another language.`
+                      }
+                    />
+                  </div>
                 ) : (
                   <Select
                     value={settings.language}
@@ -349,8 +353,8 @@ export default function Home() {
           </div>
 
           {/* Device */}
-          <div className="shrink-0 rounded-xl border border-sv-border bg-sv-surface px-4 py-3">
-            <div className="mb-2 flex items-center justify-between">
+          <div className="shrink-0 rounded-xl border border-sv-border bg-sv-surface px-4 py-3 [@media(max-height:700px)]:py-2.5">
+            <div className="mb-2 [@media(max-height:700px)]:mb-1.5 flex items-center justify-between">
               <div className="text-[10px] font-semibold uppercase tracking-[0.13em] text-sv-muted">
                 Your device
               </div>
@@ -375,7 +379,7 @@ export default function Home() {
                   sub={`RAM · ${hardware.available_ram_gb.toFixed(1)} GB free`}
                 />
                 <DeviceTile
-                  value={hardware.gpu_name ?? "None detected"}
+                  value={hardware.gpu_name ? tidyCpuName(hardware.gpu_name) : "None detected"}
                   sub={
                     hasDedicatedGpu(hardware)
                       ? `${formatGB(hardware.gpu_vram_gb ?? 0)} — GPU models`
@@ -392,8 +396,8 @@ export default function Home() {
 
           {/* Today — flex-1 so it absorbs whatever height the three cards
               above don't use, filling the column instead of leaving a gap. */}
-          <div className="flex min-h-0 flex-1 flex-col rounded-xl border border-sv-border bg-sv-surface px-4 py-3">
-            <div className="mb-2 flex items-center justify-between">
+          <div className="flex flex-1 flex-col rounded-xl border border-sv-border bg-sv-surface px-4 py-3 [@media(max-height:700px)]:py-2.5">
+            <div className="mb-2 [@media(max-height:700px)]:mb-1.5 flex items-center justify-between">
               <div className="text-[10px] font-semibold uppercase tracking-[0.13em] text-sv-muted">
                 Today
               </div>
@@ -403,14 +407,10 @@ export default function Home() {
                 </Link>
               )}
             </div>
-            <div className="flex min-h-0 flex-1 flex-col justify-center">
-              <TodayStat label="Words dictated" value={today.words.toLocaleString()} />
-              <TodayStat label="Dictations" value={String(today.count)} />
-              <TodayStat
-                label="Time saved vs typing"
-                value={today.savedMin}
-                unit="min"
-              />
+            <div className="my-auto grid grid-cols-3 gap-3">
+              <TodayStat label="words" value={today.words.toLocaleString()} />
+              <TodayStat label="dictations" value={String(today.count)} />
+              <TodayStat label="saved vs typing" value={today.savedMin} unit="min" />
             </div>
           </div>
         </div>
@@ -633,12 +633,12 @@ function TodayStat({
   unit?: string;
 }) {
   return (
-    <div className="flex items-baseline justify-between border-b border-sv-border py-2 last:border-0">
-      <span className="text-xs text-sv-muted">{label}</span>
-      <span className="text-xl font-bold tracking-tight tabular-nums text-sv-text">
+    <div className="min-w-0">
+      <div className="truncate text-xl font-bold tracking-tight tabular-nums text-sv-text">
         {value}
         {unit && <span className="ml-0.5 text-xs font-medium text-sv-muted">{unit}</span>}
-      </span>
+      </div>
+      <div className="truncate text-[11px] text-sv-muted">{label}</div>
     </div>
   );
 }

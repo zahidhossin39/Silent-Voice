@@ -232,6 +232,8 @@ const STATUS: Record<Transcript["status"], { label: string; dot: string }> = {
   done: { label: "Done", dot: "bg-sv-good" },
   stopped: { label: "Stopped", dot: "bg-sv-warn" },
   failed: { label: "Failed", dot: "bg-sv-bad" },
+  // Meetings only (record only); files never get it, but the map must be complete.
+  recorded: { label: "Audio only", dot: "bg-sv-muted" },
 };
 
 function ListItem({ t, active, onClick }: { t: Transcript; active: boolean; onClick: () => void }) {

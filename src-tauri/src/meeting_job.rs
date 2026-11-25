@@ -72,13 +72,19 @@ fn model_name(cfg: &Cfg) -> String {
     cfg.cloud.as_ref().map_or_else(|| cfg.model_id.clone(), |c| c.model.clone())
 }
 
-pub fn start(app: &AppHandle, cloud: Option<transcribe_job::Cloud>, language: Option<String>, speakers: bool) -> Result<Transcript, String> {
+/// The model name a record-only meeting carries until an agent transcribes it.
+pub const RECORD_ONLY: &str = "record only";
+
+/// `record_only`: save the two tracks and transcribe nothing; an AI agent does
+/// it later over MCP (mcp.rs), or the user picks Transcribe here.
+pub fn start(app: &AppHandle, cloud: Option<transcribe_job::Cloud>, language: Option<String>, speakers: bool, record_only: bool) -> Result<Transcript, String> {
     let mut cfg = cfg_for(app, cloud, language)?;
     cfg.speakers = speakers;
     let id = transcripts::new_id()?;
     transcribe_job::claim(id)?;
     // Unnamed until the user names it: the page shows the start time instead.
-    let mut t = Transcript::new(id, Kind::Meeting, String::new(), String::new(), model_name(&cfg));
+    let model = if record_only { RECORD_ONLY.to_string() } else { model_name(&cfg) };
+    let mut t = Transcript::new(id, Kind::Meeting, String::new(), String::new(), model);
     let (tx, rx) = channel();
     let started = transcripts::save(&t).and_then(|()| {
         let mic = capture_track(Speaker::You, Source::Mic(cfg.mic.clone()), id, &tx)?;
@@ -115,8 +121,51 @@ pub fn start(app: &AppHandle, cloud: Option<transcribe_job::Cloud>, language: Op
     crate::system::tray::set_meeting_recording(app, true);
     let first = t.clone();
     let app = app.clone();
-    std::thread::spawn(move || work(app, t, rx, cfg, None));
+    if record_only {
+        std::thread::spawn(move || record(app, t, rx));
+    } else {
+        std::thread::spawn(move || work(app, t, rx, cfg, None));
+    }
     Ok(first)
+}
+
+/// Record-only worker: no speech-to-text, just keep the length current (the
+/// WAVs are written by the capture threads) and report a track that stops.
+fn record(app: AppHandle, mut t: Transcript, rx: impl IntoIterator<Item = Msg>) {
+    let mut last_saved = Instant::now();
+    count(&mut t, rx, |t, news| {
+        if news {
+            let _ = app.emit("transcript://update", &*t);
+        }
+        if news || last_saved.elapsed() >= PROGRESS_EVERY {
+            let _ = transcripts::save(t);
+            last_saved = Instant::now();
+        }
+    });
+    t.duration_ms = Some(t.done_ms);
+    t.status = Status::Recorded;
+    crate::logging::log_info("meeting", &format!("recorded only: {:.1} min", t.done_ms as f64 / 60_000.0));
+    transcribe_job::finish(&app, &t);
+}
+
+/// How much of each track has arrived; `changed(t, news)` after every chunk,
+/// `news` when a track stopped (the page shows why).
+fn count(t: &mut Transcript, rx: impl IntoIterator<Item = Msg>, mut changed: impl FnMut(&mut Transcript, bool)) {
+    let mut heard = [0u64; 2];
+    for msg in rx {
+        match msg {
+            Msg::Audio(speaker, chunk) => {
+                heard[speaker as usize] += chunk.len() as u64;
+                t.done_ms = heard.iter().max().unwrap() * 1000 / SR;
+                changed(t, false);
+            }
+            Msg::Failed(s, e) => {
+                let who = if s == Speaker::You { "Your microphone" } else { "The computer's sound" };
+                t.error = Some(format!("{who} stopped at {} ({e}). Everything before that is kept.", clock(t.done_ms)));
+                changed(t, true);
+            }
+        }
+    }
 }
 
 /// One track: its device, writing its WAV as audio arrives and passing the
@@ -652,6 +701,25 @@ mod tests {
         for r in paragraphs(&t.lines) {
             println!("[{}..{}] ...{}", r.start, r.end, t.lines[r.end - 1].text.chars().rev().take(50).collect::<String>().chars().rev().collect::<String>());
         }
+    }
+
+    #[test]
+    fn record_only_tracks_the_longer_track_and_reports_a_stopped_one_without_writing_lines() {
+        let mut t = Transcript::new(1, Kind::Meeting, String::new(), String::new(), RECORD_ONLY.into());
+        let second = vec![0.0f32; SR as usize];
+        let msgs = vec![
+            Msg::Audio(Speaker::You, second.clone()),
+            Msg::Audio(Speaker::Others, second.clone()),
+            Msg::Audio(Speaker::Others, second.clone()),
+            Msg::Failed(Speaker::You, "unplugged".into()),
+            Msg::Audio(Speaker::Others, second),
+        ];
+        let mut news = Vec::new();
+        count(&mut t, msgs, |_, n| news.push(n));
+        assert_eq!(t.done_ms, 3_000, "length follows the longer track");
+        assert_eq!(news, [false, false, false, true, false], "only the stopped track is news");
+        assert!(t.error.as_deref().is_some_and(|e| e.starts_with("Your microphone stopped at 0:02")), "{:?}", t.error);
+        assert!(t.lines.is_empty(), "record only writes no text");
     }
 
     #[test]

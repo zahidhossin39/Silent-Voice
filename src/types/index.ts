@@ -204,8 +204,10 @@ export type RecordingState =
 
 /** The Notetaker page's choices. */
 export interface NotetakerSettings {
-  /** Provider id meetings are transcribed with, or "local". */
+  /** Provider id meetings are transcribed with, or "local". Also what "Transcribe here" uses on a record-only meeting. */
   stt: string;
+  /** Keep only the audio while recording; an AI agent (MCP) or "Transcribe here" transcribes it later. */
+  record_only?: boolean;
   /** Per provider: its speech-to-text model for meetings, when not the provider's default. */
   stt_models: Record<string, string>;
   /** The meetings' language code, or "" for the dictation language. */

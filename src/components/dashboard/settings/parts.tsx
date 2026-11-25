@@ -446,7 +446,7 @@ export function Info({ text, label }: { text: string; label: string }) {
           ref={panel}
           role="note"
           style={{ left: pos.x, top: pos.y, transform: pos.up ? "translateY(-100%)" : undefined }}
-          className="fixed z-50 w-[288px] rounded-xl bg-sv-surface-2 px-3.5 py-3 text-[12.5px] leading-relaxed text-sv-text shadow-[0_12px_32px_-8px_rgba(0,0,0,0.55)]"
+          className="fixed z-50 w-[288px] rounded-xl border border-sv-border bg-sv-surface-2 px-3.5 py-3 text-[12.5px] leading-relaxed text-sv-text shadow-[0_12px_32px_-8px_rgba(0,0,0,0.55)]"
         >
           {text}
         </div>

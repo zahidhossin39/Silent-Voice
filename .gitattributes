@@ -1,0 +1,2 @@
+# Shell scripts run on Mac/Linux: always LF, even on a Windows checkout.
+*.sh text eol=lf

@@ -8,7 +8,7 @@ bundled llama.cpp for local LLM, Piper + sherpa-onnx for TTS.
 **Deep reference:** `docs/HANDBOOK.md` holds the full architecture, subsystem
 histories, and the WHY behind every rule below. Decisions that are hard to
 reverse are recorded in `docs/adr/` (0001 system-audio capture per OS, 0002
-the pinned, checked sherpa-onnx version): read them before changing those areas. **Read the matching handbook
+the pinned, checked sherpa-onnx version, 0003 the MCP server over stdio): read them before changing those areas. **Read the matching handbook
 section before touching:** overlay/pill, hotkey pipeline, inline proofreading
 (squiggles/UIA), TTS engines, model catalogs, the updater, or release steps.
 
@@ -82,6 +82,9 @@ After `cargo build`, whisper DLLs must be copied from `sidecars/` into
   Untested there: hotkey/paste, TTS, per-app profiles, the updater. Inline
   proofreading now exists on all three: UIA on Windows, Accessibility on macOS,
   AT-SPI on Linux (`inline_unix.rs` over `ax.rs` / `atspi.rs`). See `PORTING.md`.
+- Notetaker "Record only" + local MCP server: `silent-voice --mcp` (stdio, `src-tauri/src/mcp.rs`,
+  rmcp 3.11) lets an AI agent list meetings, fetch audio as WAV piece files, and save
+  transcripts/summaries (undoable). HANDBOOK §18, ADR 0003. Nothing but protocol on stdout.
 - Notetaker Others (computer sound): WASAPI loopback / ScreenCaptureKit (macOS 13+) /
   PulseAudio monitor, behind `audio/system_audio.rs` (ADR 0001, HANDBOOK §17).
   macOS minimum is 12. sherpa-onnx is pinned by `sidecars/sherpa/VERSION` and
@@ -90,7 +93,7 @@ After `cargo build`, whisper DLLs must be copied from `sidecars/` into
   (forwarded via single-instance), paste via `wtype`. AUR `silent-voice-bin` is
   published by `aur.yml` on release; it drops `.package-managed` so the in-app updater stays off.
 
-**Current state:** v0.2.0 tagged (Transcribe a file; Notetaker meeting recorder with You/Others, echo gate + per-piece echo removal, CAM++ speaker counting, summaries; records Others on Mac and Linux; Linux bundled files load from `usr/lib/Silent Voice`; Mac/Linux unit tests in CI; models dropped from the store stay listed if downloaded). v0.1.14 released (background transcription on by default with a 7 MB punctuation-repair model, paste verification, learn-from-edits underlines, on-screen problem card, start/stop sounds, Esc cancel, Alt+Shift+Z paste-last). v0.1.13 (Settings > System > Logs: save/copy/open; one log line per paste). v0.1.12: macOS signed with the project's self-signed cert (Accessibility survives updates; `scripts/macos-signing.sh`), Cmd+V/Cmd+C sent on the main thread (fixed the post-dictation crash), AppImage keeps libwayland as a host fallback.
+**Current state:** v0.3.0 (Notetaker "Record only" toggle + local MCP server so an AI agent transcribes meetings; window sized to the screen; Notetaker/Home/Model Store redesign for small screens with info icons; accuracy shown as accuracy). v0.2.0 tagged (Transcribe a file; Notetaker meeting recorder with You/Others, echo gate + per-piece echo removal, CAM++ speaker counting, summaries; records Others on Mac and Linux; Linux bundled files load from `usr/lib/Silent Voice`; Mac/Linux unit tests in CI; models dropped from the store stay listed if downloaded). v0.1.14 released (background transcription on by default with a 7 MB punctuation-repair model, paste verification, learn-from-edits underlines, on-screen problem card, start/stop sounds, Esc cancel, Alt+Shift+Z paste-last). v0.1.13 (Settings > System > Logs: save/copy/open; one log line per paste). v0.1.12: macOS signed with the project's self-signed cert (Accessibility survives updates; `scripts/macos-signing.sh`), Cmd+V/Cmd+C sent on the main thread (fixed the post-dictation crash), AppImage keeps libwayland as a host fallback.
 Home gained a 12-week dictation strip in the Status panel (heatmap + days
 active / busiest day / words per dictation), the onboarding was rebuilt as a
 left-rail flow that downloads the model in the background, and spoken fillers

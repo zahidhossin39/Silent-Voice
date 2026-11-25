@@ -102,6 +102,9 @@ pub enum Status {
     /// Cancelled, or the app closed mid-way: offers Resume.
     Stopped,
     Failed,
+    /// Record-only meeting: audio saved, no transcript yet. An AI agent fills
+    /// it in over MCP (mcp.rs), or the user picks Transcribe here.
+    Recorded,
 }
 
 pub fn dir() -> PathBuf {
@@ -129,7 +132,7 @@ pub fn save(t: &Transcript) -> Result<(), String> {
 }
 
 /// Write via a temp file + rename, so a crash mid-write never leaves half a file.
-fn save_in(dir: &Path, t: &Transcript) -> Result<(), String> {
+pub(crate) fn save_in(dir: &Path, t: &Transcript) -> Result<(), String> {
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     let tmp = dir.join(format!("{}.json.tmp", t.id));
     std::fs::write(&tmp, serde_json::to_vec(t).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
@@ -151,12 +154,36 @@ pub fn drop_backup(id: i64) {
 }
 
 pub fn load(id: i64) -> Result<Transcript, String> {
-    let bytes = std::fs::read(path_in(&dir(), id)).map_err(|_| "That transcript no longer exists.".to_string())?;
+    load_in(&dir(), id)
+}
+
+pub(crate) fn load_in(dir: &Path, id: i64) -> Result<Transcript, String> {
+    let bytes = std::fs::read(path_in(dir, id)).map_err(|_| "That transcript no longer exists.".to_string())?;
     serde_json::from_slice(&bytes).map_err(|e| e.to_string())
 }
 
+/// Put back the version from before an AI agent changed this meeting.
+pub fn undo_agent(id: i64) -> Result<Transcript, String> {
+    undo_agent_in(&dir(), id)
+}
+
+fn undo_agent_in(dir: &Path, id: i64) -> Result<Transcript, String> {
+    let prev = prev_in(dir, id);
+    let bytes = std::fs::read(&prev).map_err(|_| "There is nothing to undo for this meeting.".to_string())?;
+    let before: Transcript = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+    save_in(dir, &before)?;
+    let _ = std::fs::remove_file(prev);
+    Ok(before)
+}
+
+/// The version from before an AI agent's first save, kept so it can be undone.
+/// Not ".json": the list must not pick it up as a meeting.
+pub(crate) fn prev_in(dir: &Path, id: i64) -> PathBuf {
+    dir.join(format!("{id}.json.prev"))
+}
+
 /// Every transcript in full, newest first.
-fn all_in(dir: &Path) -> Vec<Transcript> {
+pub(crate) fn all_in(dir: &Path) -> Vec<Transcript> {
     let mut out: Vec<Transcript> = std::fs::read_dir(dir)
         .into_iter()
         .flatten()
@@ -181,12 +208,17 @@ pub fn delete(id: i64) -> Result<(), String> {
         let _ = std::fs::remove_file(audio_path(id, s));
     }
     drop_backup(id);
+    let _ = std::fs::remove_file(prev_in(&dir(), id));
     std::fs::remove_file(path_in(&dir(), id)).map_err(|e| e.to_string())
 }
 
 /// A recorded meeting's audio, one 16 kHz WAV per track.
 pub fn audio_path(id: i64, speaker: Speaker) -> PathBuf {
-    dir().join(format!("{id}-{}.wav", if speaker == Speaker::You { "you" } else { "others" }))
+    audio_path_in(&dir(), id, speaker)
+}
+
+pub(crate) fn audio_path_in(dir: &Path, id: i64, speaker: Speaker) -> PathBuf {
+    dir.join(format!("{id}-{}.wav", if speaker == Speaker::You { "you" } else { "others" }))
 }
 
 /// Meetings whose name, Overview or words contain `query` (any case), newest first.
@@ -211,11 +243,15 @@ fn search_in(dir: &Path, query: &str) -> Vec<i64> {
 
 /// `start_ms..end_ms` of one track, or both mixed (`None`), as a small WAV for the page to play.
 pub fn audio_clip(id: i64, speaker: Option<Speaker>, start_ms: u64, end_ms: u64) -> Result<Vec<u8>, String> {
+    audio_clip_in(&dir(), id, speaker, start_ms, end_ms)
+}
+
+pub(crate) fn audio_clip_in(dir: &Path, id: i64, speaker: Option<Speaker>, start_ms: u64, end_ms: u64) -> Result<Vec<u8>, String> {
     let speakers = speaker.map_or(vec![Speaker::You, Speaker::Others], |s| vec![s]);
     let mut spec = None;
     let mut mix: Vec<i32> = Vec::new();
     for s in speakers {
-        let Ok(mut r) = hound::WavReader::open(audio_path(id, s)) else { continue };
+        let Ok(mut r) = hound::WavReader::open(audio_path_in(dir, id, s)) else { continue };
         let rate = r.spec().sample_rate as u64;
         spec = Some(r.spec());
         let from = (start_ms * rate / 1000).min(r.duration() as u64);
@@ -360,6 +396,24 @@ pub fn render(t: &Transcript, format: Format) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn undoing_an_agent_puts_the_meeting_back_once() {
+        let dir = std::env::temp_dir().join(format!("sv-undo-agent-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut before = Transcript::new(5, Kind::Meeting, String::new(), String::new(), "record only".into());
+        before.status = Status::Recorded;
+        std::fs::write(prev_in(&dir, 5), serde_json::to_vec(&before).unwrap()).unwrap();
+        let mut after = before.clone();
+        after.status = Status::Done;
+        after.model_id = "agent: agy".into();
+        save_in(&dir, &after).unwrap();
+        assert_eq!(undo_agent_in(&dir, 5).unwrap().status, Status::Recorded);
+        assert_eq!(load_in(&dir, 5).unwrap().model_id, "record only");
+        assert!(!prev_in(&dir, 5).exists(), "the undo copy is used up");
+        assert!(undo_agent_in(&dir, 5).unwrap_err().contains("nothing to undo"));
+    }
 
     fn sample() -> Transcript {
         Transcript {

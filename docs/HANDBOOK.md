@@ -1033,3 +1033,56 @@ Ignored tests replay saved calls (`<transcripts>/<id>`, no extension):
 `unlabelled_lines_of_a_real_call_compared_to_each_voice` (add `SV_TEST_RECUT=1`
 to re-cut the track the way meetings cut it today); `SV_TEST_MEETINGS` +
 `SV_TEST_COUNTS` for `real_calls_come_out_with_the_right_number_of_people`.
+
+## 18. Record-only meetings and the local MCP server
+
+The why is in `docs/adr/0003`. Here is where things are.
+
+**Record only:** Notetaker → gear → Transcription → "Record only" (`nt.stt =
+"record"`).
+- `meeting_start(record_only: true)` runs `meeting_job::record`, which only
+  counts audio (`count`) while the capture threads write the two WAVs.
+- At Stop the meeting gets `Status::Recorded` with `model_id = "record only"`
+  (`meeting_job::RECORD_ONLY`), and no lines.
+- The panel says it is waiting for an AI agent, with "Transcribe here", which is
+  the normal `retranscribe`; its Cancel puts the meeting back as Recorded.
+
+**MCP server:** `silent-voice --mcp` (`main.rs` → `mcp::serve()`, before Tauri
+and single-instance).
+- stdio only, on `rmcp` 3.11 (features `server`, `macros`, `transport-io`) with
+  `schemars` 1.
+- Nothing but protocol may go to stdout.
+- It calls `process::exit` when the agent leaves, because a pending stdin read
+  would block a normal shutdown.
+
+| Tool | Does |
+| --- | --- |
+| `list_meetings` | newest first, `status` filter (`recorded` = waiting) |
+| `get_meeting` | details, lines (`speaker` you/others, `person` = `who`), summary |
+| `get_meeting_audio` | ≤5 min of one track written to `transcripts/agent-pieces/` (swept after a day), returns `piece_file` + `next_start_ms`; `inline` adds an MCP audio block |
+| `save_transcript` | `replace`/`append`, every line checked; refuses `Running`; first agent save keeps `{id}.json.prev`; sets `model_id = "agent: <client>"`, status Done |
+| `save_summary` | the Overview Markdown |
+| prompt `transcribe_meeting` | the steps for an agent |
+
+- **Agents drop MCP audio blocks:** agy passes only text to its model. They
+  listen by opening `piece_file` with their own file tool. Claude can't hear
+  audio at all.
+- **Notetaker:**
+  - re-reads meetings on window focus, because the MCP process sends no events;
+  - shows "transcribed by <agent>" and Undo (`meeting_undo_agent` restores
+    `.json.prev`);
+  - the `transcripts.rs` functions take a folder (`*_in`) so `mcp.rs` tests run
+    on a temp folder.
+- **Settings → System → Connect an AI agent:** setup text from
+  `services/agentSetup.ts`, for agy, Claude Code, Codex and mcp.json agents.
+  Each format escapes Windows paths its own way, and that is tested. The exe
+  path comes from `mcp_server_path`.
+- **Checks:**
+  - `python scripts/mcp_smoke.py <exe>` checks the handshake, the 5 tools and
+    their hints, the prompt, and the exit on EOF. The macOS and Linux CI builds
+    run it.
+- **Testing with agy:** `agy mcp add silent-voice <exe> -- --mcp`. While an
+  agent has the server open, Windows locks the exe: `cargo build` / `tauri dev`
+  fail with "Access is denied" until the agent quits. Remove the test server
+  with `agy mcp remove silent-voice`.
+

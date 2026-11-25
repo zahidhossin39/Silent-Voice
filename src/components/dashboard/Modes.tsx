@@ -111,7 +111,7 @@ export default function Modes() {
               onClick={() => setEditing({ ...EMPTY })}
               className="rounded-lg bg-sv-accent px-3 py-1.5 text-sm font-medium text-sv-on-accent hover:bg-sv-accent-hover"
             >
-              + New mode
+              + New style
             </button>
           }
         >
@@ -123,21 +123,22 @@ export default function Modes() {
                 : "border-sv-warn/30 bg-sv-warn/10 text-sv-warn"
             }`}
           >
-            <span>
+            <span className="flex items-start gap-2">
+              {localCount > 0 ? <CheckIcon /> : <WarnIcon />}
               {localCount > 0 ? (
-                <>
-                  ✓ Built-in AI engine ready — {localCount} local model
-                  {localCount === 1 ? "" : "s"} downloaded. AI modes run on your
+                <span>
+                  Built-in AI engine ready: {localCount} local model
+                  {localCount === 1 ? "" : "s"} downloaded. AI styles run on your
                   device.
-                </>
+                </span>
               ) : (
-                <>
-                  ⚠ No local AI model yet. AI modes fall back to raw transcription.{" "}
+                <span>
+                  No local AI model yet, so AI styles paste your words as spoken.{" "}
                   <Link to="/models" className="underline">
                     Download one in Model Store
                   </Link>{" "}
                   (AI Processing tab), or use a cloud provider in Cloud providers.
-                </>
+                </span>
               )}
             </span>
           </div>
@@ -155,12 +156,7 @@ export default function Modes() {
                 }`}
               >
                 <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <h3 className="font-medium">{m.name}</h3>
-                    <p className="mt-0.5 line-clamp-2 text-xs text-sv-muted">
-                      {m.description || m.system_prompt}
-                    </p>
-                  </div>
+                  <h3 className="min-w-0 font-medium">{m.name}</h3>
                   <div className="flex shrink-0 items-center gap-1.5">
                     {m.builtin && (
                       <span className="whitespace-nowrap rounded border border-sv-border/50 bg-sv-surface-2 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wider text-sv-muted">
@@ -189,6 +185,9 @@ export default function Modes() {
                     </button>
                   </div>
                 </div>
+                <p className="mt-1 line-clamp-3 text-xs leading-relaxed text-sv-muted" title={m.description ? undefined : m.system_prompt}>
+                  {m.description || m.system_prompt}
+                </p>
                 {previews[m.id] && (
                   <div className="mt-3 rounded-lg bg-sv-surface-2 p-3 text-xs">
                     <p className="mb-1 text-[11px] italic text-sv-muted">"{SAMPLE_INPUT}"</p>
@@ -351,7 +350,7 @@ function Editor({
         className="my-auto w-full max-w-lg rounded-xl border border-sv-border bg-sv-surface p-5"
       >
         <h2 id="mode-editor-title" className="mb-1 text-lg font-semibold">
-          {mode.id ? "Edit mode" : "New mode"}
+          {mode.id ? "Edit style" : "New style"}
         </h2>
         {mode.builtin && (
           <p className="mb-4 text-[11px] text-sv-muted">
@@ -438,7 +437,7 @@ function Editor({
         {mode.model_source === "local" && !localReady && (
           <p className="mb-3 text-[11px] text-sv-warn">
             This model isn’t downloaded. Get it in Model Store → AI
-            Processing, or this mode will paste raw text.
+            Processing, or this style will paste raw text.
           </p>
         )}
         {mode.model_source === "api" && providers.length === 0 && (
@@ -488,7 +487,7 @@ function Editor({
           <button
             onClick={onSave}
             disabled={!mode.name.trim()}
-            title={mode.name.trim() ? undefined : "Give this mode a name first"}
+            title={mode.name.trim() ? undefined : "Give this style a name first"}
             className="rounded-lg bg-sv-accent px-3 py-1.5 text-sm font-medium text-sv-on-accent hover:bg-sv-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
           >
             Save
@@ -661,5 +660,22 @@ function FitDot({
       title={fit.reason}
       className={`h-2 w-2 shrink-0 rounded-full ${FIT_DOT[fit.level]}`}
     />
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="mt-px h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M5 12.5l4.5 4.5L19 7.5" />
+    </svg>
+  );
+}
+
+function WarnIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="mt-px h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M12 3.5 2.5 20h19L12 3.5Z" />
+      <path d="M12 10v4.5M12 17.5h.01" />
+    </svg>
   );
 }

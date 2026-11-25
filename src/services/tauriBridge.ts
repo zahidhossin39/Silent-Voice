@@ -845,7 +845,7 @@ export interface Transcript {
   created: number;
   duration_ms: number | null;
   model_id: string;
-  status: "running" | "done" | "stopped" | "failed";
+  status: "running" | "done" | "stopped" | "failed" | "recorded";
   error?: string | null;
   done_ms: number;
   work_ms: number;
@@ -953,9 +953,28 @@ export async function transcriptSaveAs(id: number): Promise<boolean> {
 /** Record the mic and the computer's sound into a live transcript, transcribed
  * locally or, with `cloud`, by a provider's speech-to-text. */
 /** `language`: the meeting's language code ("auto" detects); unset = the dictation language. */
-export async function meetingStart(cloud?: { base_url: string; api_key: string; model: string }, language?: string, speakers = false): Promise<Transcript> {
+/** Start recording a meeting. `recordOnly`: save the audio only, for an AI
+ *  agent to transcribe over MCP (status "recorded" once stopped). */
+export async function meetingStart(cloud?: { base_url: string; api_key: string; model: string }, language?: string, speakers = false, recordOnly = false): Promise<Transcript> {
   if (!isTauri()) throw new Error("Needs the desktop app");
-  return invoke<Transcript>("meeting_start", { cloud: cloud ?? null, language: language ?? null, speakers });
+  return invoke<Transcript>("meeting_start", { cloud: cloud ?? null, language: language ?? null, speakers, recordOnly });
+}
+
+/** The app's exe, which AI agents run with `--mcp` to reach the local MCP server. */
+export async function mcpServerPath(): Promise<string> {
+  if (!isTauri()) return String.raw`C:\Program Files\Silent Voice\silent-voice.exe`;
+  return invoke<string>("mcp_server_path");
+}
+
+/** Put a meeting back to how it was before an AI agent changed it over MCP. */
+export async function meetingUndoAgent(id: number): Promise<Transcript> {
+  if (!isTauri()) throw new Error("Needs the desktop app");
+  return invoke<Transcript>("meeting_undo_agent", { id });
+}
+
+/** What wrote a meeting's text when an AI agent did it over MCP ("agy"), else null. */
+export function agentOf(t: Transcript): string | null {
+  return t.model_id.startsWith("agent: ") ? t.model_id.slice("agent: ".length) : null;
 }
 
 /** Transcribe a saved meeting again from its audio; updates arrive like a recording's. */
