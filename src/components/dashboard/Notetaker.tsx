@@ -1155,7 +1155,8 @@ function MeetingPanel({
         )}
         <div ref={bottom} />
       </div>
-      {!live && paras.some((p) => p.speaker) && duration > 0 && <PlayerBar player={player} duration={duration} />}
+      {/* A record-only meeting has audio before it has any lines. */}
+      {!live && (waiting || paras.some((p) => p.speaker)) && duration > 0 && <PlayerBar player={player} duration={duration} />}
     </section>
   );
 }
