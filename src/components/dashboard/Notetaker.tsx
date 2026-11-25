@@ -187,7 +187,9 @@ export default function Notetaker() {
   const sttKey = nt.stt;
   const cloudProvider = sttProviders.find((p) => p.id === sttKey);
   // "Record only": keep the audio; an AI agent transcribes it over MCP later.
-  const recordOnly = sttKey === "record";
+  // stt "record" is how it was stored before it became its own toggle.
+  const recordOnly = nt.record_only ?? sttKey === "record";
+  const setRecordOnly = (v: boolean) => setNt({ record_only: v, ...(sttKey === "record" ? { stt: "local" } : {}) });
   // A provider with no speech-to-text model picked can't transcribe yet.
   const cloud = cloudProvider && sttModelOf(cloudProvider) ? cloudProvider : undefined;
   const lang = nt.language;
@@ -213,17 +215,6 @@ export default function Notetaker() {
       model: "",
       base_url: "",
       api_key: "",
-    },
-    {
-      key: "record:record",
-      id: "record",
-      label: "Record only",
-      detail: "Keep the audio; an AI agent transcribes it",
-      source: "local" as const,
-      model: "",
-      base_url: "",
-      api_key: "",
-      agent: true,
     },
   ];
   const localModel = STT_MODELS.find((m) => m.id === useSettingsStore.getState().settings.active_stt_model);
@@ -398,13 +389,15 @@ export default function Notetaker() {
               languageNote={langNote}
               languageWarn={langWarn}
               locked={!!recording}
+              recordOnly={recordOnly}
+              onRecordOnly={setRecordOnly}
               stt={
                 <div className="flex flex-col gap-2">
                   <Picker
                     choices={sttChoices}
-                    chosen={sttChoices.find((c) => c.id === (cloudProvider?.id ?? (recordOnly ? "record" : "local"))) ?? sttChoices[0]}
+                    chosen={sttChoices.find((c) => c.id === (cloudProvider?.id ?? "local")) ?? sttChoices[0]}
                     disabled={!!recording}
-                    onPick={(k) => pickStt(k.replace(/^(api|local|record):/, ""))}
+                    onPick={(k) => pickStt(k.replace(/^(api|local):/, ""))}
                     action="Transcribe with"
                     localTitle="On this PC · offline"
                   />
@@ -421,7 +414,7 @@ export default function Notetaker() {
               }
               sttNote={
                 recordOnly
-                    ? "Nothing is transcribed while you record. Connect an AI agent in Settings, or pick Transcribe here on the meeting."
+                    ? "Record only is on, so this is used when you press Transcribe here on a recorded meeting."
                     : cloud
                     ? `Audio is sent to ${cloud.name}. If a call fails, that part is transcribed on this PC.`
                     : sttProviders.length === 0
@@ -535,6 +528,8 @@ function NotetakerSettings({
   languageNote,
   languageWarn,
   locked,
+  recordOnly,
+  onRecordOnly,
 }: {
   onClose: () => void;
   summary: SummaryChoice;
@@ -545,6 +540,8 @@ function NotetakerSettings({
   languageWarn: boolean;
   /** A meeting is recording: changes wait for the next one. */
   locked: boolean;
+  recordOnly: boolean;
+  onRecordOnly: (v: boolean) => void;
 }) {
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -575,7 +572,19 @@ function NotetakerSettings({
         {languageWarn && <p className="mt-2 text-xs leading-relaxed text-sv-warn">{languageNote}</p>}
       </section>
       <section className="px-5 py-4">
-        <SettingHead title="Transcription" about={`Turns the meeting's audio into text as people talk. ${sttNote}`} />
+        <SettingHead
+          title="Record only"
+          about="Keep only the audio while you record, and transcribe it later: with an AI agent you connect in Settings > Connect an AI agent (no API key needed here), or with Transcribe here on the meeting."
+        >
+          <Toggle label="Record only" checked={recordOnly} onChange={onRecordOnly} disabled={locked} />
+        </SettingHead>
+        {recordOnly && <p className="-mt-1 text-xs text-sv-muted">Nothing is transcribed while you record.</p>}
+      </section>
+      <section className="px-5 py-4">
+        <SettingHead
+          title={recordOnly ? "Transcribe later with" : "Transcription"}
+          about={`Turns the meeting's audio into text${recordOnly ? "" : " as people talk"}. ${sttNote}`}
+        />
         {stt}
       </section>
       <SpeakersSetting />
